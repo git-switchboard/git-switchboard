@@ -130,8 +130,8 @@ export function ClonePrompt({
 
       <box style={{ height: 1, width: "100%" }}>
         <text content={inputMode
-            ? " Type path, Enter to confirm, Esc to cancel"
-            : " Up/Down/jk Navigate | Enter Select | Backspace/Esc Back"} fg="#565f89" />
+            ? " Type path, [Enter] confirm, [Esc] cancel"
+            : " [j/k] Navigate | [Enter] Select | [Bksp] Back"} fg="#565f89" />
       </box>
     </box>
   );

@@ -272,7 +272,7 @@ export function PrDetail({
   // Footer text
   const footerText = statusText
     ? ` ${statusText}`
-    : ' Enter Select | c Copy logs | r Refresh CI | w Watch | Backspace Back | q Quit';
+    : ' [Enter] Select | [c]opy logs | [r]efresh CI | [w]atch | [Bksp] Back | [q]uit';
   const footerFg = statusText ? '#9ece6a' : '#565f89';
 
   return (

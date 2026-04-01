@@ -251,7 +251,7 @@ export function PrApp({
       <box style={{ height: 1, width: '100%' }}>
         <text
           content={
-            ' Up/Down/jk Navigate | Enter Checkout | c CI | / Search | q Quit'
+            ' [j/k] Navigate | [Enter] Select | [c] Fetch CI | [/] Search | [q]uit'
           }
           fg="#565f89"
         />
