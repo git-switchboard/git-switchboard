@@ -40,10 +40,14 @@ function scanStatusLine(p: ScanProgress | null, done: boolean, barWidth: number)
   if (done) {
     return { text: `Done - ${p.reposFound} repos found (${p.dirsScanned} dirs scanned)`, bar: null, dir: "" };
   }
-  // Scanner is sync so we can't show a real fraction; show activity indicator
-  const bar = null;
+  if (p.totalTopLevel > 0) {
+    const fraction = p.completedTopLevel / p.totalTopLevel;
+    const bar = gauge(fraction, barWidth);
+    const text = `Scanning: ${p.completedTopLevel}/${p.totalTopLevel} top-level dirs, ${p.reposFound} repos found`;
+    return { text, bar, dir: p.currentDir };
+  }
   const text = `Scanning... ${p.reposFound} repos found, ${p.dirsScanned} dirs scanned`;
-  return { text, bar, dir: p.currentDir };
+  return { text, bar: null, dir: p.currentDir };
 }
 
 export function Loading({ prProgress, scanProgress, scanDone }: LoadingProps) {
