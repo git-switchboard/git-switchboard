@@ -16,6 +16,20 @@ export interface PullRequestInfo {
   draft: boolean;
 }
 
+export interface UserPullRequest {
+  number: number;
+  title: string;
+  state: string;
+  draft: boolean;
+  repoOwner: string;
+  repoName: string;
+  /** owner/name in lowercase for matching */
+  repoId: string;
+  headRef: string;
+  updatedAt: string;
+  url: string;
+}
+
 export interface BranchWithPR extends BranchInfo {
   pr?: PullRequestInfo;
 }
