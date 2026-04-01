@@ -334,7 +334,9 @@ const gitSwitchboard = cli('git-switchboard', {
             }
           }
 
-          console.log(`Opening ${targetDir!} in ${editor.command}...`);
+          if (editor) {
+            console.log(`Opening ${targetDir!} in ${editor.command}...`);
+          }
           openInEditor(editor, targetDir!);
         },
       }),
@@ -344,12 +346,18 @@ const gitSwitchboard = cli('git-switchboard', {
     const React = await import('react');
     const { createElement } = React;
     const { App } = await import('./app.js');
-    const { getBranches, getCurrentUser, getRepoRemoteUrl, parseGitHubRemote } =
-      await import('./git.js');
+    const {
+      getBranches,
+      getCurrentUser,
+      getCurrentUserAliases,
+      getRepoRemoteUrl,
+      parseGitHubRemote,
+    } = await import('./git.js');
     const { resolveGitHubToken, fetchOpenPRs } = await import('./github.js');
     const { execSync } = await import('node:child_process');
 
     const currentUser = getCurrentUser();
+    const currentUserAliases = getCurrentUserAliases();
     const authorList = args.author ?? [];
 
     // Fetch initial branch data
@@ -394,6 +402,7 @@ const gitSwitchboard = cli('git-switchboard', {
     const element = createElement(App, {
       branches,
       currentUser,
+      currentUserAliases,
       authorList,
       initialShowRemote: args.remote,
       fetchBranches: fetchBranchesWithPRs,

@@ -2,20 +2,28 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useState, useMemo, useCallback } from "react";
 import type { BranchWithPR, AuthorFilterMode } from "./types.js";
 
+/** Truncate string to fit width, adding ellipsis if needed */
+function fit(str: string, width: number): string {
+  if (str.length <= width) return str.padEnd(width);
+  return str.slice(0, width - 1) + "\u2026";
+}
+
 interface AppProps {
   branches: BranchWithPR[];
   currentUser: string;
+  /** All names the current user goes by (for "me" filter) */
+  currentUserAliases: string[];
   authorList: string[];
   initialShowRemote: boolean;
   onSelect: (branch: BranchWithPR) => void;
   onExit: () => void;
-  /** Callback to fetch branches when remote toggle changes */
   fetchBranches: (includeRemote: boolean) => BranchWithPR[];
 }
 
 export function App({
   branches: initialBranches,
   currentUser,
+  currentUserAliases,
   authorList,
   initialShowRemote,
   onSelect,
@@ -37,12 +45,18 @@ export function App({
     return modes;
   }, [authorList]);
 
+  // All lowercase aliases for "me" matching
+  const meAliases = useMemo(
+    () => currentUserAliases.map((a) => a.toLowerCase()),
+    [currentUserAliases]
+  );
+
   const filteredBranches = useMemo(() => {
     let result = branches;
 
     if (authorFilter === "me") {
-      result = result.filter(
-        (b) => b.author.toLowerCase() === currentUser.toLowerCase()
+      result = result.filter((b) =>
+        meAliases.includes(b.author.toLowerCase())
       );
     } else if (authorFilter === "list") {
       const lower = authorList.map((a) => a.toLowerCase());
@@ -55,7 +69,7 @@ export function App({
     }
 
     return result;
-  }, [branches, authorFilter, currentUser, authorList, searchQuery]);
+  }, [branches, authorFilter, meAliases, authorList, searchQuery]);
 
   // Virtual scrolling: 4 chrome rows (header, spacer, column headers, footer) + 2 padding rows
   const listHeight = Math.max(1, height - 6);
@@ -139,11 +153,12 @@ export function App({
         ? currentUser || "Me"
         : `[${authorList.join(", ")}]`;
 
-  // Column widths
-  const prCol = 20;
-  const authorCol = 16;
-  const dateCol = 14;
-  const branchCol = Math.max(20, width - prCol - authorCol - dateCol - 8);
+  // Column widths — fixed right columns, branch gets the remainder
+  const prCol = 16;
+  const authorCol = 18;
+  const dateCol = 18;
+  // 2 chars for marker, 3 chars for gaps between columns, 2 for leading space
+  const branchCol = Math.max(12, width - prCol - authorCol - dateCol - 7);
 
   const visibleBranches = filteredBranches.slice(
     scrollOffset,
@@ -161,7 +176,7 @@ export function App({
 
       {/* Column headers */}
       <box style={{ height: 1, width: "100%" }}>
-        <text content={` ${"Branch".padEnd(branchCol)}${"Author".padEnd(authorCol)}${"Updated".padEnd(dateCol)}${"PR".padEnd(prCol)}`} fg="#bb9af7" />
+        <text content={`   ${fit("Branch", branchCol)} ${fit("Author", authorCol)} ${fit("Updated", dateCol)} ${fit("PR", prCol)}`} fg="#bb9af7" />
       </box>
 
       {/* Branch list */}
@@ -176,16 +191,18 @@ export function App({
           const actualIndex = scrollOffset + i;
           const isSelected = actualIndex === selectedIndex;
           const bg = isSelected ? "#292e42" : undefined;
-          const marker = branch.isCurrent ? "* " : "  ";
-          const nameFg = branch.isCurrent
-            ? "#73daca"
-            : branch.isRemote
-              ? "#ff9e64"
-              : "#c0caf5";
+          const marker = branch.isCurrent ? " * " : "   ";
 
           const prText = branch.pr
             ? `#${branch.pr.number} ${branch.pr.draft ? "Draft" : "Open"}`
             : "-";
+
+          const line =
+            marker +
+            fit(branch.name, branchCol) + " " +
+            fit(branch.author, authorCol) + " " +
+            fit(branch.relativeDate, dateCol) + " " +
+            fit(prText, prCol);
 
           return (
             <box
@@ -196,17 +213,13 @@ export function App({
                 backgroundColor: bg,
               }}
             >
-              <text>
-                <span fg={nameFg}>
-                  {marker}
-                  {branch.name.padEnd(branchCol - 2)}
-                </span>
-                <span fg="#a9b1d6">{branch.author.padEnd(authorCol)}</span>
-                <span fg="#565f89">{branch.relativeDate.padEnd(dateCol)}</span>
-                <span fg={branch.pr?.draft ? "#e0af68" : "#9ece6a"}>
-                  {prText.padEnd(prCol)}
-                </span>
-              </text>
+              <text content={line} fg={
+                branch.isCurrent
+                  ? "#73daca"
+                  : branch.isRemote
+                    ? "#ff9e64"
+                    : "#c0caf5"
+              } />
             </box>
           );
         })}

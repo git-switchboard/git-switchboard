@@ -22,6 +22,47 @@ export function getCurrentUser(): string {
   }
 }
 
+/**
+ * Get all known aliases for the current user.
+ * Includes git config user.name, and the username portion of user.email.
+ * Also scans git log for committer names associated with the user's email.
+ */
+export function getCurrentUserAliases(): string[] {
+  const aliases = new Set<string>();
+
+  const name = getCurrentUser();
+  if (name) aliases.add(name);
+
+  // Get email and derive username from it
+  try {
+    const email = execSync("git config user.email", {
+      encoding: "utf-8",
+    }).trim();
+    if (email) {
+      // Extract username part before @
+      const atIdx = email.indexOf("@");
+      if (atIdx > 0) aliases.add(email.slice(0, atIdx));
+    }
+  } catch {
+    // no email configured
+  }
+
+  // Check git log for other names used by the same email
+  try {
+    const output = execSync(
+      'git log --all --format="%an" --author="$(git config user.email)" | sort -u',
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+    ).trim();
+    for (const line of output.split("\n")) {
+      if (line) aliases.add(line);
+    }
+  } catch {
+    // not in a git repo or no commits
+  }
+
+  return [...aliases];
+}
+
 export function getRepoRemoteUrl(): string | undefined {
   try {
     return execSync("git remote get-url origin", {
