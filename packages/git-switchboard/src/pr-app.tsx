@@ -206,24 +206,13 @@ export function PrApp({
   });
 
   // Column widths
-  const localCol = 12;
-  const statusCol = 8;
   const updatedCol = 12;
   const ciCol = 12;
   const reviewCol = 15;
-  const prCol = Math.min(30, Math.floor(width * 0.25));
   const repoCol = Math.min(25, Math.floor(width * 0.2));
-  const branchCol = Math.max(
-    15,
-    width -
-      prCol -
-      repoCol -
-      statusCol -
-      updatedCol -
-      localCol -
-      ciCol -
-      reviewCol -
-      6
+  const prCol = Math.max(
+    20,
+    width - repoCol - updatedCol - ciCol - reviewCol - 6
   );
 
   return (
@@ -248,11 +237,9 @@ export function PrApp({
         <text
           content={` ${'PR'.padEnd(prCol)}${'Repo'.padEnd(
             repoCol
-          )}${'Branch'.padEnd(branchCol)}${'Updated'.padEnd(
-            updatedCol
-          )}${'Status'.padEnd(statusCol)}${'CI'.padEnd(ciCol)}${'Review'.padEnd(
-            reviewCol
-          )}${'Local'.padEnd(localCol)}`}
+          )}${'Updated'.padEnd(updatedCol)}${'CI'.padEnd(
+            ciCol
+          )}${'Review'.padEnd(reviewCol)}`}
           fg="#bb9af7"
         />
       </box>
@@ -265,17 +252,6 @@ export function PrApp({
             const actualIndex = scrollOffset + i;
             const isSelected = actualIndex === selectedIndex;
             const bg = isSelected ? '#292e42' : undefined;
-            const matches = repoMatchMap.get(`${pr.repoId}#${pr.number}`) ?? [];
-            const cleanMatch = matches.find((r) => r.isClean);
-
-            const localStatus =
-              matches.length === 0 ? '-' : cleanMatch ? CHECKMARK + ' clean' : CROSSMARK + ' dirty';
-            const localFg =
-              matches.length === 0
-                ? '#565f89'
-                : cleanMatch
-                ? '#9ece6a'
-                : '#f7768e';
 
             const prKey = `${pr.repoId}#${pr.number}`;
             const ci = ciCache.get(prKey);
@@ -297,18 +273,11 @@ export function PrApp({
                 <text>
                   <span fg="#c0caf5"> {prLabel.padEnd(prCol)}</span>
                   <span fg="#a9b1d6">{repoLabel.padEnd(repoCol)}</span>
-                  <span fg="#ff9e64">
-                    {pr.headRef.slice(0, branchCol - 1).padEnd(branchCol)}
-                  </span>
                   <span fg="#565f89">
                     {relativeTime(pr.updatedAt).padEnd(updatedCol)}
                   </span>
-                  <span fg={pr.draft ? '#e0af68' : '#9ece6a'}>
-                    {(pr.draft ? 'Draft' : 'Open').padEnd(statusCol)}
-                  </span>
                   <span fg={ciStatus.fg}>{ciStatus.text.slice(0, ciCol - 1).padEnd(ciCol)}</span>
                   <span fg={rvw.fg}>{rvw.text.slice(0, reviewCol - 1).padEnd(reviewCol)}</span>
-                  <span fg={localFg}>{localStatus.padEnd(localCol)}</span>
                 </text>
               </box>
             );
