@@ -21,10 +21,13 @@ export interface UserPullRequest {
   title: string;
   state: string;
   draft: boolean;
+  /** The base repo (where the PR is opened against) */
   repoOwner: string;
   repoName: string;
   /** owner/name in lowercase for matching */
   repoId: string;
+  /** The head (fork) repo if different from base, for matching local clones */
+  forkRepoId: string | null;
   headRef: string;
   updatedAt: string;
   url: string;

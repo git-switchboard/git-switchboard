@@ -107,7 +107,11 @@ export function PrApp({
   const repoMatchMap = useMemo(() => {
     const map = new Map<string, LocalRepo[]>();
     for (const pr of prs) {
-      const matches = localRepos.filter((r) => r.repoId === pr.repoId);
+      const matches = localRepos.filter(
+        (r) =>
+          r.repoId === pr.repoId ||
+          (pr.forkRepoId != null && r.repoId === pr.forkRepoId)
+      );
       map.set(`${pr.repoId}#${pr.number}`, matches);
     }
     return map;

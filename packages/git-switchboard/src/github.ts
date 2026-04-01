@@ -1,5 +1,7 @@
 import { execSync } from 'node:child_process';
 import { Octokit } from '@octokit/rest';
+import type { ResultOf } from 'gql.tada';
+import { graphql } from './graphql.js';
 import type {
   CheckRun,
   CIInfo,
@@ -105,68 +107,12 @@ function describeApiError(error: unknown): string {
   return String(error);
 }
 
-// ─── GraphQL types ──────────────────────────────────────────────
-
-interface GQLSearchResult {
-  search: {
-    issueCount: number;
-    nodes: Array<{
-      __typename: string;
-      number: number;
-      title: string;
-      state: string;
-      isDraft: boolean;
-      headRefName: string;
-      updatedAt: string;
-      url: string;
-      repository: {
-        owner: { login: string };
-        name: string;
-      };
-    }>;
-  };
-}
-
-interface GQLPRDetailResult {
-  repository: {
-    pullRequest: {
-      commits: {
-        nodes: Array<{
-          commit: {
-            committedDate: string;
-            statusCheckRollup: {
-              contexts: {
-                nodes: Array<{
-                  __typename: string;
-                  // CheckRun fields
-                  databaseId?: number;
-                  name?: string;
-                  status?: string;
-                  conclusion?: string | null;
-                  detailsUrl?: string | null;
-                  startedAt?: string | null;
-                  completedAt?: string | null;
-                }>;
-              };
-            } | null;
-          };
-        }>;
-      };
-      reviews: {
-        nodes: Array<{
-          author: { login: string } | null;
-          state: string;
-          submittedAt: string;
-        }>;
-      };
-    };
-  };
-}
-
 // ─── GraphQL queries ────────────────────────────────────────────
+// Typed via gql.tada for compile-time type inference + editor hints.
+// Raw strings passed to octokit.graphql() since it doesn't accept DocumentNode.
 
-const SEARCH_USER_PRS = `
-  query($searchQuery: String!) {
+const _SEARCH_USER_PRS_TYPED = graphql(`
+  query SearchUserPRs($searchQuery: String!) {
     search(query: $searchQuery, type: ISSUE, first: 100) {
       issueCount
       nodes {
@@ -183,14 +129,87 @@ const SEARCH_USER_PRS = `
             owner { login }
             name
           }
+          headRepository {
+            owner { login }
+            name
+          }
+        }
+      }
+    }
+  }
+`);
+type SearchUserPRsResult = ResultOf<typeof _SEARCH_USER_PRS_TYPED>;
+
+const SEARCH_USER_PRS = `
+  query SearchUserPRs($searchQuery: String!) {
+    search(query: $searchQuery, type: ISSUE, first: 100) {
+      issueCount
+      nodes {
+        __typename
+        ... on PullRequest {
+          number
+          title
+          state
+          isDraft
+          headRefName
+          updatedAt
+          url
+          repository {
+            owner { login }
+            name
+          }
+          headRepository {
+            owner { login }
+            name
+          }
         }
       }
     }
   }
 `;
 
+const _PR_DETAIL_TYPED = graphql(`
+  query PRDetail($owner: String!, $repo: String!, $number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $number) {
+        commits(last: 1) {
+          nodes {
+            commit {
+              committedDate
+              statusCheckRollup {
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun {
+                      databaseId
+                      name
+                      status
+                      conclusion
+                      detailsUrl
+                      startedAt
+                      completedAt
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        reviews(last: 100) {
+          nodes {
+            author { login }
+            state
+            submittedAt
+          }
+        }
+      }
+    }
+  }
+`);
+type PRDetailResult = ResultOf<typeof _PR_DETAIL_TYPED>;
+
 const PR_DETAIL_QUERY = `
-  query($owner: String!, $repo: String!, $number: Int!) {
+  query PRDetail($owner: String!, $repo: String!, $number: Int!) {
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $number) {
         commits(last: 1) {
@@ -262,14 +281,21 @@ export async function fetchUserPRs(
     onProgress?.(progress);
 
     // Single GraphQL query gets all PRs with headRef — no per-PR REST calls
-    const result = await octokit.graphql<GQLSearchResult>(SEARCH_USER_PRS, {
-      searchQuery: `is:pr is:open author:${username}`,
-    });
+    const result = await octokit.graphql<SearchUserPRsResult>(
+      SEARCH_USER_PRS,
+      { searchQuery: `is:pr is:open author:${username}` }
+    );
 
     progress.totalPRs = result.search.issueCount;
 
-    for (const node of result.search.nodes) {
-      if (node.__typename !== 'PullRequest') continue;
+    for (const node of result.search.nodes ?? []) {
+      if (!node || node.__typename !== 'PullRequest') continue;
+      const baseId = `${node.repository.owner.login}/${node.repository.name}`.toLowerCase();
+      const headRepo = node.headRepository;
+      const forkId = headRepo
+        ? `${headRepo.owner.login}/${headRepo.name}`.toLowerCase()
+        : null;
+
       prs.push({
         number: node.number,
         title: node.title,
@@ -277,8 +303,8 @@ export async function fetchUserPRs(
         draft: node.isDraft,
         repoOwner: node.repository.owner.login,
         repoName: node.repository.name,
-        repoId:
-          `${node.repository.owner.login}/${node.repository.name}`.toLowerCase(),
+        repoId: baseId,
+        forkRepoId: forkId !== baseId ? forkId : null,
         headRef: node.headRefName,
         updatedAt: node.updatedAt,
         url: node.url,
@@ -316,8 +342,14 @@ function computeCIStatus(checks: CheckRun[]): CIStatus {
   return 'passing';
 }
 
+interface ReviewNodeInput {
+  author: { login: string } | null;
+  state: string;
+  submittedAt: string;
+}
+
 function computeReviewStatus(
-  reviewNodes: GQLPRDetailResult['repository']['pullRequest']['reviews']['nodes'],
+  reviewNodes: readonly ReviewNodeInput[],
   lastCommitDate: string
 ): ReviewInfo {
   const lastCommitTime = new Date(lastCommitDate).getTime();
@@ -402,24 +434,27 @@ export async function fetchPRDetails(
   const octokit = new Octokit({ auth: token });
 
   try {
-    const result = await octokit.graphql<GQLPRDetailResult>(PR_DETAIL_QUERY, {
-      owner,
-      repo,
-      number: pullNumber,
-    });
+    const result = await octokit.graphql<PRDetailResult>(
+      PR_DETAIL_QUERY,
+      { owner, repo, number: pullNumber }
+    );
 
-    const pr = result.repository.pullRequest;
-    const commitNode = pr.commits.nodes[0];
+    const pr = result.repository?.pullRequest;
+    if (!pr) throw new Error('PR not found');
+
+    const commitNode = (pr.commits.nodes ?? [])[0];
     const lastCommitDate = commitNode?.commit.committedDate ?? '';
     const contextNodes =
       commitNode?.commit.statusCheckRollup?.contexts.nodes ?? [];
 
     // Extract check runs (filter out StatusContext nodes)
     const checks: CheckRun[] = contextNodes
-      .filter((n) => n.__typename === 'CheckRun' && n.name)
+      .filter((n): n is typeof n & { __typename: 'CheckRun'; name: string } =>
+        n != null && n.__typename === 'CheckRun' && n.name != null
+      )
       .map((n) => ({
         id: n.databaseId ?? 0,
-        name: n.name!,
+        name: n.name,
         status: (n.status?.toLowerCase() ?? 'queued') as CheckRun['status'],
         conclusion: n.conclusion?.toLowerCase() ?? null,
         detailsUrl: n.detailsUrl ?? null,
@@ -433,7 +468,15 @@ export async function fetchPRDetails(
       fetchedAt: Date.now(),
     };
 
-    const review = computeReviewStatus(pr.reviews.nodes, lastCommitDate);
+    const reviewNodes: ReviewNodeInput[] = ((pr.reviews?.nodes) ?? [])
+      .filter((n): n is NonNullable<typeof n> => n != null)
+      .filter((n) => n.submittedAt != null)
+      .map((n) => ({
+        author: n.author ? { login: n.author.login } : null,
+        state: n.state,
+        submittedAt: n.submittedAt!,
+      }));
+    const review = computeReviewStatus(reviewNodes, lastCommitDate);
 
     return { ci, review };
   } catch {
