@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 import { Octokit } from '@octokit/rest';
 import type { ResultOf } from 'gql.tada';
-import { graphql } from './graphql.js';
+import { graphql, printQuery } from './graphql.js';
 import type {
   CheckRun,
   CIInfo,
@@ -107,11 +107,11 @@ function describeApiError(error: unknown): string {
   return String(error);
 }
 
-// ─── GraphQL queries ────────────────────────────────────────────
-// Typed via gql.tada for compile-time type inference + editor hints.
-// Raw strings passed to octokit.graphql() since it doesn't accept DocumentNode.
+// ─── GraphQL queries (typed via gql.tada) ──────────────────────
+// Single source of truth: gql.tada provides type inference,
+// printQuery() converts to string for octokit.graphql().
 
-const _SEARCH_USER_PRS_TYPED = graphql(`
+const SEARCH_USER_PRS = graphql(`
   query SearchUserPRs($searchQuery: String!) {
     search(query: $searchQuery, type: ISSUE, first: 100) {
       issueCount
@@ -138,37 +138,8 @@ const _SEARCH_USER_PRS_TYPED = graphql(`
     }
   }
 `);
-type SearchUserPRsResult = ResultOf<typeof _SEARCH_USER_PRS_TYPED>;
 
-const SEARCH_USER_PRS = `
-  query SearchUserPRs($searchQuery: String!) {
-    search(query: $searchQuery, type: ISSUE, first: 100) {
-      issueCount
-      nodes {
-        __typename
-        ... on PullRequest {
-          number
-          title
-          state
-          isDraft
-          headRefName
-          updatedAt
-          url
-          repository {
-            owner { login }
-            name
-          }
-          headRepository {
-            owner { login }
-            name
-          }
-        }
-      }
-    }
-  }
-`;
-
-const _PR_DETAIL_TYPED = graphql(`
+const PR_DETAIL_QUERY = graphql(`
   query PRDetail($owner: String!, $repo: String!, $number: Int!) {
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $number) {
@@ -206,46 +177,6 @@ const _PR_DETAIL_TYPED = graphql(`
     }
   }
 `);
-type PRDetailResult = ResultOf<typeof _PR_DETAIL_TYPED>;
-
-const PR_DETAIL_QUERY = `
-  query PRDetail($owner: String!, $repo: String!, $number: Int!) {
-    repository(owner: $owner, name: $repo) {
-      pullRequest(number: $number) {
-        commits(last: 1) {
-          nodes {
-            commit {
-              committedDate
-              statusCheckRollup {
-                contexts(first: 100) {
-                  nodes {
-                    __typename
-                    ... on CheckRun {
-                      databaseId
-                      name
-                      status
-                      conclusion
-                      detailsUrl
-                      startedAt
-                      completedAt
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        reviews(last: 100) {
-          nodes {
-            author { login }
-            state
-            submittedAt
-          }
-        }
-      }
-    }
-  }
-`;
 
 // ─── fetchUserPRs (GraphQL) ─────────────────────────────────────
 
@@ -281,8 +212,8 @@ export async function fetchUserPRs(
     onProgress?.(progress);
 
     // Single GraphQL query gets all PRs with headRef — no per-PR REST calls
-    const result = await octokit.graphql<SearchUserPRsResult>(
-      SEARCH_USER_PRS,
+    const result = await octokit.graphql<ResultOf<typeof SEARCH_USER_PRS>>(
+      printQuery(SEARCH_USER_PRS),
       { searchQuery: `is:pr is:open author:${username}` }
     );
 
@@ -434,8 +365,8 @@ export async function fetchPRDetails(
   const octokit = new Octokit({ auth: token });
 
   try {
-    const result = await octokit.graphql<PRDetailResult>(
-      PR_DETAIL_QUERY,
+    const result = await octokit.graphql<ResultOf<typeof PR_DETAIL_QUERY>>(
+      printQuery(PR_DETAIL_QUERY),
       { owner, repo, number: pullNumber }
     );
 

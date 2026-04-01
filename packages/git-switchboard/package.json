@@ -45,6 +45,7 @@
     "cli-forge": "^1.2.0",
     "clipboardy": "^5.3.1",
     "gql.tada": "^1.9.2",
+    "graphql": "^16.13.2",
     "react": "^19.0.0",
     "tslib": "^2.5.0"
   },
