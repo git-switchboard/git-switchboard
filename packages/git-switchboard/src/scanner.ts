@@ -38,13 +38,22 @@ export interface LocalRepo {
   isClean: boolean;
 }
 
-export function scanForRepos(roots: string[], maxDepth: number): LocalRepo[] {
+export interface ScanProgress {
+  currentDir: string;
+  reposFound: number;
+}
+
+export function scanForRepos(
+  roots: string[],
+  maxDepth: number,
+  onProgress?: (progress: ScanProgress) => void
+): LocalRepo[] {
   const repos: LocalRepo[] = [];
   const visited = new Set<string>();
 
   for (const root of roots) {
     const absRoot = resolve(root);
-    scanDir(absRoot, 0, maxDepth, repos, visited);
+    scanDir(absRoot, 0, maxDepth, repos, visited, onProgress);
   }
 
   return repos;
@@ -55,7 +64,8 @@ function scanDir(
   depth: number,
   maxDepth: number,
   repos: LocalRepo[],
-  visited: Set<string>
+  visited: Set<string>,
+  onProgress?: (progress: ScanProgress) => void
 ): void {
   if (depth > maxDepth) return;
 
@@ -63,11 +73,14 @@ function scanDir(
   if (visited.has(realDir)) return;
   visited.add(realDir);
 
+  onProgress?.({ currentDir: dir, reposFound: repos.length });
+
   const gitPath = join(dir, ".git");
   if (existsSync(gitPath)) {
     // Found a git repo or worktree
     const isWorktree = statSync(gitPath).isFile();
     repos.push(buildLocalRepo(dir, isWorktree));
+    onProgress?.({ currentDir: dir, reposFound: repos.length });
 
     // Don't recurse into the repo itself (branches/worktrees are separate)
     // But DO continue scanning siblings
@@ -91,7 +104,7 @@ function scanDir(
     const fullPath = join(dir, entry);
     try {
       if (statSync(fullPath).isDirectory()) {
-        scanDir(fullPath, depth + 1, maxDepth, repos, visited);
+        scanDir(fullPath, depth + 1, maxDepth, repos, visited, onProgress);
       }
     } catch {
       // Permission denied, broken symlink, etc.

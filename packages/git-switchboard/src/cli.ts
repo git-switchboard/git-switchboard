@@ -73,6 +73,7 @@ const gitSwitchboard = cli("git-switchboard", {
           const { PrApp } = await import("./pr-app.js");
           const { ClonePrompt } = await import("./clone-prompt.js");
           const { EditorPrompt } = await import("./editor-prompt.js");
+          const { Loading } = await import("./loading.js");
 
           // 1. Resolve token
           const token = resolveGitHubToken(args["github-token"]);
@@ -83,22 +84,73 @@ const gitSwitchboard = cli("git-switchboard", {
             process.exit(1);
           }
 
-          // 2. Fetch PRs and scan repos in parallel
-          console.log("Fetching PRs and scanning for local repos...");
-          const [prs, localRepos] = await Promise.all([
-            fetchUserPRs(token),
-            Promise.resolve(
-              scanForRepos(args["search-root"], args["search-depth"])
-            ),
-          ]);
+          // 2. Show loading screen while fetching PRs and scanning repos
+          const renderer = await createCliRenderer({ exitOnCtrlC: true });
+          const root = createRoot(renderer);
+
+          let loadingState = {
+            prStatus: "fetching...",
+            scanStatus: "scanning...",
+            reposFound: 0,
+            scanDir: "",
+          };
+
+          const renderLoading = () => {
+            root.render(
+              createElement(Loading, { ...loadingState }) as React.ReactNode
+            );
+          };
+          renderLoading();
+
+          // Run PR fetch and repo scan in parallel
+          const prPromise = fetchUserPRs(token).then((result) => {
+            loadingState = {
+              ...loadingState,
+              prStatus: result.length > 0 ? `done (${result.length} PRs)` : "done (none found)",
+            };
+            renderLoading();
+            return result;
+          });
+
+          const scanPromise = new Promise<import("./scanner.js").LocalRepo[]>(
+            (scanResolve) => {
+              // Defer to let the loading screen render first
+              setTimeout(() => {
+                const repos = scanForRepos(
+                  args["search-root"],
+                  args["search-depth"],
+                  (progress) => {
+                    loadingState = {
+                      ...loadingState,
+                      scanStatus: "scanning...",
+                      reposFound: progress.reposFound,
+                      scanDir: progress.currentDir,
+                    };
+                    // Don't re-render on every callback — it's synchronous
+                    // The render will catch up after scan completes
+                  }
+                );
+                loadingState = {
+                  ...loadingState,
+                  scanStatus: "done",
+                  reposFound: repos.length,
+                  scanDir: "",
+                };
+                renderLoading();
+                scanResolve(repos);
+              }, 0);
+            }
+          );
+
+          const [prs, localRepos] = await Promise.all([prPromise, scanPromise]);
 
           if (prs.length === 0) {
+            renderer.destroy();
             console.log("No open PRs found.");
             process.exit(0);
           }
 
-          // 3. Launch PR dashboard TUI
-          const renderer = await createCliRenderer({ exitOnCtrlC: true });
+          // 3. Transition to PR dashboard TUI
           const { promise, resolve: done } = Promise.withResolvers<void>();
 
           let selectedPR:
@@ -113,7 +165,7 @@ const gitSwitchboard = cli("git-switchboard", {
           let currentMatches: import("./scanner.js").LocalRepo[] = [];
 
           const renderPRList = () => {
-            createRoot(renderer).render(
+            root.render(
               createElement(PrApp, {
                 prs,
                 localRepos,
@@ -152,7 +204,7 @@ const gitSwitchboard = cli("git-switchboard", {
           };
 
           const renderClonePrompt = () => {
-            createRoot(renderer).render(
+            root.render(
               createElement(ClonePrompt, {
                 repoId: selectedPR!.repoId,
                 matches: currentMatches,
