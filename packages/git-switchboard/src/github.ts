@@ -25,6 +25,37 @@ function ghCliToken(): string | undefined {
   }
 }
 
+export interface RateLimitInfo {
+  remaining: number;
+  limit: number;
+  used: number;
+  resetAt: Date;
+}
+
+/** Shared mutable rate limit state, updated on every API response */
+export const rateLimit: { current: RateLimitInfo | null } = { current: null };
+
+/** Create an Octokit instance that tracks rate limit from response headers */
+export function createOctokit(token: string): Octokit {
+  const octokit = createOctokit(token);
+  octokit.hook.after('request', (response) => {
+    const h = response.headers as Record<string, string | undefined>;
+    const remaining = h['x-ratelimit-remaining'];
+    const limit = h['x-ratelimit-limit'];
+    const used = h['x-ratelimit-used'];
+    const reset = h['x-ratelimit-reset'];
+    if (remaining && limit) {
+      rateLimit.current = {
+        remaining: Number(remaining),
+        limit: Number(limit),
+        used: Number(used ?? 0),
+        resetAt: new Date(Number(reset ?? 0) * 1000),
+      };
+    }
+  });
+  return octokit;
+}
+
 export function resolveGitHubToken(flagValue?: string): string | undefined {
   return (
     flagValue ||
@@ -39,7 +70,7 @@ export async function fetchOpenPRs(
   repo: string,
   token: string
 ): Promise<Map<string, PullRequestInfo>> {
-  const octokit = new Octokit({ auth: token });
+  const octokit = createOctokit(token);
   const prMap = new Map<string, PullRequestInfo>();
 
   try {
@@ -227,7 +258,7 @@ export async function fetchUserPRs(
   token: string,
   onProgress?: (progress: PRFetchProgress) => void
 ): Promise<FetchUserPRsResult> {
-  const octokit = new Octokit({ auth: token });
+  const octokit = createOctokit(token);
   const prs: UserPullRequest[] = [];
   const ciCache = new Map<string, CIInfo>();
   const reviewCache = new Map<string, ReviewInfo>();
@@ -438,7 +469,7 @@ export async function fetchPRDetails(
   repo: string,
   pullNumber: number
 ): Promise<{ ci: CIInfo; review: ReviewInfo }> {
-  const octokit = new Octokit({ auth: token });
+  const octokit = createOctokit(token);
 
   try {
     const result = await execute(octokit, PR_DETAIL_QUERY, {
@@ -507,7 +538,7 @@ export async function fetchChecks(
   const result = await fetchPRDetails(token, owner, repo, 0);
   // Fallback: if called with ref, use REST
   if (ref) {
-    const octokit = new Octokit({ auth: token });
+    const octokit = createOctokit(token);
     try {
       const { data } = await octokit.rest.checks.listForRef({
         owner,
@@ -557,7 +588,7 @@ export async function fetchCheckLogs(
   repo: string,
   jobId: number
 ): Promise<string | null> {
-  const octokit = new Octokit({ auth: token });
+  const octokit = createOctokit(token);
   try {
     const response =
       await octokit.rest.actions.downloadJobLogsForWorkflowRun({

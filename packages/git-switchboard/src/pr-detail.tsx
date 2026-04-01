@@ -1,5 +1,6 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { rateLimit } from './github.js';
 import type { LocalRepo } from './scanner.js';
 import type { CIInfo, CheckRun, ReviewInfo, ReviewerState, UserPullRequest } from './types.js';
 import { CHECKMARK, CROSSMARK, EN_DASH, LEFT_ARROW, RETURN_SYMBOL } from './unicode.js';
@@ -277,7 +278,7 @@ export function PrDetail({
   // Footer text
   const footerText = statusText
     ? ` ${statusText}`
-    : ` [${RETURN_SYMBOL}] Select | [c]opy logs | [r]efresh CI | [w]atch | [${LEFT_ARROW}] Back | [q]uit`;
+    : ` [${RETURN_SYMBOL}] Select | [c]opy logs | [r]efresh CI | [w]atch | [${LEFT_ARROW}] Back | [q]uit${rateLimit.current ? `  API: ${rateLimit.current.remaining}/${rateLimit.current.limit}` : ''}`;
   const footerFg = statusText ? '#9ece6a' : '#565f89';
 
   return (

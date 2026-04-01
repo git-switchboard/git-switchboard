@@ -1,5 +1,6 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { rateLimit } from './github.js';
 import type { LocalRepo } from './scanner.js';
 import type {
   CIInfo,
@@ -297,7 +298,7 @@ export function PrApp({
       {/* Footer */}
       <box style={{ height: 1, width: '100%' }}>
         <text
-          content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [c] Fetch CI | [/] Search | [q]uit`}
+          content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [c] Fetch CI | [/] Search | [q]uit${rateLimit.current ? `  API: ${rateLimit.current.remaining}/${rateLimit.current.limit}` : ''}`}
           fg="#565f89"
         />
       </box>
