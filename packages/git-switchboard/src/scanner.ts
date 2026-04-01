@@ -36,6 +36,8 @@ export interface LocalRepo {
   isWorktree: boolean;
   /** Whether git status is clean */
   isClean: boolean;
+  /** Currently checked out branch name */
+  currentBranch: string | undefined;
 }
 
 export interface ScanProgress {
@@ -116,6 +118,7 @@ function buildLocalRepo(dir: string, isWorktree: boolean): LocalRepo {
   let remoteUrl: string | undefined;
   let repoId: string | undefined;
   let isClean = false;
+  let currentBranch: string | undefined;
 
   try {
     remoteUrl = execSync("git remote get-url origin", {
@@ -142,7 +145,17 @@ function buildLocalRepo(dir: string, isWorktree: boolean): LocalRepo {
     // Not a valid git repo
   }
 
-  return { path: dir, remoteUrl, repoId, isWorktree, isClean };
+  try {
+    currentBranch = execSync("git symbolic-ref --short HEAD", {
+      cwd: dir,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim() || undefined;
+  } catch {
+    // Detached HEAD or not a git repo
+  }
+
+  return { path: dir, remoteUrl, repoId, isWorktree, isClean, currentBranch };
 }
 
 function parseRepoId(remoteUrl: string): string | undefined {

@@ -159,6 +159,7 @@ const gitSwitchboard = cli("git-switchboard", {
           let selectedRepo:
             | import("./scanner.js").LocalRepo
             | undefined;
+          let skipCheckout = false;
           let newWorktreePath: string | undefined;
 
           // Phase tracking
@@ -174,6 +175,18 @@ const gitSwitchboard = cli("git-switchboard", {
                   matches: import("./scanner.js").LocalRepo[]
                 ) => {
                   selectedPR = pr;
+
+                  // Prefer clone already on the right branch
+                  const onBranch = matches.filter(
+                    (r) => r.currentBranch === pr.headRef
+                  );
+                  if (onBranch.length === 1) {
+                    selectedRepo = onBranch[0];
+                    skipCheckout = true;
+                    renderer.destroy();
+                    done();
+                    return;
+                  }
 
                   // Auto-select if exactly one clean clone
                   const cleanMatches = matches.filter((r) => r.isClean);
@@ -207,9 +220,14 @@ const gitSwitchboard = cli("git-switchboard", {
             root.render(
               createElement(ClonePrompt, {
                 repoId: selectedPR!.repoId,
+                branchName: selectedPR!.headRef,
                 matches: currentMatches,
-                onSelect: (repo: import("./scanner.js").LocalRepo) => {
+                onSelect: (
+                  repo: import("./scanner.js").LocalRepo,
+                  alreadyCheckedOut: boolean
+                ) => {
                   selectedRepo = repo;
+                  skipCheckout = alreadyCheckedOut;
                   renderer.destroy();
                   done();
                 },
@@ -258,19 +276,25 @@ const gitSwitchboard = cli("git-switchboard", {
             }
           } else if (selectedRepo) {
             targetDir = selectedRepo.path;
-            // Checkout the PR branch
-            try {
-              execSync(`git fetch origin ${selectedPR.headRef}`, {
-                cwd: targetDir,
-                stdio: "inherit",
-              });
-              execSync(`git checkout ${selectedPR.headRef}`, {
-                cwd: targetDir,
-                stdio: "inherit",
-              });
-            } catch {
-              console.error("Failed to checkout branch");
-              process.exit(1);
+            if (skipCheckout) {
+              console.log(
+                `Branch ${selectedPR.headRef} already checked out at ${targetDir}`
+              );
+            } else {
+              // Checkout the PR branch
+              try {
+                execSync(`git fetch origin ${selectedPR.headRef}`, {
+                  cwd: targetDir,
+                  stdio: "inherit",
+                });
+                execSync(`git checkout ${selectedPR.headRef}`, {
+                  cwd: targetDir,
+                  stdio: "inherit",
+                });
+              } catch {
+                console.error("Failed to checkout branch");
+                process.exit(1);
+              }
             }
           } else {
             console.log("No local clone selected.");

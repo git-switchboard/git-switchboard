@@ -57,8 +57,8 @@ export function App({
     return result;
   }, [branches, authorFilter, currentUser, authorList, searchQuery]);
 
-  // Virtual scrolling: 3 chrome rows (header, column headers, footer) + 2 padding rows
-  const listHeight = Math.max(1, height - 5);
+  // Virtual scrolling: 4 chrome rows (header, spacer, column headers, footer) + 2 padding rows
+  const listHeight = Math.max(1, height - 6);
 
   const moveTo = useCallback(
     (newIndex: number) => {
@@ -156,6 +156,8 @@ export function App({
       <box style={{ height: 1, width: "100%" }}>
         <text content={` git-switchboard  Remote: ${showRemote ? "ON" : "OFF"} | Author: ${authorLabel}${searchQuery ? ` | Search: ${searchQuery}` : ""}${searchMode ? " | (type to search, Enter to confirm, Esc to cancel)" : ""}`} fg="#7aa2f7" />
       </box>
+
+      <box style={{ height: 1 }} />
 
       {/* Column headers */}
       <box style={{ height: 1, width: "100%" }}>

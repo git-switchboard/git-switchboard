@@ -4,14 +4,16 @@ import type { LocalRepo } from "./scanner.js";
 
 interface ClonePromptProps {
   repoId: string;
+  branchName: string;
   matches: LocalRepo[];
-  onSelect: (repo: LocalRepo) => void;
+  onSelect: (repo: LocalRepo, alreadyCheckedOut: boolean) => void;
   onCreateWorktree: (path: string) => void;
   onCancel: () => void;
 }
 
 export function ClonePrompt({
   repoId,
+  branchName,
   matches,
   onSelect,
   onCreateWorktree,
@@ -23,15 +25,23 @@ export function ClonePrompt({
 
   // Items: existing clones + "Create new worktree" option
   const items = [
-    ...matches.map((m) => ({
-      label: `${m.path} ${m.isClean ? "(clean)" : "(dirty)"}${m.isWorktree ? " [worktree]" : ""}`,
-      type: "clone" as const,
-      repo: m,
-    })),
+    ...matches.map((m) => {
+      const onBranch = m.currentBranch === branchName;
+      let status = m.isClean ? "clean" : "dirty";
+      if (onBranch) status += ", on branch";
+      const suffix = m.isWorktree ? " [worktree]" : "";
+      return {
+        label: `${m.path} (${status})${suffix}`,
+        type: "clone" as const,
+        repo: m,
+        onBranch,
+      };
+    }),
     {
       label: "+ Create new worktree",
       type: "new-worktree" as const,
-      repo: undefined,
+      repo: undefined as LocalRepo | undefined,
+      onBranch: false,
     },
   ];
 
@@ -65,12 +75,13 @@ export function ClonePrompt({
       case "return": {
         const item = items[selectedIndex];
         if (item.type === "clone" && item.repo) {
-          onSelect(item.repo);
+          onSelect(item.repo, item.onBranch);
         } else if (item.type === "new-worktree") {
           setInputMode(true);
         }
         break;
       }
+      case "backspace":
       case "escape":
       case "q":
         onCancel();
@@ -79,31 +90,38 @@ export function ClonePrompt({
   });
 
   return (
-    <box flexDirection="column" style={{ width: "100%", height: "100%" }}>
+    <box flexDirection="column" style={{ width: "100%", height: "100%", padding: 1 }}>
       <box style={{ height: 1, width: "100%" }}>
-        <text fg="#7aa2f7"> Select clone for {repoId} </text>
+        <text content={` Select clone for ${repoId} (branch: ${branchName})`} fg="#7aa2f7" />
       </box>
+
+      <box style={{ height: 1 }} />
 
       {inputMode ? (
         <box
           style={{ height: 3, width: "100%", border: true }}
           title="Worktree path (relative to cwd or absolute)"
         >
-          <text fg="#c0caf5">{worktreePath || " "}</text>
+          <text content={worktreePath || " "} fg="#c0caf5" />
         </box>
       ) : (
         <box flexDirection="column" style={{ flexGrow: 1, width: "100%" }}>
           {items.map((item, i) => {
             const isSelected = i === selectedIndex;
             const bg = isSelected ? "#292e42" : undefined;
-            const fg = item.type === "new-worktree" ? "#7aa2f7" : "#c0caf5";
+            const fg =
+              item.type === "new-worktree"
+                ? "#7aa2f7"
+                : item.onBranch
+                  ? "#73daca"
+                  : "#c0caf5";
 
             return (
               <box
                 key={item.label}
                 style={{ height: 1, width: "100%", backgroundColor: bg }}
               >
-                <text content={` ${item.label}`} fg={fg} />
+                <text content={` ${item.onBranch ? "* " : "  "}${item.label}`} fg={fg} />
               </box>
             );
           })}
@@ -113,7 +131,7 @@ export function ClonePrompt({
       <box style={{ height: 1, width: "100%" }}>
         <text content={inputMode
             ? " Type path, Enter to confirm, Esc to cancel"
-            : " Up/Down/jk Navigate | Enter Select | q Cancel"} fg="#565f89" />
+            : " Up/Down/jk Navigate | Enter Select | Backspace/Esc Back"} fg="#565f89" />
       </box>
     </box>
   );
