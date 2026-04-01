@@ -31,7 +31,8 @@ const gitSwitchboard = cli("git-switchboard", {
   handler: async (args) => {
     const { createCliRenderer } = await import("@opentui/core");
     const { createRoot } = await import("@opentui/react");
-    const { createElement } = await import("react");
+    const React = await import("react");
+    const { createElement } = React;
     const { App } = await import("./app.js");
     const {
       getBranches,
@@ -46,7 +47,9 @@ const gitSwitchboard = cli("git-switchboard", {
     const authorList = args.author ?? [];
 
     // Fetch initial branch data
-    let branches = getBranches(args.remote);
+    let branches: import("./types.js").BranchWithPR[] = getBranches(args.remote).map(
+      (b) => ({ ...b, pr: undefined })
+    );
 
     // Enrich with PR data if possible
     if (!args["no-pr"]) {
@@ -72,33 +75,33 @@ const gitSwitchboard = cli("git-switchboard", {
     let selectedBranch: string | undefined;
     const { promise, resolve } = Promise.withResolvers<void>();
 
-    const fetchBranchesWithPRs = (includeRemote: boolean) => {
+    const fetchBranchesWithPRs = (includeRemote: boolean): import("./types.js").BranchWithPR[] => {
       return getBranches(includeRemote).map((b) => {
         const existing = branches.find((eb) => eb.name === b.name);
         return { ...b, pr: existing?.pr };
       });
     };
 
-    createRoot(renderer).render(
-      createElement(App, {
-        branches,
-        currentUser,
-        authorList,
-        initialShowRemote: args.remote,
-        fetchBranches: fetchBranchesWithPRs,
-        onSelect: (branch) => {
-          selectedBranch = branch.isRemote
-            ? branch.name.replace(/^origin\//, "")
-            : branch.name;
-          renderer.close();
-          resolve();
-        },
-        onExit: () => {
-          renderer.close();
-          resolve();
-        },
-      })
-    );
+    const element = createElement(App, {
+      branches,
+      currentUser,
+      authorList,
+      initialShowRemote: args.remote,
+      fetchBranches: fetchBranchesWithPRs,
+      onSelect: (branch: import("./types.js").BranchWithPR) => {
+        selectedBranch = branch.isRemote
+          ? branch.name.replace(/^origin\//, "")
+          : branch.name;
+        renderer.destroy();
+        resolve();
+      },
+      onExit: () => {
+        renderer.destroy();
+        resolve();
+      },
+    });
+
+    createRoot(renderer).render(element as React.ReactNode);
 
     // Wait for the user to select a branch or exit
     await promise;

@@ -70,8 +70,8 @@ export function App({
         setSearchMode(false);
       } else if (key.name === "backspace") {
         setSearchQuery((q) => q.slice(0, -1));
-      } else if (key.char && key.char.length === 1) {
-        setSearchQuery((q) => q + key.char);
+      } else if (key.raw && key.raw.length === 1 && key.raw >= ' ') {
+        setSearchQuery((q) => q + key.raw);
         setSelectedIndex(0);
       }
       return;
