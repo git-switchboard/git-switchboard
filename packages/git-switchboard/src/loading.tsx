@@ -2,6 +2,7 @@ import { useTerminalDimensions } from "@opentui/react";
 import type { PRFetchProgress } from "./github.js";
 import type { ScanProgress } from "./scanner.js";
 import { GAUGE_EMPTY, GAUGE_FILLED } from "./unicode.js";
+import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
 
 interface LoadingProps {
   prProgress: PRFetchProgress;
@@ -44,6 +45,7 @@ function scanStatusLine(p: ScanProgress | null, done: boolean, barWidth: number)
 }
 
 export function Loading({ prProgress, scanProgress, scanDone }: LoadingProps) {
+  useExitOnCtrlC();
   const { width } = useTerminalDimensions();
   const barWidth = Math.max(10, Math.min(40, width - 6));
 

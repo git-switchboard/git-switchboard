@@ -4,6 +4,7 @@ import { rateLimit } from './github.js';
 import type { LocalRepo } from './scanner.js';
 import type { CIInfo, CheckRun, ReviewInfo, ReviewerState, UserPullRequest } from './types.js';
 import { CHECKMARK, CROSSMARK, EN_DASH, LEFT_ARROW, RETURN_SYMBOL } from './unicode.js';
+import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
 
 function relativeTime(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -112,6 +113,7 @@ export function PrDetail({
   onCopyLogs,
   onExit,
 }: PrDetailProps) {
+  useExitOnCtrlC();
   const { width, height } = useTerminalDimensions();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);

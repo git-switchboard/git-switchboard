@@ -2,6 +2,7 @@ import { useKeyboard } from "@opentui/react";
 import { useState } from "react";
 import type { EditorInfo } from "./editor.js";
 import { DOWN_ARROW, RETURN_SYMBOL, UP_ARROW } from "./unicode.js";
+import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
 
 interface EditorPromptProps {
   editors: EditorInfo[];
@@ -14,6 +15,7 @@ export function EditorPrompt({
   onSelect,
   onCancel,
 }: EditorPromptProps) {
+  useExitOnCtrlC();
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const clampIndex = (idx: number) =>

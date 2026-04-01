@@ -2,6 +2,7 @@ import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useMemo, useState } from 'react';
 import type { AuthorFilterMode, BranchWithPR } from './types.js';
 import { DOWN_ARROW, ELLIPSIS, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
+import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
 
 /** Truncate string to fit width, adding ellipsis if needed */
 function fit(str: string, width: number): string {
@@ -31,6 +32,7 @@ export function App({
   onExit,
   fetchBranches,
 }: AppProps) {
+  useExitOnCtrlC();
   const { width, height } = useTerminalDimensions();
   const [branches, setBranches] = useState(initialBranches);
   const [showRemote, setShowRemote] = useState(initialShowRemote);

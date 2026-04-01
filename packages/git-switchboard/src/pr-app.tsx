@@ -15,6 +15,7 @@ import {
   RETURN_SYMBOL,
   UP_ARROW,
 } from './unicode.js';
+import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
 
 function relativeTime(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -92,6 +93,7 @@ export function PrApp({
   onFetchCI,
   onExit,
 }: PrAppProps) {
+  useExitOnCtrlC();
   const { width, height } = useTerminalDimensions();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);

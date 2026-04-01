@@ -2,6 +2,7 @@ import { useKeyboard } from '@opentui/react';
 import { useState } from 'react';
 import type { LocalRepo } from './scanner.js';
 import { DOWN_ARROW, ESC_SYMBOL, LEFT_ARROW, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
+import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
 
 interface ClonePromptProps {
   repoId: string;
@@ -20,6 +21,7 @@ export function ClonePrompt({
   onCreateWorktree,
   onCancel,
 }: ClonePromptProps) {
+  useExitOnCtrlC();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [inputMode, setInputMode] = useState(false);
   const [worktreePath, setWorktreePath] = useState('');
