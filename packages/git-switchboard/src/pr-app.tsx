@@ -1,5 +1,5 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LocalRepo } from './scanner.js';
 import type { CIInfo, ReviewInfo, ReviewStatus, UserPullRequest } from './types.js';
 import { CHECKMARK, CROSSMARK, DOWN_ARROW, EN_DASH, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
@@ -20,7 +20,12 @@ function relativeTime(iso: string): string {
   return `${years}y ago`;
 }
 
-function ciSummary(ci: CIInfo | undefined): { text: string; fg: string } {
+const SPINNER_FRAMES = ['|', '/', '-', '\\'];
+
+function ciSummary(
+  ci: CIInfo | undefined,
+  spinnerChar: string
+): { text: string; fg: string } {
   if (!ci || ci.checks.length === 0) return { text: '?', fg: '#565f89' };
   const pass = ci.checks.filter(
     (c) =>
@@ -37,7 +42,7 @@ function ciSummary(ci: CIInfo | undefined): { text: string; fg: string } {
   const parts: string[] = [];
   if (pass > 0) parts.push(`${pass}${CHECKMARK}`);
   if (fail > 0) parts.push(`${fail}${CROSSMARK}`);
-  if (pending > 0) parts.push(`${pending}~`);
+  if (pending > 0) parts.push(`${pending}${spinnerChar}`);
 
   const fg =
     fail > 0 ? '#f7768e' : pending > 0 ? '#e0af68' : '#9ece6a';
@@ -85,6 +90,24 @@ export function PrApp({
   const [scrollOffset, setScrollOffset] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState(false);
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
+
+  // Animate spinner when any PR has pending checks
+  const hasPending = useMemo(
+    () =>
+      [...ciCache.values()].some((ci) =>
+        ci.checks.some((c) => c.status !== 'completed')
+      ),
+    [ciCache]
+  );
+
+  useEffect(() => {
+    if (!hasPending) return;
+    const interval = setInterval(() => {
+      setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [hasPending]);
 
   const filteredPRs = useMemo(() => {
     const result = searchQuery
@@ -256,7 +279,7 @@ export function PrApp({
 
             const prKey = `${pr.repoId}#${pr.number}`;
             const ci = ciCache.get(prKey);
-            const ciStatus = ciSummary(ci);
+            const ciStatus = ciSummary(ci, SPINNER_FRAMES[spinnerFrame]);
             const review = reviewCache.get(prKey);
             const rvw = reviewLabel(review?.status ?? 'needs-review');
 
