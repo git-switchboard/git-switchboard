@@ -22,7 +22,7 @@ function relativeTime(iso: string): string {
 function ciIcon(status: CIStatus): { char: string; fg: string } {
   switch (status) {
     case 'passing':
-      return { char: '*', fg: '#9ece6a' };
+      return { char: '\u2713', fg: '#9ece6a' };
     case 'failing':
       return { char: 'x', fg: '#f7768e' };
     case 'pending':

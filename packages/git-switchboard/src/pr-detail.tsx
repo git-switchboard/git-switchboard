@@ -55,7 +55,7 @@ function checkStyle(
   }
   switch (check.conclusion) {
     case 'success':
-      return { icon: 'v', fg: '#9ece6a', spinner: false }; // green checkmark
+      return { icon: '\u2713', fg: '#9ece6a', spinner: false }; // green checkmark ✓
     case 'failure':
       return { icon: 'x', fg: '#f7768e', spinner: false }; // red x
     case 'skipped':
