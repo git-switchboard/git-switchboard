@@ -2,7 +2,7 @@ import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useMemo, useState } from 'react';
 import type { LocalRepo } from './scanner.js';
 import type { CIInfo, ReviewInfo, ReviewStatus, UserPullRequest } from './types.js';
-import { CHECKMARK, DOWN_ARROW, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
+import { CHECKMARK, CROSSMARK, DOWN_ARROW, EN_DASH, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
 
 function relativeTime(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -36,7 +36,7 @@ function ciSummary(ci: CIInfo | undefined): { text: string; fg: string } {
 
   const parts: string[] = [];
   if (pass > 0) parts.push(`${pass}${CHECKMARK}`);
-  if (fail > 0) parts.push(`${fail}x`);
+  if (fail > 0) parts.push(`${fail}${CROSSMARK}`);
   if (pending > 0) parts.push(`${pending}~`);
 
   const fg =
@@ -49,13 +49,13 @@ function reviewLabel(status: ReviewStatus): { text: string; fg: string } {
     case 'approved':
       return { text: `${CHECKMARK} Approved`, fg: '#9ece6a' };
     case 'changes-requested':
-      return { text: 'x Changes req', fg: '#f7768e' };
+      return { text: CROSSMARK + ' Changes req', fg: '#f7768e' };
     case 're-review-needed':
       return { text: '~ Re-review', fg: '#e0af68' };
     case 'dismissed':
-      return { text: '- Dismissed', fg: '#565f89' };
+      return { text: EN_DASH + ' Dismissed', fg: '#565f89' };
     case 'commented':
-      return { text: '- Commented', fg: '#a9b1d6' };
+      return { text: EN_DASH + ' Commented', fg: '#a9b1d6' };
     default:
       return { text: '? Needs review', fg: '#565f89' };
   }
@@ -242,7 +242,7 @@ export function PrApp({
             const cleanMatch = matches.find((r) => r.isClean);
 
             const localStatus =
-              matches.length === 0 ? '-' : cleanMatch ? '* clean' : 'x dirty';
+              matches.length === 0 ? '-' : cleanMatch ? CHECKMARK + ' clean' : CROSSMARK + ' dirty';
             const localFg =
               matches.length === 0
                 ? '#565f89'

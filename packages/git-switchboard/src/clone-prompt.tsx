@@ -1,7 +1,7 @@
 import { useKeyboard } from '@opentui/react';
 import { useState } from 'react';
 import type { LocalRepo } from './scanner.js';
-import { DOWN_ARROW, LEFT_ARROW, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
+import { DOWN_ARROW, ESC_SYMBOL, LEFT_ARROW, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
 
 interface ClonePromptProps {
   repoId: string;
@@ -142,7 +142,7 @@ export function ClonePrompt({
         <text
           content={
             inputMode
-              ? ` Type path, [${RETURN_SYMBOL}] confirm, [Esc] cancel`
+              ? ` Type path, [${RETURN_SYMBOL}] confirm, [${ESC_SYMBOL}] cancel`
               : ` [${UP_ARROW}\\${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [${LEFT_ARROW}] Back`
           }
           fg="#565f89"

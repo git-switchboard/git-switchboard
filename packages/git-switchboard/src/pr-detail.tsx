@@ -2,7 +2,7 @@ import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LocalRepo } from './scanner.js';
 import type { CIInfo, CheckRun, ReviewInfo, ReviewerState, UserPullRequest } from './types.js';
-import { CHECKMARK, LEFT_ARROW, RETURN_SYMBOL } from './unicode.js';
+import { CHECKMARK, CROSSMARK, EN_DASH, LEFT_ARROW, RETURN_SYMBOL } from './unicode.js';
 
 function relativeTime(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -58,10 +58,10 @@ function checkStyle(
     case 'success':
       return { icon: CHECKMARK, fg: '#9ece6a', spinner: false }; // green checkmark ✓
     case 'failure':
-      return { icon: 'x', fg: '#f7768e', spinner: false }; // red x
+      return { icon: CROSSMARK, fg: '#f7768e', spinner: false }; // red x
     case 'skipped':
     case 'neutral':
-      return { icon: '-', fg: '#565f89', spinner: false }; // grey/muted
+      return { icon: EN_DASH, fg: '#565f89', spinner: false }; // grey/muted
     default:
       return { icon: '?', fg: '#565f89', spinner: false };
   }
@@ -399,9 +399,9 @@ export function PrDetail({
             r.state === 'APPROVED'
               ? { char: CHECKMARK, fg: '#9ece6a' }
               : r.state === 'CHANGES_REQUESTED'
-                ? { char: 'x', fg: '#f7768e' }
+                ? { char: CROSSMARK, fg: '#f7768e' }
                 : r.state === 'DISMISSED'
-                  ? { char: '-', fg: '#565f89' }
+                  ? { char: EN_DASH, fg: '#565f89' }
                   : { char: '~', fg: '#e0af68' };
           const stateLabel = r.state.toLowerCase().replace(/_/g, ' ');
           return (
