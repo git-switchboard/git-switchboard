@@ -130,6 +130,25 @@ export function App({
   const dateCol = 14;
   const branchCol = Math.max(20, width - prCol - authorCol - dateCol - 8);
 
+  // Virtual scrolling: 3 rows reserved for header, column headers, footer
+  const listHeight = Math.max(1, height - 3);
+  const scrollOffset = useMemo(() => {
+    if (selectedIndex < 0) return 0;
+    if (selectedIndex >= filteredBranches.length) return 0;
+    // Keep selected item in view
+    const maxOffset = Math.max(0, filteredBranches.length - listHeight);
+    let offset = 0;
+    if (selectedIndex >= listHeight) {
+      offset = selectedIndex - listHeight + 1;
+    }
+    return Math.min(offset, maxOffset);
+  }, [selectedIndex, filteredBranches.length, listHeight]);
+
+  const visibleBranches = filteredBranches.slice(
+    scrollOffset,
+    scrollOffset + listHeight
+  );
+
   return (
     <box flexDirection="column" style={{ width: "100%", height: "100%" }}>
       {/* Header */}
@@ -139,25 +158,20 @@ export function App({
 
       {/* Column headers */}
       <box style={{ height: 1, width: "100%" }}>
-        <text fg="#bb9af7">
-          {" "}
-          {"Branch".padEnd(branchCol)}
-          {"Author".padEnd(authorCol)}
-          {"Updated".padEnd(dateCol)}
-          {"PR".padEnd(prCol)}
-        </text>
+        <text content={` ${"Branch".padEnd(branchCol)}${"Author".padEnd(authorCol)}${"Updated".padEnd(dateCol)}${"PR".padEnd(prCol)}`} fg="#bb9af7" />
       </box>
 
       {/* Branch list */}
-      <scrollbox
-        focused
+      <box
+        flexDirection="column"
         style={{
           flexGrow: 1,
           width: "100%",
         }}
       >
-        {filteredBranches.map((branch, i) => {
-          const isSelected = i === selectedIndex;
+        {visibleBranches.map((branch, i) => {
+          const actualIndex = scrollOffset + i;
+          const isSelected = actualIndex === selectedIndex;
           const bg = isSelected ? "#292e42" : undefined;
           const marker = branch.isCurrent ? "* " : "  ";
           const nameFg = branch.isCurrent
@@ -193,7 +207,7 @@ export function App({
             </box>
           );
         })}
-      </scrollbox>
+      </box>
 
       {/* Footer */}
       <box style={{ height: 1, width: "100%" }}>

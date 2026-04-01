@@ -44,7 +44,7 @@ export function EditorPrompt({
         <text fg="#7aa2f7"> Select editor </text>
       </box>
 
-      <scrollbox focused style={{ flexGrow: 1, width: "100%" }}>
+      <box flexDirection="column" style={{ flexGrow: 1, width: "100%" }}>
         {editors.map((editor, i) => {
           const isSelected = i === selectedIndex;
           return (
@@ -56,14 +56,11 @@ export function EditorPrompt({
                 backgroundColor: isSelected ? "#292e42" : undefined,
               }}
             >
-              <text>
-                <span fg="#c0caf5"> {editor.name}</span>
-                <span fg="#565f89"> ({editor.command})</span>
-              </text>
+              <text content={` ${editor.name} (${editor.command})`} fg={isSelected ? "#c0caf5" : "#a9b1d6"} />
             </box>
           );
         })}
-      </scrollbox>
+      </box>
 
       <box style={{ height: 1, width: "100%" }}>
         <text content={" Up/Down/jk Navigate | Enter Select | q Cancel"} fg="#565f89" />

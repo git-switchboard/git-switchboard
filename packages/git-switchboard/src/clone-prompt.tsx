@@ -92,7 +92,7 @@ export function ClonePrompt({
           <text fg="#c0caf5">{worktreePath || " "}</text>
         </box>
       ) : (
-        <scrollbox focused style={{ flexGrow: 1, width: "100%" }}>
+        <box flexDirection="column" style={{ flexGrow: 1, width: "100%" }}>
           {items.map((item, i) => {
             const isSelected = i === selectedIndex;
             const bg = isSelected ? "#292e42" : undefined;
@@ -103,11 +103,11 @@ export function ClonePrompt({
                 key={item.label}
                 style={{ height: 1, width: "100%", backgroundColor: bg }}
               >
-                <text fg={fg}> {item.label}</text>
+                <text content={` ${item.label}`} fg={fg} />
               </box>
             );
           })}
-        </scrollbox>
+        </box>
       )}
 
       <box style={{ height: 1, width: "100%" }}>

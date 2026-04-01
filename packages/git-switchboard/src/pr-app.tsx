@@ -11,7 +11,7 @@ interface PrAppProps {
 }
 
 export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
-  const { width } = useTerminalDimensions();
+  const { width, height } = useTerminalDimensions();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState(false);
@@ -101,67 +101,70 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
 
       {/* Column headers */}
       <box style={{ height: 1, width: "100%" }}>
-        <text fg="#bb9af7">
-          {" "}
-          {"PR".padEnd(prCol)}
-          {"Repo".padEnd(repoCol)}
-          {"Branch".padEnd(branchCol)}
-          {"Status".padEnd(statusCol)}
-          {"Local".padEnd(localCol)}
-        </text>
+        <text content={` ${"PR".padEnd(prCol)}${"Repo".padEnd(repoCol)}${"Branch".padEnd(branchCol)}${"Status".padEnd(statusCol)}${"Local".padEnd(localCol)}`} fg="#bb9af7" />
       </box>
 
       {/* PR list */}
-      <scrollbox focused style={{ flexGrow: 1, width: "100%" }}>
-        {filteredPRs.map((pr, i) => {
-          const isSelected = i === selectedIndex;
-          const bg = isSelected ? "#292e42" : undefined;
-          const matches =
-            repoMatchMap.get(`${pr.repoId}#${pr.number}`) ?? [];
-          const cleanMatch = matches.find((r) => r.isClean);
+      <box flexDirection="column" style={{ flexGrow: 1, width: "100%" }}>
+        {(() => {
+          const listHeight = Math.max(1, height - 3);
+          let scrollOffset = 0;
+          if (selectedIndex >= listHeight) {
+            scrollOffset = selectedIndex - listHeight + 1;
+          }
+          scrollOffset = Math.min(scrollOffset, Math.max(0, filteredPRs.length - listHeight));
 
-          const localStatus =
-            matches.length === 0
-              ? "-"
-              : cleanMatch
-                ? "* clean"
-                : "x dirty";
-          const localFg =
-            matches.length === 0
-              ? "#565f89"
-              : cleanMatch
-                ? "#9ece6a"
-                : "#f7768e";
+          return filteredPRs.slice(scrollOffset, scrollOffset + listHeight).map((pr, i) => {
+            const actualIndex = scrollOffset + i;
+            const isSelected = actualIndex === selectedIndex;
+            const bg = isSelected ? "#292e42" : undefined;
+            const matches =
+              repoMatchMap.get(`${pr.repoId}#${pr.number}`) ?? [];
+            const cleanMatch = matches.find((r) => r.isClean);
 
-          const prLabel = `#${pr.number} ${pr.title}`.slice(0, prCol - 1);
-          const repoLabel = `${pr.repoOwner}/${pr.repoName}`.slice(
-            0,
-            repoCol - 1
-          );
+            const localStatus =
+              matches.length === 0
+                ? "-"
+                : cleanMatch
+                  ? "* clean"
+                  : "x dirty";
+            const localFg =
+              matches.length === 0
+                ? "#565f89"
+                : cleanMatch
+                  ? "#9ece6a"
+                  : "#f7768e";
 
-          return (
-            <box
-              key={`${pr.repoId}#${pr.number}`}
-              style={{ height: 1, width: "100%", backgroundColor: bg }}
-            >
-              <text>
-                <span fg="#c0caf5">
-                  {" "}
-                  {prLabel.padEnd(prCol)}
-                </span>
-                <span fg="#a9b1d6">{repoLabel.padEnd(repoCol)}</span>
-                <span fg="#ff9e64">
-                  {pr.headRef.slice(0, branchCol - 1).padEnd(branchCol)}
-                </span>
-                <span fg={pr.draft ? "#e0af68" : "#9ece6a"}>
-                  {(pr.draft ? "Draft" : "Open").padEnd(statusCol)}
-                </span>
-                <span fg={localFg}>{localStatus.padEnd(localCol)}</span>
-              </text>
-            </box>
-          );
-        })}
-      </scrollbox>
+            const prLabel = `#${pr.number} ${pr.title}`.slice(0, prCol - 1);
+            const repoLabel = `${pr.repoOwner}/${pr.repoName}`.slice(
+              0,
+              repoCol - 1
+            );
+
+            return (
+              <box
+                key={`${pr.repoId}#${pr.number}`}
+                style={{ height: 1, width: "100%", backgroundColor: bg }}
+              >
+                <text>
+                  <span fg="#c0caf5">
+                    {" "}
+                    {prLabel.padEnd(prCol)}
+                  </span>
+                  <span fg="#a9b1d6">{repoLabel.padEnd(repoCol)}</span>
+                  <span fg="#ff9e64">
+                    {pr.headRef.slice(0, branchCol - 1).padEnd(branchCol)}
+                  </span>
+                  <span fg={pr.draft ? "#e0af68" : "#9ece6a"}>
+                    {(pr.draft ? "Draft" : "Open").padEnd(statusCol)}
+                  </span>
+                  <span fg={localFg}>{localStatus.padEnd(localCol)}</span>
+                </text>
+              </box>
+            );
+          });
+        })()}
+      </box>
 
       {/* Footer */}
       <box style={{ height: 1, width: "100%" }}>
