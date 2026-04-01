@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { Octokit } from "@octokit/rest";
-import type { PullRequestInfo, UserPullRequest } from "./types.js";
+import type { CheckRun, CIInfo, CIStatus, PullRequestInfo, UserPullRequest } from "./types.js";
 
 function ghCliToken(): string | undefined {
   try {
@@ -214,4 +214,48 @@ export async function fetchUserPRs(
   }
 
   return prs;
+}
+
+export async function fetchChecks(
+  token: string,
+  owner: string,
+  repo: string,
+  ref: string
+): Promise<CIInfo> {
+  const octokit = new Octokit({ auth: token });
+  try {
+    const { data } = await octokit.rest.checks.listForRef({
+      owner,
+      repo,
+      ref,
+      per_page: 100,
+    });
+    const checks: CheckRun[] = data.check_runs.map((run) => ({
+      name: run.name,
+      status: run.status as CheckRun["status"],
+      conclusion: run.conclusion ?? null,
+      detailsUrl: run.details_url ?? null,
+    }));
+    let status: CIStatus = "unknown";
+    if (checks.length > 0) {
+      const anyPending = checks.some((c) => c.status !== "completed");
+      const allPassing = checks.every(
+        (c) =>
+          c.status === "completed" &&
+          (c.conclusion === "success" ||
+            c.conclusion === "skipped" ||
+            c.conclusion === "neutral")
+      );
+      const anyFailing = checks.some(
+        (c) => c.status === "completed" && c.conclusion === "failure"
+      );
+      if (anyPending) status = "pending";
+      else if (allPassing) status = "passing";
+      else if (anyFailing) status = "failing";
+      else status = "passing";
+    }
+    return { status, checks, fetchedAt: Date.now() };
+  } catch {
+    return { status: "unknown", checks: [], fetchedAt: Date.now() };
+  }
 }

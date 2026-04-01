@@ -30,6 +30,21 @@ export interface UserPullRequest {
   url: string;
 }
 
+export type CIStatus = "unknown" | "pending" | "passing" | "failing" | "mixed";
+
+export interface CheckRun {
+  name: string;
+  status: "queued" | "in_progress" | "completed";
+  conclusion: string | null;
+  detailsUrl: string | null;
+}
+
+export interface CIInfo {
+  status: CIStatus;
+  checks: CheckRun[];
+  fetchedAt: number;
+}
+
 export interface BranchWithPR extends BranchInfo {
   pr?: PullRequestInfo;
 }
