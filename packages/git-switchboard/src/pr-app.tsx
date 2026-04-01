@@ -1,6 +1,6 @@
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { useState, useMemo, useCallback } from "react";
-import type { UserPullRequest } from "./types.js";
+import type { UserPullRequest, CIInfo, CIStatus } from "./types.js";
 import type { LocalRepo } from "./scanner.js";
 
 function relativeTime(iso: string): string {
@@ -19,14 +19,31 @@ function relativeTime(iso: string): string {
   return `${years}y ago`;
 }
 
+function ciIcon(status: CIStatus): { char: string; fg: string } {
+  switch (status) {
+    case "passing":
+      return { char: "*", fg: "#9ece6a" };
+    case "failing":
+      return { char: "x", fg: "#f7768e" };
+    case "pending":
+      return { char: "~", fg: "#e0af68" };
+    case "mixed":
+      return { char: "!", fg: "#ff9e64" };
+    default:
+      return { char: "?", fg: "#565f89" };
+  }
+}
+
 interface PrAppProps {
   prs: UserPullRequest[];
   localRepos: LocalRepo[];
+  ciCache: Map<string, CIInfo>;
   onSelect: (pr: UserPullRequest, matches: LocalRepo[]) => void;
+  onFetchCI: (pr: UserPullRequest) => void;
   onExit: () => void;
 }
 
-export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
+export function PrApp({ prs, localRepos, ciCache, onSelect, onFetchCI, onExit }: PrAppProps) {
   const { width, height } = useTerminalDimensions();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -34,14 +51,21 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
   const [searchMode, setSearchMode] = useState(false);
 
   const filteredPRs = useMemo(() => {
-    if (!searchQuery) return prs;
-    const q = searchQuery.toLowerCase();
-    return prs.filter(
-      (pr) =>
-        pr.title.toLowerCase().includes(q) ||
-        pr.repoId.includes(q) ||
-        pr.headRef.toLowerCase().includes(q)
+    const result = searchQuery
+      ? prs.filter((pr) => {
+          const q = searchQuery.toLowerCase();
+          return (
+            pr.title.toLowerCase().includes(q) ||
+            pr.repoId.includes(q) ||
+            pr.headRef.toLowerCase().includes(q)
+          );
+        })
+      : [...prs];
+    result.sort(
+      (a, b) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
+    return result;
   }, [prs, searchQuery]);
 
   const repoMatchMap = useMemo(() => {
@@ -103,6 +127,11 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
         }
         break;
       }
+      case "c": {
+        const pr = filteredPRs[selectedIndex];
+        if (pr) onFetchCI(pr);
+        break;
+      }
       case "slash":
         setSearchMode(true);
         break;
@@ -117,11 +146,12 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
   const localCol = 12;
   const statusCol = 8;
   const updatedCol = 12;
+  const ciCol = 4;
   const prCol = Math.min(30, Math.floor(width * 0.25));
   const repoCol = Math.min(25, Math.floor(width * 0.2));
   const branchCol = Math.max(
     15,
-    width - prCol - repoCol - statusCol - updatedCol - localCol - 6
+    width - prCol - repoCol - statusCol - updatedCol - localCol - ciCol - 6
   );
 
   return (
@@ -135,7 +165,7 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
 
       {/* Column headers */}
       <box style={{ height: 1, width: "100%" }}>
-        <text content={` ${"PR".padEnd(prCol)}${"Repo".padEnd(repoCol)}${"Branch".padEnd(branchCol)}${"Updated".padEnd(updatedCol)}${"Status".padEnd(statusCol)}${"Local".padEnd(localCol)}`} fg="#bb9af7" />
+        <text content={` ${"PR".padEnd(prCol)}${"Repo".padEnd(repoCol)}${"Branch".padEnd(branchCol)}${"Updated".padEnd(updatedCol)}${"Status".padEnd(statusCol)}${"CI".padEnd(ciCol)}${"Local".padEnd(localCol)}`} fg="#bb9af7" />
       </box>
 
       {/* PR list */}
@@ -160,6 +190,10 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
                 : cleanMatch
                   ? "#9ece6a"
                   : "#f7768e";
+
+            const ciKey = `${pr.repoId}#${pr.number}`;
+            const ci = ciCache.get(ciKey);
+            const ciStatus = ciIcon(ci?.status ?? "unknown");
 
             const prLabel = `#${pr.number} ${pr.title}`.slice(0, prCol - 1);
             const repoLabel = `${pr.repoOwner}/${pr.repoName}`.slice(
@@ -187,6 +221,9 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
                   <span fg={pr.draft ? "#e0af68" : "#9ece6a"}>
                     {(pr.draft ? "Draft" : "Open").padEnd(statusCol)}
                   </span>
+                  <span fg={ciStatus.fg}>
+                    {ciStatus.char.padEnd(ciCol)}
+                  </span>
                   <span fg={localFg}>{localStatus.padEnd(localCol)}</span>
                 </text>
               </box>
@@ -196,7 +233,7 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
 
       {/* Footer */}
       <box style={{ height: 1, width: "100%" }}>
-        <text content={" Up/Down/jk Navigate | Enter Checkout | / Search | q Quit"} fg="#565f89" />
+        <text content={" Up/Down/jk Navigate | Enter Checkout | c CI | / Search | q Quit"} fg="#565f89" />
       </box>
     </box>
   );
