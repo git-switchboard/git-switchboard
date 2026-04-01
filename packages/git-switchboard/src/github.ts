@@ -1,7 +1,6 @@
 import { execSync } from 'node:child_process';
 import { Octokit } from '@octokit/rest';
-import type { ResultOf } from 'gql.tada';
-import { graphql, printQuery } from './graphql.js';
+import { execute, graphql } from './graphql.js';
 import type {
   CheckRun,
   CIInfo,
@@ -212,10 +211,9 @@ export async function fetchUserPRs(
     onProgress?.(progress);
 
     // Single GraphQL query gets all PRs with headRef — no per-PR REST calls
-    const result = await octokit.graphql<ResultOf<typeof SEARCH_USER_PRS>>(
-      printQuery(SEARCH_USER_PRS),
-      { searchQuery: `is:pr is:open author:${username}` }
-    );
+    const result = await execute(octokit, SEARCH_USER_PRS, {
+      searchQuery: `is:pr is:open author:${username}`,
+    });
 
     progress.totalPRs = result.search.issueCount;
 
@@ -365,10 +363,11 @@ export async function fetchPRDetails(
   const octokit = new Octokit({ auth: token });
 
   try {
-    const result = await octokit.graphql<ResultOf<typeof PR_DETAIL_QUERY>>(
-      printQuery(PR_DETAIL_QUERY),
-      { owner, repo, number: pullNumber }
-    );
+    const result = await execute(octokit, PR_DETAIL_QUERY, {
+      owner,
+      repo,
+      number: pullNumber,
+    });
 
     const pr = result.repository?.pullRequest;
     if (!pr) throw new Error('PR not found');

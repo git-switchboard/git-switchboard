@@ -1,5 +1,6 @@
 import { print, type DocumentNode } from 'graphql';
-import { initGraphQLTada } from 'gql.tada';
+import { initGraphQLTada, type ResultOf, type VariablesOf } from 'gql.tada';
+import type { Octokit } from '@octokit/rest';
 import type { introspection } from './graphql-env.js';
 
 export const graphql = initGraphQLTada<{
@@ -18,17 +19,24 @@ export const graphql = initGraphQLTada<{
   };
 }>();
 
-/** Cache of printed query strings to avoid re-printing on every call */
 const printCache = new WeakMap<DocumentNode, string>();
 
-/** Print a gql.tada DocumentNode to a query string, with caching */
-export function printQuery(doc: DocumentNode): string {
-  let str = printCache.get(doc);
-  if (!str) {
-    str = print(doc);
-    printCache.set(doc, str);
+/**
+ * Execute a gql.tada typed query via octokit.
+ * Bridges the gap: gql.tada produces DocumentNode, octokit wants string.
+ * Result and variables are fully typed from the query definition.
+ */
+export async function execute<TDoc extends DocumentNode>(
+  octokit: Octokit,
+  query: TDoc,
+  variables: VariablesOf<TDoc>
+): Promise<ResultOf<TDoc>> {
+  let queryStr = printCache.get(query);
+  if (!queryStr) {
+    queryStr = print(query);
+    printCache.set(query, queryStr);
   }
-  return str;
+  return octokit.graphql<ResultOf<TDoc>>(queryStr, variables as Record<string, unknown>);
 }
 
 export type { FragmentOf, ResultOf, VariablesOf } from 'gql.tada';
