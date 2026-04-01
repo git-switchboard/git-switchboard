@@ -19,28 +19,64 @@ function relativeTime(iso: string): string {
   return `${years}y ago`;
 }
 
+function duration(startIso: string, endIso: string): string {
+  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remSec = seconds % 60;
+  if (minutes < 60) return remSec > 0 ? `${minutes}m ${remSec}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remMin = minutes % 60;
+  return remMin > 0 ? `${hours}h ${remMin}m` : `${hours}h`;
+}
+
 function fit(str: string, width: number): string {
   if (str.length <= width) return str.padEnd(width);
   return str.slice(0, width - 1) + '~';
 }
 
-function checkIcon(check: CheckRun): { char: string; fg: string } {
-  if (check.status !== 'completed') {
-    return { char: '~', fg: '#e0af68' };
-  }
-  switch (check.conclusion) {
-    case 'success':
-    case 'skipped':
-    case 'neutral':
-      return { char: '*', fg: '#9ece6a' };
-    case 'failure':
-      return { char: 'x', fg: '#f7768e' };
-    default:
-      return { char: '~', fg: '#e0af68' };
-  }
+/** Sort priority: failure=0, in_progress/queued=1, neutral/skipped=2, success=3 */
+function checkSortOrder(check: CheckRun): number {
+  if (check.status === 'completed' && check.conclusion === 'failure') return 0;
+  if (check.status !== 'completed') return 1;
+  if (check.conclusion === 'skipped' || check.conclusion === 'neutral') return 2;
+  return 3;
 }
 
 const SPINNER_FRAMES = ['|', '/', '-', '\\'];
+
+/** Returns icon char, row foreground color, and whether to use spinner */
+function checkStyle(
+  check: CheckRun
+): { icon: string; fg: string; spinner: boolean } {
+  if (check.status !== 'completed') {
+    return { icon: '', fg: '#e0af68', spinner: true }; // yellow, animated
+  }
+  switch (check.conclusion) {
+    case 'success':
+      return { icon: 'v', fg: '#9ece6a', spinner: false }; // green checkmark
+    case 'failure':
+      return { icon: 'x', fg: '#f7768e', spinner: false }; // red x
+    case 'skipped':
+    case 'neutral':
+      return { icon: '-', fg: '#565f89', spinner: false }; // grey/muted
+    default:
+      return { icon: '?', fg: '#565f89', spinner: false };
+  }
+}
+
+function checkTimeLabel(check: CheckRun): string {
+  if (check.startedAt && check.completedAt) {
+    const dur = duration(check.startedAt, check.completedAt);
+    const ago = relativeTime(check.completedAt);
+    return `Completed in ${dur}, ${ago}`;
+  }
+  if (check.startedAt) {
+    return `Started ${relativeTime(check.startedAt)}`;
+  }
+  return '';
+}
 
 interface PrDetailProps {
   pr: UserPullRequest;
@@ -61,47 +97,51 @@ interface PrDetailProps {
 export function PrDetail({
   pr,
   ci,
+  ciLoading,
   matches,
   watched,
   onOpenInEditor,
   onBack,
   onWatch,
   onRefreshCI,
-  ciLoading,
   onOpenUrl,
   onCopyLogs,
   onExit,
 }: PrDetailProps) {
   const { width, height } = useTerminalDimensions();
-  // Index 0 = "Open in editor" action, 1+ = checks
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [statusText, setStatusText] = useState('');
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
 
-  // Animate spinner when CI is loading
+  // Animate spinner for in-progress checks and loading state
   useEffect(() => {
-    if (!ciLoading) return;
+    const hasSpinner =
+      ciLoading || (ci?.checks ?? []).some((c) => c.status !== 'completed');
+    if (!hasSpinner) return;
     const interval = setInterval(() => {
       setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length);
     }, 100);
     return () => clearInterval(interval);
-  }, [ciLoading]);
+  }, [ciLoading, ci]);
 
-  const checks = ci?.checks ?? [];
-  // Selectable items: 2 action rows + N checks
+  const rawChecks = ci?.checks ?? [];
+  // Sort: failure → in progress → neutral → success
+  const checks = [...rawChecks].sort(
+    (a, b) => checkSortOrder(a) - checkSortOrder(b)
+  );
+
   const ACTION_COUNT = 2;
   const totalItems = ACTION_COUNT + checks.length;
 
-  // Chrome: header(1) + meta(1) + spacer(1) + actions-header(1) + 2 action rows(2) + spacer(1) + ci-header(1) + spacer(1) + footer(1) + padding(2) = 12
-  const checkListHeight = Math.max(1, height - 12);
+  // Chrome: header(1) + meta(1) + spacer(1) + actions-header(1) + 2 actions(2) + spacer(1) + ci-header(1) + checks-header(1) + spacer(1) + footer(1) + padding(2) = 13
+  const checkListHeight = Math.max(1, height - 13);
 
   const moveTo = useCallback(
     (newIndex: number) => {
       const clamped = Math.max(0, Math.min(newIndex, totalItems - 1));
       setSelectedIndex(clamped);
-      // Only scroll the check list (indices >= ACTION_COUNT)
       if (clamped >= ACTION_COUNT) {
         const checkIdx = clamped - ACTION_COUNT;
         setScrollOffset((prev) => {
@@ -111,7 +151,6 @@ export function PrDetail({
           return prev;
         });
       }
-      // Dismiss status on navigation
       if (statusText) {
         setStatusText('');
         if (statusTimerRef.current) {
@@ -132,7 +171,6 @@ export function PrDetail({
     }, 3000);
   }, []);
 
-  // Clean up timer on unmount
   useEffect(() => {
     return () => {
       if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
@@ -140,7 +178,6 @@ export function PrDetail({
   }, []);
 
   useKeyboard((key) => {
-    // Dismiss status on any keypress
     if (statusText && key.name !== 'c') {
       setStatusText('');
       if (statusTimerRef.current) {
@@ -226,14 +263,11 @@ export function PrDetail({
   const iconCol = 3;
   const openCol = 8;
   const conclusionCol = 12;
-  const timeCol = 24;
+  const timeCol = 30;
   const nameCol = Math.max(
     10,
     width - iconCol - conclusionCol - timeCol - openCol - 6
   );
-
-  // Build the unified selectable list: 2 action rows + check rows
-  // Actions are always visible (pinned above the scroll area)
 
   // Footer text
   const footerText = statusText
@@ -264,7 +298,7 @@ export function PrDetail({
         <text content=" Actions" fg="#bb9af7" />
       </box>
 
-      {/* Action rows (fixed, not scrolled) */}
+      {/* Action rows (fixed) */}
       <box
         style={{
           height: 1,
@@ -298,6 +332,14 @@ export function PrDetail({
         <text content={` ${ciHeader}`} fg="#bb9af7" />
       </box>
 
+      {/* Check table header */}
+      <box style={{ height: 1, width: '100%' }}>
+        <text
+          content={`   ${''.padEnd(iconCol)}${fit('Check', nameCol)} ${fit('Result', conclusionCol)}${fit('Time', timeCol)}${''.padEnd(openCol)}`}
+          fg="#565f89"
+        />
+      </box>
+
       {/* Check rows (scrollable) */}
       <box flexDirection="column" style={{ flexGrow: 1, width: '100%' }}>
         {checks
@@ -307,26 +349,21 @@ export function PrDetail({
             const actualIndex = actualCheckIndex + ACTION_COUNT;
             const isSelected = actualIndex === selectedIndex;
             const bg = isSelected ? '#292e42' : undefined;
-            const icon = checkIcon(check);
+            const style = checkStyle(check);
+            const icon = style.spinner
+              ? SPINNER_FRAMES[spinnerFrame]
+              : style.icon;
+            const rowFg = isSelected ? '#c0caf5' : style.fg;
+
             const conclusionLabel =
               check.status === 'completed'
-                ? check.conclusion ?? 'unknown'
+                ? (check.conclusion ?? 'unknown')
                 : check.status;
             const openLabel = check.detailsUrl ? '[open]' : '';
-
-            let timeLabel: string;
-            if (check.startedAt && check.completedAt) {
-              timeLabel = `${relativeTime(check.startedAt)} - ${relativeTime(
-                check.completedAt
-              )}`;
-            } else if (check.startedAt) {
-              timeLabel = `started ${relativeTime(check.startedAt)}`;
-            } else {
-              timeLabel = '';
-            }
+            const timeLabel = checkTimeLabel(check);
 
             const line =
-              `  ${icon.char} ` +
+              `  ${icon} ` +
               fit(check.name, nameCol) +
               ' ' +
               fit(conclusionLabel, conclusionCol) +
@@ -338,7 +375,7 @@ export function PrDetail({
                 key={`${check.name}-${actualCheckIndex}`}
                 style={{ height: 1, width: '100%', backgroundColor: bg }}
               >
-                <text content={line} fg={isSelected ? '#c0caf5' : icon.fg} />
+                <text content={line} fg={rowFg} />
               </box>
             );
           })}
