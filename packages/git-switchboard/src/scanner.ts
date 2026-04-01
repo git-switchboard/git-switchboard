@@ -43,6 +43,7 @@ export interface LocalRepo {
 export interface ScanProgress {
   currentDir: string;
   reposFound: number;
+  dirsScanned: number;
 }
 
 export function scanForRepos(
@@ -75,14 +76,15 @@ function scanDir(
   if (visited.has(realDir)) return;
   visited.add(realDir);
 
-  onProgress?.({ currentDir: dir, reposFound: repos.length });
+  const dirsScanned = visited.size;
+  onProgress?.({ currentDir: dir, reposFound: repos.length, dirsScanned });
 
   const gitPath = join(dir, ".git");
   if (existsSync(gitPath)) {
     // Found a git repo or worktree
     const isWorktree = statSync(gitPath).isFile();
     repos.push(buildLocalRepo(dir, isWorktree));
-    onProgress?.({ currentDir: dir, reposFound: repos.length });
+    onProgress?.({ currentDir: dir, reposFound: repos.length, dirsScanned: visited.size });
 
     // Don't recurse into the repo itself (branches/worktrees are separate)
     // But DO continue scanning siblings

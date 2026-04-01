@@ -1,25 +1,67 @@
 import { useTerminalDimensions } from "@opentui/react";
+import type { PRFetchProgress } from "./github.js";
+import type { ScanProgress } from "./scanner.js";
 
 interface LoadingProps {
-  prStatus: string;
-  scanStatus: string;
-  reposFound: number;
-  scanDir: string;
+  prProgress: PRFetchProgress;
+  scanProgress: ScanProgress | null;
+  scanDone: boolean;
 }
 
-export function Loading({
-  prStatus,
-  scanStatus,
-  reposFound,
-  scanDir,
-}: LoadingProps) {
-  const { width } = useTerminalDimensions();
+function gauge(fraction: number, width: number): string {
+  const filled = Math.round(fraction * width);
+  const empty = width - filled;
+  return "\u2588".repeat(filled) + "\u2591".repeat(empty);
+}
 
-  const maxPathLen = Math.max(10, width - 4);
+function prStatusLine(p: PRFetchProgress, barWidth: number): { text: string; bar: string | null } {
+  switch (p.phase) {
+    case "authenticating":
+      return { text: "Authenticating with GitHub...", bar: null };
+    case "searching":
+      return { text: "Searching for open PRs...", bar: null };
+    case "fetching-details": {
+      if (p.totalPRs === 0) return { text: "No PRs found", bar: null };
+      const fraction = p.fetchedPRs / p.totalPRs;
+      const bar = gauge(fraction, barWidth);
+      const label = `Fetching PR details: ${p.fetchedPRs}/${p.totalPRs}`;
+      const repoHint = p.currentRepo ? `  (${p.currentRepo})` : "";
+      return { text: `${label}${repoHint}`, bar };
+    }
+    case "done": {
+      const failed = p.failedRepos.length > 0 ? ` (${p.failedRepos.length} repo(s) skipped)` : "";
+      return { text: `Done - ${p.fetchedPRs} PRs loaded${failed}`, bar: null };
+    }
+  }
+}
+
+function scanStatusLine(p: ScanProgress | null, done: boolean, barWidth: number): { text: string; bar: string | null; dir: string } {
+  if (!p) return { text: "Waiting...", bar: null, dir: "" };
+  if (done) {
+    return { text: `Done - ${p.reposFound} repos found (${p.dirsScanned} dirs scanned)`, bar: null, dir: "" };
+  }
+  // Scanner is sync so we can't show a real fraction; show activity indicator
+  const bar = null;
+  const text = `Scanning... ${p.reposFound} repos found, ${p.dirsScanned} dirs scanned`;
+  return { text, bar, dir: p.currentDir };
+}
+
+export function Loading({ prProgress, scanProgress, scanDone }: LoadingProps) {
+  const { width } = useTerminalDimensions();
+  const barWidth = Math.max(10, Math.min(40, width - 6));
+
+  const pr = prStatusLine(prProgress, barWidth);
+  const scan = scanStatusLine(scanProgress, scanDone, barWidth);
+
+  const maxPathLen = Math.max(10, width - 6);
   const truncatedDir =
-    scanDir.length > maxPathLen
-      ? "..." + scanDir.slice(scanDir.length - maxPathLen + 3)
-      : scanDir;
+    scan.dir.length > maxPathLen
+      ? "..." + scan.dir.slice(scan.dir.length - maxPathLen + 3)
+      : scan.dir;
+
+  const prDone = prProgress.phase === "done";
+  const prIcon = prDone ? "*" : ">";
+  const scanIcon = scanDone ? "*" : ">";
 
   return (
     <box flexDirection="column" style={{ width: "100%", height: "100%", padding: 1 }}>
@@ -29,21 +71,31 @@ export function Loading({
 
       <box style={{ height: 1 }} />
 
+      {/* PR progress */}
       <box style={{ height: 1, width: "100%" }}>
-        <text content={` PRs:   ${prStatus}`} fg={prStatus === "done" ? "#9ece6a" : "#e0af68"} />
+        <text content={` ${prIcon} PRs: ${pr.text}`} fg={prDone ? "#9ece6a" : "#c0caf5"} />
       </box>
+      {pr.bar ? (
+        <box style={{ height: 1, width: "100%" }}>
+          <text content={`   [${pr.bar}]`} fg="#7aa2f7" />
+        </box>
+      ) : null}
 
+      <box style={{ height: 1 }} />
+
+      {/* Scan progress */}
       <box style={{ height: 1, width: "100%" }}>
-        <text content={` Repos:  ${scanStatus}${reposFound > 0 ? ` (${reposFound} found)` : ""}`} fg={scanStatus === "done" ? "#9ece6a" : "#e0af68"} />
+        <text content={` ${scanIcon} Repos: ${scan.text}`} fg={scanDone ? "#9ece6a" : "#c0caf5"} />
       </box>
-
-      {scanDir ? (
-        <>
-          <box style={{ height: 1 }} />
-          <box style={{ height: 1, width: "100%" }}>
-            <text content={` ${truncatedDir}`} fg="#565f89" />
-          </box>
-        </>
+      {scan.bar ? (
+        <box style={{ height: 1, width: "100%" }}>
+          <text content={`   [${scan.bar}]`} fg="#7aa2f7" />
+        </box>
+      ) : null}
+      {truncatedDir ? (
+        <box style={{ height: 1, width: "100%" }}>
+          <text content={`   ${truncatedDir}`} fg="#565f89" />
+        </box>
       ) : null}
     </box>
   );

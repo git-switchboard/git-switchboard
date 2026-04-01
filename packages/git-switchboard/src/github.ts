@@ -89,15 +89,40 @@ function describeApiError(error: unknown): string {
   return String(error);
 }
 
+export interface PRFetchProgress {
+  phase: "authenticating" | "searching" | "fetching-details" | "done";
+  /** Total PRs found in search */
+  totalPRs: number;
+  /** PRs whose details have been fetched so far */
+  fetchedPRs: number;
+  /** Current repo being processed */
+  currentRepo: string;
+  /** Repos that failed */
+  failedRepos: string[];
+}
+
 export async function fetchUserPRs(
-  token: string
+  token: string,
+  onProgress?: (progress: PRFetchProgress) => void
 ): Promise<UserPullRequest[]> {
   const octokit = new Octokit({ auth: token });
   const prs: UserPullRequest[] = [];
 
+  const progress: PRFetchProgress = {
+    phase: "authenticating",
+    totalPRs: 0,
+    fetchedPRs: 0,
+    currentRepo: "",
+    failedRepos: [],
+  };
+  onProgress?.(progress);
+
   try {
     const { data: user } = await octokit.rest.users.getAuthenticated();
     const username = user.login;
+
+    progress.phase = "searching";
+    onProgress?.(progress);
 
     const { data } = await octokit.rest.search.issuesAndPullRequests({
       q: `is:pr is:open author:${username}`,
@@ -105,6 +130,10 @@ export async function fetchUserPRs(
       order: "desc",
       per_page: 100,
     });
+
+    progress.totalPRs = data.total_count;
+    progress.phase = "fetching-details";
+    onProgress?.(progress);
 
     // Group items by repo so we can skip entire repos that fail
     const itemsByRepo = new Map<
@@ -132,6 +161,8 @@ export async function fetchUserPRs(
     // Process each repo: try first PR, skip the rest if it fails
     for (const [repoKey, { owner, name, items }] of itemsByRepo) {
       let repoAccessible = true;
+      progress.currentRepo = repoKey;
+      onProgress?.(progress);
 
       for (const item of items) {
         if (!repoAccessible) break;
@@ -155,15 +186,23 @@ export async function fetchUserPRs(
             updatedAt: item.updated_at,
             url: item.html_url,
           });
+          progress.fetchedPRs++;
+          onProgress?.(progress);
         } catch (error) {
           repoAccessible = false;
           failedRepos.push(repoKey);
+          progress.failedRepos = [...failedRepos];
+          onProgress?.(progress);
           console.error(
             `  ${repoKey}: ${describeApiError(error)}`
           );
         }
       }
     }
+
+    progress.phase = "done";
+    progress.currentRepo = "";
+    onProgress?.(progress);
 
     if (failedRepos.length > 0) {
       console.error(

@@ -8,7 +8,7 @@ export type {
 } from "./types.js";
 export type { ScanProgress } from "./scanner.js";
 export { getBranches, getCurrentBranch, getCurrentUser } from "./git.js";
-export { resolveGitHubToken, fetchOpenPRs, fetchUserPRs } from "./github.js";
+export { resolveGitHubToken, fetchOpenPRs, fetchUserPRs, type PRFetchProgress } from "./github.js";
 export { scanForRepos, type LocalRepo } from "./scanner.js";
 export {
   resolveEditor,
