@@ -27,6 +27,264 @@ const gitSwitchboard = cli("git-switchboard", {
         type: "boolean",
         description: "Skip PR enrichment even if a token is available",
         default: false,
+      })
+      .command("pr", {
+        description: "Browse your open PRs, checkout and open in editor",
+        builder: (c) =>
+          c
+            .option("search-root", {
+              type: "array",
+              items: "string",
+              description: "Directories to scan for git repos",
+              default: [
+                process.env.HOME ? `${process.env.HOME}/repos` : ".",
+              ],
+            })
+            .option("search-depth", {
+              type: "number",
+              description: "Max directory depth when scanning for repos",
+              default: 3,
+            })
+            .option("editor", {
+              type: "string",
+              description:
+                "Editor command to open the repo (e.g. code, nvim, zed)",
+            })
+            .option("github-token", {
+              type: "string",
+              description:
+                "GitHub token (falls back to GH_TOKEN / GITHUB_TOKEN)",
+            }),
+        handler: async (args) => {
+          // Dynamic imports
+          const { createCliRenderer } = await import("@opentui/core");
+          const { createRoot } = await import("@opentui/react");
+          const React = await import("react");
+          const { createElement } = React;
+          const { execSync } = await import("node:child_process");
+          const { resolve } = await import("node:path");
+
+          const { resolveGitHubToken, fetchUserPRs } = await import(
+            "./github.js"
+          );
+          const { scanForRepos } = await import("./scanner.js");
+          const { resolveEditor, findInstalledEditors, openInEditor } =
+            await import("./editor.js");
+          const { PrApp } = await import("./pr-app.js");
+          const { ClonePrompt } = await import("./clone-prompt.js");
+          const { EditorPrompt } = await import("./editor-prompt.js");
+
+          // 1. Resolve token
+          const token = resolveGitHubToken(args["github-token"]);
+          if (!token) {
+            console.error(
+              "GitHub token required. Set GH_TOKEN, GITHUB_TOKEN, or use --github-token"
+            );
+            process.exit(1);
+          }
+
+          // 2. Fetch PRs and scan repos in parallel
+          console.log("Fetching PRs and scanning for local repos...");
+          const [prs, localRepos] = await Promise.all([
+            fetchUserPRs(token),
+            Promise.resolve(
+              scanForRepos(args["search-root"], args["search-depth"])
+            ),
+          ]);
+
+          if (prs.length === 0) {
+            console.log("No open PRs found.");
+            process.exit(0);
+          }
+
+          // 3. Launch PR dashboard TUI
+          const renderer = await createCliRenderer({ exitOnCtrlC: true });
+          const { promise, resolve: done } = Promise.withResolvers<void>();
+
+          let selectedPR:
+            | import("./types.js").UserPullRequest
+            | undefined;
+          let selectedRepo:
+            | import("./scanner.js").LocalRepo
+            | undefined;
+          let newWorktreePath: string | undefined;
+
+          // Phase tracking
+          let currentMatches: import("./scanner.js").LocalRepo[] = [];
+
+          const renderPRList = () => {
+            createRoot(renderer).render(
+              createElement(PrApp, {
+                prs,
+                localRepos,
+                onSelect: (
+                  pr: import("./types.js").UserPullRequest,
+                  matches: import("./scanner.js").LocalRepo[]
+                ) => {
+                  selectedPR = pr;
+
+                  // Auto-select if exactly one clean clone
+                  const cleanMatches = matches.filter((r) => r.isClean);
+                  if (cleanMatches.length === 1) {
+                    selectedRepo = cleanMatches[0];
+                    renderer.destroy();
+                    done();
+                    return;
+                  }
+
+                  // If matches exist but need user choice, show clone prompt
+                  if (matches.length > 0) {
+                    currentMatches = matches;
+                    renderClonePrompt();
+                    return;
+                  }
+
+                  // No local clones — still proceed (user can create worktree)
+                  currentMatches = [];
+                  renderClonePrompt();
+                },
+                onExit: () => {
+                  renderer.destroy();
+                  done();
+                },
+              }) as React.ReactNode
+            );
+          };
+
+          const renderClonePrompt = () => {
+            createRoot(renderer).render(
+              createElement(ClonePrompt, {
+                repoId: selectedPR!.repoId,
+                matches: currentMatches,
+                onSelect: (repo: import("./scanner.js").LocalRepo) => {
+                  selectedRepo = repo;
+                  renderer.destroy();
+                  done();
+                },
+                onCreateWorktree: (path: string) => {
+                  newWorktreePath = path;
+                  renderer.destroy();
+                  done();
+                },
+                onCancel: () => {
+                  // Go back to PR list
+                  selectedPR = undefined;
+                  renderPRList();
+                },
+              }) as React.ReactNode
+            );
+          };
+
+          renderPRList();
+          await promise;
+
+          if (!selectedPR) return;
+
+          // 4. Handle worktree creation if needed
+          let targetDir: string;
+
+          if (newWorktreePath) {
+            const absPath = resolve(newWorktreePath);
+            // Need a source repo to create the worktree from
+            const sourceRepo = currentMatches[0];
+            if (sourceRepo) {
+              try {
+                execSync(
+                  `git worktree add "${absPath}" -b "${selectedPR.headRef}" "origin/${selectedPR.headRef}"`,
+                  { cwd: sourceRepo.path, stdio: "inherit" }
+                );
+                targetDir = absPath;
+              } catch {
+                console.error("Failed to create worktree");
+                process.exit(1);
+              }
+            } else {
+              console.error(
+                "No local clone available to create worktree from"
+              );
+              process.exit(1);
+            }
+          } else if (selectedRepo) {
+            targetDir = selectedRepo.path;
+            // Checkout the PR branch
+            try {
+              execSync(`git fetch origin ${selectedPR.headRef}`, {
+                cwd: targetDir,
+                stdio: "inherit",
+              });
+              execSync(`git checkout ${selectedPR.headRef}`, {
+                cwd: targetDir,
+                stdio: "inherit",
+              });
+            } catch {
+              console.error("Failed to checkout branch");
+              process.exit(1);
+            }
+          } else {
+            console.log("No local clone selected.");
+            return;
+          }
+
+          // 5. Open in editor
+          let editor = resolveEditor(args.editor);
+          if (!editor) {
+            const installed = findInstalledEditors();
+            if (installed.length === 1) {
+              editor = {
+                command: installed[0].command,
+                dirArg: installed[0].dirArg,
+                source: "prompt",
+              };
+            } else if (installed.length > 0) {
+              // Launch editor selection TUI
+              const editorRenderer = await createCliRenderer({
+                exitOnCtrlC: true,
+              });
+              const { promise: editorPromise, resolve: editorDone } =
+                Promise.withResolvers<void>();
+
+              let chosenEditor:
+                | import("./editor.js").ResolvedEditor
+                | undefined;
+
+              createRoot(editorRenderer).render(
+                createElement(EditorPrompt, {
+                  editors: installed,
+                  onSelect: (
+                    editorInfo: import("./editor.js").EditorInfo
+                  ) => {
+                    chosenEditor = {
+                      command: editorInfo.command,
+                      dirArg: editorInfo.dirArg,
+                      source: "prompt",
+                    };
+                    editorRenderer.destroy();
+                    editorDone();
+                  },
+                  onCancel: () => {
+                    editorRenderer.destroy();
+                    editorDone();
+                  },
+                }) as React.ReactNode
+              );
+
+              await editorPromise;
+
+              if (chosenEditor) {
+                editor = chosenEditor;
+              } else {
+                console.log(`Branch checked out at: ${targetDir!}`);
+                return;
+              }
+            } else {
+              console.log(`Branch checked out at: ${targetDir!}`);
+              return;
+            }
+          }
+
+          console.log(`Opening ${targetDir!} in ${editor.command}...`);
+          openInEditor(editor, targetDir!);
+        },
       }),
   handler: async (args) => {
     const { createCliRenderer } = await import("@opentui/core");
