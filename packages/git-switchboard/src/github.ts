@@ -166,8 +166,8 @@ interface GQLPRDetailResult {
 // ─── GraphQL queries ────────────────────────────────────────────
 
 const SEARCH_USER_PRS = `
-  query($query: String!) {
-    search(query: $query, type: ISSUE, first: 100) {
+  query($searchQuery: String!) {
+    search(query: $searchQuery, type: ISSUE, first: 100) {
       issueCount
       nodes {
         __typename
@@ -263,7 +263,7 @@ export async function fetchUserPRs(
 
     // Single GraphQL query gets all PRs with headRef — no per-PR REST calls
     const result = await octokit.graphql<GQLSearchResult>(SEARCH_USER_PRS, {
-      query: `is:pr is:open author:${username}`,
+      searchQuery: `is:pr is:open author:${username}`,
     });
 
     progress.totalPRs = result.search.issueCount;
