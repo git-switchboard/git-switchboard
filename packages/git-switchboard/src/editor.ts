@@ -87,10 +87,7 @@ export function resolveEditor(flagValue?: string): ResolvedEditor | null {
 
   // 2. $EDITOR env var
   const envEditor = process.env.EDITOR;
-  if (
-    envEditor &&
-    (envEditor !== 'vi' || process.env.npm_lifecycle_event !== 'npx')
-  ) {
+  if (envEditor && (envEditor !== 'vi' || !process.env.npm_lifecycle_event)) {
     const known = KNOWN_EDITORS.find((e) => e.command === envEditor);
     return {
       command: envEditor,

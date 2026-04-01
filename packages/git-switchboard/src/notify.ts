@@ -16,6 +16,34 @@ export function openUrl(url: string): void {
   }
 }
 
+/** Copy text to system clipboard. Returns true on success. */
+export function copyToClipboard(text: string): boolean {
+  const os = platform();
+  try {
+    if (os === "darwin") {
+      execSync("pbcopy", { input: text, stdio: ["pipe", "pipe", "pipe"] });
+    } else if (os === "linux") {
+      // Try xclip first, fall back to xsel
+      try {
+        execSync("xclip -selection clipboard", {
+          input: text,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+      } catch {
+        execSync("xsel --clipboard --input", {
+          input: text,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+      }
+    } else if (os === "win32") {
+      execSync("clip", { input: text, stdio: ["pipe", "pipe", "pipe"] });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function sendNotification(title: string, message: string): void {
   const os = platform();
   const safeTitle = title.replace(/"/g, '\\"');

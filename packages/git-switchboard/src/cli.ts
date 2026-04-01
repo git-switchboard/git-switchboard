@@ -72,7 +72,9 @@ const gitSwitchboard = cli('git-switchboard', {
           const { ClonePrompt } = await import('./clone-prompt.js');
           const { EditorPrompt } = await import('./editor-prompt.js');
           const { Loading } = await import('./loading.js');
-          const { openUrl, sendNotification } = await import('./notify.js');
+          const { openUrl, sendNotification, copyToClipboard } = await import(
+            './notify.js'
+          );
 
           // 1. Resolve token
           const token = resolveGitHubToken(args['github-token']);
@@ -249,6 +251,7 @@ const gitSwitchboard = cli('git-switchboard', {
                   renderPRDetail();
                 },
                 onOpenUrl: (url: string) => openUrl(url),
+                onCopyToClipboard: (text: string) => copyToClipboard(text),
                 onExit: () => {
                   renderer.destroy();
                   done();

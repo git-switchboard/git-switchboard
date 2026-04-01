@@ -1,5 +1,5 @@
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { UserPullRequest, CIInfo, CheckRun } from "./types.js";
 import type { LocalRepo } from "./scanner.js";
 
@@ -49,6 +49,7 @@ interface PrDetailProps {
   onBack: () => void;
   onWatch: () => void;
   onOpenUrl: (url: string) => void;
+  onCopyToClipboard: (text: string) => boolean;
   onExit: () => void;
 }
 
@@ -61,32 +62,72 @@ export function PrDetail({
   onBack,
   onWatch,
   onOpenUrl,
+  onCopyToClipboard,
   onExit,
 }: PrDetailProps) {
   const { width, height } = useTerminalDimensions();
+  // Index 0 = "Open in editor" action, 1+ = checks
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [statusText, setStatusText] = useState("");
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const checks = ci?.checks ?? [];
+  // Total selectable items: 1 action row + N checks
+  const totalItems = 1 + checks.length;
 
-  // 6 chrome rows: header, meta, spacer, section header, spacer, footer + 2 padding
-  const listHeight = Math.max(1, height - 8);
+  // Chrome rows: header, meta, spacer, actions header, action row, spacer, ci header, spacer, footer + 2 padding
+  // But the action row and check rows share the scrollable area
+  // Layout: header(1) + meta(1) + spacer(1) + actions-header(1) + [selectable list] + spacer(1) + footer/status(1) + padding(2) = 9
+  const listHeight = Math.max(1, height - 9);
 
   const moveTo = useCallback(
     (newIndex: number) => {
-      if (checks.length === 0) return;
-      const clamped = Math.max(0, Math.min(newIndex, checks.length - 1));
+      const clamped = Math.max(0, Math.min(newIndex, totalItems - 1));
       setSelectedIndex(clamped);
       setScrollOffset((prev) => {
         if (clamped < prev) return clamped;
         if (clamped >= prev + listHeight) return clamped - listHeight + 1;
         return prev;
       });
+      // Dismiss status on navigation
+      if (statusText) {
+        setStatusText("");
+        if (statusTimerRef.current) {
+          clearTimeout(statusTimerRef.current);
+          statusTimerRef.current = null;
+        }
+      }
     },
-    [checks.length, listHeight]
+    [totalItems, listHeight, statusText]
   );
 
+  const showStatus = useCallback((text: string) => {
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    setStatusText(text);
+    statusTimerRef.current = setTimeout(() => {
+      setStatusText("");
+      statusTimerRef.current = null;
+    }, 3000);
+  }, []);
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    };
+  }, []);
+
   useKeyboard((key) => {
+    // Dismiss status on any keypress
+    if (statusText && key.name !== "c") {
+      setStatusText("");
+      if (statusTimerRef.current) {
+        clearTimeout(statusTimerRef.current);
+        statusTimerRef.current = null;
+      }
+    }
+
     switch (key.name) {
       case "up":
       case "k":
@@ -97,9 +138,15 @@ export function PrDetail({
         moveTo(selectedIndex + 1);
         break;
       case "return": {
-        const check = checks[selectedIndex];
-        if (check?.detailsUrl) {
-          onOpenUrl(check.detailsUrl);
+        if (selectedIndex === 0) {
+          // Action row: open in editor
+          onOpenInEditor();
+        } else {
+          // Check row: open details URL
+          const check = checks[selectedIndex - 1];
+          if (check?.detailsUrl) {
+            onOpenUrl(check.detailsUrl);
+          }
         }
         break;
       }
@@ -111,18 +158,24 @@ export function PrDetail({
         onExit();
         break;
       default:
-        if (key.raw === "o") {
-          onOpenInEditor();
-        } else if (key.raw === "w") {
+        if (key.raw === "w") {
           onWatch();
+        } else if (key.raw === "c" && selectedIndex > 0) {
+          const check = checks[selectedIndex - 1];
+          if (check?.detailsUrl) {
+            const ok = onCopyToClipboard(check.detailsUrl);
+            showStatus(ok ? "Copied check URL to clipboard" : "Failed to copy to clipboard");
+          } else {
+            showStatus("No URL available for this check");
+          }
         }
         break;
     }
   });
 
-  // Header: #42 feat: add auth system
+  // Header
   const titleStr = `#${pr.number} ${pr.title}`;
-  const header = fit(titleStr, width - 2);
+  const header = fit(titleStr, width - 4);
 
   // Meta line
   const repoLabel = `${pr.repoOwner}/${pr.repoName}`;
@@ -132,9 +185,7 @@ export function PrDetail({
     pr.draft ? "Draft" : "Open",
     `Updated: ${relativeTime(pr.updatedAt)}`,
   ];
-  if (watched) {
-    metaParts.push("W");
-  }
+  if (watched) metaParts.push("W");
   const metaLine = metaParts.join("  |  ");
 
   // CI section header
@@ -149,7 +200,22 @@ export function PrDetail({
   const iconCol = 3;
   const openCol = 8;
   const conclusionCol = 14;
-  const nameCol = Math.max(10, width - iconCol - conclusionCol - openCol - 4);
+  const nameCol = Math.max(10, width - iconCol - conclusionCol - openCol - 6);
+
+  // Build the unified selectable list: action row + check rows
+  const visibleStart = scrollOffset;
+  const visibleEnd = scrollOffset + listHeight;
+
+  const actionRowVisible = visibleStart === 0;
+  const checksStart = Math.max(0, visibleStart - 1);
+  const checksEnd = visibleEnd - (actionRowVisible ? 1 : 0);
+  const visibleChecks = checks.slice(checksStart, checksEnd);
+
+  // Footer text
+  const footerText = statusText
+    ? ` ${statusText}`
+    : " Enter Select | c Copy URL | w Watch | Backspace Back | q Quit";
+  const footerFg = statusText ? "#9ece6a" : "#565f89";
 
   return (
     <box
@@ -163,63 +229,78 @@ export function PrDetail({
 
       {/* Meta line */}
       <box style={{ height: 1, width: "100%" }}>
-        <text content={` ${fit(metaLine, width - 2)}`} fg="#a9b1d6" />
+        <text content={` ${fit(metaLine, width - 4)}`} fg="#a9b1d6" />
       </box>
 
       {/* Spacer */}
       <box style={{ height: 1 }} />
 
-      {/* CI Section Header */}
+      {/* Actions header */}
       <box style={{ height: 1, width: "100%" }}>
-        <text content={` ${ciHeader}`} fg="#bb9af7" />
+        <text content=" Actions" fg="#bb9af7" />
       </box>
 
-      {/* Check list */}
+      {/* Selectable list: action row + checks */}
       <box flexDirection="column" style={{ flexGrow: 1, width: "100%" }}>
-        {checks
-          .slice(scrollOffset, scrollOffset + listHeight)
-          .map((check, i) => {
-            const actualIndex = scrollOffset + i;
-            const isSelected = actualIndex === selectedIndex;
-            const bg = isSelected ? "#292e42" : undefined;
-            const icon = checkIcon(check);
-            const conclusionLabel =
-              check.status === "completed"
-                ? (check.conclusion ?? "unknown")
-                : check.status;
-            const openLabel = check.detailsUrl ? "[open]" : "";
+        {/* Action row (only if in visible range) */}
+        {actionRowVisible ? (
+          <box
+            style={{
+              height: 1,
+              width: "100%",
+              backgroundColor: selectedIndex === 0 ? "#292e42" : undefined,
+            }}
+          >
+            <text
+              content="   > Open in editor"
+              fg={selectedIndex === 0 ? "#7aa2f7" : "#c0caf5"}
+            />
+          </box>
+        ) : null}
 
-            return (
-              <box
-                key={`${check.name}-${actualIndex}`}
-                style={{ height: 1, width: "100%", backgroundColor: bg }}
-              >
-                <text>
-                  <span fg={icon.fg}>{`  ${icon.char} `}</span>
-                  <span fg="#c0caf5">
-                    {fit(check.name, nameCol)}
-                  </span>
-                  <span fg="#565f89">
-                    {fit(conclusionLabel, conclusionCol)}
-                  </span>
-                  <span fg="#7aa2f7">{openLabel.padEnd(openCol)}</span>
-                </text>
-              </box>
-            );
-          })}
+        {/* CI section header (inline in the list area) */}
+        {actionRowVisible ? (
+          <box style={{ height: 1, width: "100%" }}>
+            <text content={` ${ciHeader}`} fg="#bb9af7" />
+          </box>
+        ) : null}
+
+        {/* Check rows */}
+        {visibleChecks.map((check, i) => {
+          const actualCheckIndex = checksStart + i;
+          const actualIndex = actualCheckIndex + 1; // +1 for the action row
+          const isSelected = actualIndex === selectedIndex;
+          const bg = isSelected ? "#292e42" : undefined;
+          const icon = checkIcon(check);
+          const conclusionLabel =
+            check.status === "completed"
+              ? (check.conclusion ?? "unknown")
+              : check.status;
+          const openLabel = check.detailsUrl ? "[open]" : "";
+
+          const line =
+            `  ${icon.char} ` +
+            fit(check.name, nameCol) + " " +
+            fit(conclusionLabel, conclusionCol) +
+            openLabel.padEnd(openCol);
+
+          return (
+            <box
+              key={`${check.name}-${actualCheckIndex}`}
+              style={{ height: 1, width: "100%", backgroundColor: bg }}
+            >
+              <text content={line} fg={isSelected ? "#c0caf5" : icon.fg} />
+            </box>
+          );
+        })}
       </box>
 
       {/* Spacer */}
       <box style={{ height: 1 }} />
 
-      {/* Footer */}
+      {/* Footer / Status */}
       <box style={{ height: 1, width: "100%" }}>
-        <text
-          content={
-            " o Open in editor | Enter Open check URL | w Watch | Backspace Back | q Quit"
-          }
-          fg="#565f89"
-        />
+        <text content={footerText} fg={footerFg} />
       </box>
     </box>
   );
