@@ -134,14 +134,7 @@ export function App({
     <box flexDirection="column" style={{ width: "100%", height: "100%" }}>
       {/* Header */}
       <box style={{ height: 1, width: "100%" }}>
-        <text fg="#7aa2f7">
-          {" "}git-switchboard{" "}
-        </text>
-        <text fg="#565f89">
-          {" "}Remote: {showRemote ? "ON" : "OFF"} | Author: {authorLabel}
-          {searchQuery ? ` | Search: ${searchQuery}` : ""}
-          {searchMode ? " | (type to search, Enter to confirm, Esc to cancel)" : ""}
-        </text>
+        <text content={` git-switchboard  Remote: ${showRemote ? "ON" : "OFF"} | Author: ${authorLabel}${searchQuery ? ` | Search: ${searchQuery}` : ""}${searchMode ? " | (type to search, Enter to confirm, Esc to cancel)" : ""}`} fg="#7aa2f7" />
       </box>
 
       {/* Column headers */}
@@ -175,7 +168,7 @@ export function App({
 
           const prText = branch.pr
             ? `#${branch.pr.number} ${branch.pr.draft ? "Draft" : "Open"}`
-            : "\u2014";
+            : "-";
 
           return (
             <box
@@ -204,9 +197,7 @@ export function App({
 
       {/* Footer */}
       <box style={{ height: 1, width: "100%" }}>
-        <text fg="#565f89">
-          {" "}\u2191\u2193/jk Navigate | Enter Select | r Remote | a Author | / Search | q Quit
-        </text>
+        <text content={" Up/Down/jk Navigate | Enter Select | r Remote | a Author | / Search | q Quit"} fg="#565f89" />
       </box>
     </box>
   );

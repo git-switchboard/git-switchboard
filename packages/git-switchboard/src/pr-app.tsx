@@ -96,13 +96,7 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
     <box flexDirection="column" style={{ width: "100%", height: "100%" }}>
       {/* Header */}
       <box style={{ height: 1, width: "100%" }}>
-        <text fg="#7aa2f7"> git-switchboard pr </text>
-        <text fg="#565f89">
-          {" "}
-          {filteredPRs.length} open PRs
-          {searchQuery ? ` | Search: ${searchQuery}` : ""}
-          {searchMode ? " | (type to search)" : ""}
-        </text>
+        <text content={` git-switchboard pr  ${filteredPRs.length} open PRs${searchQuery ? ` | Search: ${searchQuery}` : ""}${searchMode ? " | (type to search)" : ""}`} fg="#7aa2f7" />
       </box>
 
       {/* Column headers */}
@@ -128,10 +122,10 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
 
           const localStatus =
             matches.length === 0
-              ? "\u2014"
+              ? "-"
               : cleanMatch
-                ? "\u2713 clean"
-                : "\u2717 dirty";
+                ? "* clean"
+                : "x dirty";
           const localFg =
             matches.length === 0
               ? "#565f89"
@@ -171,10 +165,7 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
 
       {/* Footer */}
       <box style={{ height: 1, width: "100%" }}>
-        <text fg="#565f89">
-          {" "}
-          {"\u2191\u2193"}/jk Navigate | Enter Checkout | / Search | q Quit
-        </text>
+        <text content={" Up/Down/jk Navigate | Enter Checkout | / Search | q Quit"} fg="#565f89" />
       </box>
     </box>
   );

@@ -66,10 +66,7 @@ export function EditorPrompt({
       </scrollbox>
 
       <box style={{ height: 1, width: "100%" }}>
-        <text fg="#565f89">
-          {" "}
-          {"\u2191\u2193"}/jk Navigate | Enter Select | q Cancel
-        </text>
+        <text content={" Up/Down/jk Navigate | Enter Select | q Cancel"} fg="#565f89" />
       </box>
     </box>
   );
