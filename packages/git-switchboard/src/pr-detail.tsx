@@ -1,7 +1,7 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LocalRepo } from './scanner.js';
-import type { CIInfo, CheckRun, UserPullRequest } from './types.js';
+import type { CIInfo, CheckRun, ReviewInfo, ReviewerState, UserPullRequest } from './types.js';
 
 function relativeTime(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -81,6 +81,7 @@ function checkTimeLabel(check: CheckRun): string {
 interface PrDetailProps {
   pr: UserPullRequest;
   ci: CIInfo | null;
+  review: ReviewInfo | null;
   ciLoading: boolean;
   matches: LocalRepo[];
   watched: boolean;
@@ -97,6 +98,7 @@ interface PrDetailProps {
 export function PrDetail({
   pr,
   ci,
+  review,
   ciLoading,
   matches,
   watched,
@@ -135,8 +137,10 @@ export function PrDetail({
   const ACTION_COUNT = 2;
   const totalItems = ACTION_COUNT + checks.length;
 
-  // Chrome: header(1) + meta(1) + spacer(1) + actions-header(1) + 2 actions(2) + spacer(1) + ci-header(1) + checks-header(1) + spacer(1) + footer(1) + padding(2) = 13
-  const checkListHeight = Math.max(1, height - 13);
+  const reviewRowCount = review ? Math.max(1, review.reviewers.length) : 1;
+  // Chrome: header(1) + meta(1) + spacer(1) + actions-header(1) + 2 actions(2) + spacer(1) +
+  //         ci-header(1) + checks-header(1) + spacer(1) + reviews-header(1) + reviewRows + spacer(1) + footer(1) + padding(2) = 15 + reviewRows
+  const checkListHeight = Math.max(1, height - 15 - reviewRowCount);
 
   const moveTo = useCallback(
     (newIndex: number) => {
@@ -380,6 +384,39 @@ export function PrDetail({
             );
           })}
       </box>
+
+      {/* Spacer */}
+      <box style={{ height: 1 }} />
+
+      {/* Reviews section */}
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={` Reviews${review ? ` (${review.reviewers.length})` : ''}`} fg="#bb9af7" />
+      </box>
+      {review && review.reviewers.length > 0 ? (
+        review.reviewers.map((r) => {
+          const icon =
+            r.state === 'APPROVED'
+              ? { char: '\u2713', fg: '#9ece6a' }
+              : r.state === 'CHANGES_REQUESTED'
+                ? { char: 'x', fg: '#f7768e' }
+                : r.state === 'DISMISSED'
+                  ? { char: '-', fg: '#565f89' }
+                  : { char: '~', fg: '#e0af68' };
+          const stateLabel = r.state.toLowerCase().replace(/_/g, ' ');
+          return (
+            <box key={r.login} style={{ height: 1, width: '100%' }}>
+              <text
+                content={`  ${icon.char} ${r.login} — ${stateLabel} (${relativeTime(r.submittedAt)})`}
+                fg={icon.fg}
+              />
+            </box>
+          );
+        })
+      ) : (
+        <box style={{ height: 1, width: '100%' }}>
+          <text content="  No reviews yet" fg="#565f89" />
+        </box>
+      )}
 
       {/* Spacer */}
       <box style={{ height: 1 }} />

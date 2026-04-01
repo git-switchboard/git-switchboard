@@ -56,9 +56,15 @@ export type ReviewStatus =
   | "dismissed"
   | "re-review-needed";
 
+export interface ReviewerState {
+  login: string;
+  state: "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED" | "COMMENTED" | "PENDING";
+  submittedAt: string;
+}
+
 export interface ReviewInfo {
   status: ReviewStatus;
-  reviewers: string[];
+  reviewers: ReviewerState[];
   fetchedAt: number;
 }
 

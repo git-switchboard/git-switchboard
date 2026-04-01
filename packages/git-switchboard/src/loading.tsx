@@ -20,14 +20,6 @@ function prStatusLine(p: PRFetchProgress, barWidth: number): { text: string; bar
       return { text: "Authenticating with GitHub...", bar: null };
     case "searching":
       return { text: "Searching for open PRs...", bar: null };
-    case "fetching-details": {
-      if (p.totalPRs === 0) return { text: "No PRs found", bar: null };
-      const fraction = p.fetchedPRs / p.totalPRs;
-      const bar = gauge(fraction, barWidth);
-      const label = `Fetching PR details: ${p.fetchedPRs}/${p.totalPRs}`;
-      const repoHint = p.currentRepo ? `  (${p.currentRepo})` : "";
-      return { text: `${label}${repoHint}`, bar };
-    }
     case "done": {
       const failed = p.failedRepos.length > 0 ? ` (${p.failedRepos.length} repo(s) skipped)` : "";
       return { text: `Done - ${p.fetchedPRs} PRs loaded${failed}`, bar: null };

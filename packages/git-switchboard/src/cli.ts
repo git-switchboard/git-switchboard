@@ -62,7 +62,7 @@ const gitSwitchboard = cli('git-switchboard', {
           const { execSync } = await import('node:child_process');
           const { resolve } = await import('node:path');
 
-          const { resolveGitHubToken, fetchUserPRs, fetchChecks } =
+          const { resolveGitHubToken, fetchUserPRs, fetchPRDetails, fetchChecks } =
             await import('./github.js');
           const { scanForRepos } = await import('./scanner.js');
           const { resolveEditor, findInstalledEditors, openInEditor } =
@@ -160,16 +160,18 @@ const gitSwitchboard = cli('git-switchboard', {
           const watchedPRs = new Set<string>();
           let watchInterval: ReturnType<typeof setInterval> | undefined;
 
-          const fetchCIForPR = async (
+          const fetchDetailsForPR = async (
             pr: import('./types.js').UserPullRequest
           ) => {
-            const ci = await fetchChecks(
+            const { ci, review } = await fetchPRDetails(
               token,
               pr.repoOwner,
               pr.repoName,
-              pr.headRef
+              pr.number
             );
-            ciCache.set(`${pr.repoId}#${pr.number}`, ci);
+            const key = `${pr.repoId}#${pr.number}`;
+            ciCache.set(key, ci);
+            reviewCache.set(key, review);
           };
 
           const renderPRList = () => {
@@ -190,7 +192,7 @@ const gitSwitchboard = cli('git-switchboard', {
                 onFetchCI: async (
                   pr: import('./types.js').UserPullRequest
                 ) => {
-                  await fetchCIForPR(pr);
+                  await fetchDetailsForPR(pr);
                   renderPRList();
                 },
                 onExit: () => {
@@ -210,7 +212,7 @@ const gitSwitchboard = cli('git-switchboard', {
             // Auto-fetch CI if not cached
             if (!ci && !ciLoadingForDetail) {
               ciLoadingForDetail = true;
-              fetchCIForPR(selectedPR!).then(() => {
+              fetchDetailsForPR(selectedPR!).then(() => {
                 ciLoadingForDetail = false;
                 renderPRDetail();
               });
@@ -220,6 +222,7 @@ const gitSwitchboard = cli('git-switchboard', {
               createElement(PrDetail, {
                 pr: selectedPR!,
                 ci,
+                review: reviewCache.get(prKey) ?? null,
                 ciLoading: ciLoadingForDetail,
                 matches: currentMatches,
                 watched: watchedPRs.has(prKey),
@@ -254,7 +257,7 @@ const gitSwitchboard = cli('git-switchboard', {
                 onRefreshCI: () => {
                   ciLoadingForDetail = true;
                   renderPRDetail();
-                  fetchCIForPR(selectedPR!).then(() => {
+                  fetchDetailsForPR(selectedPR!).then(() => {
                     ciLoadingForDetail = false;
                     renderPRDetail();
                   });
@@ -333,13 +336,14 @@ const gitSwitchboard = cli('git-switchboard', {
               );
               if (!pr) continue;
               const oldCI = ciCache.get(key);
-              const newCI = await fetchChecks(
+              const { ci: newCI, review: newReview } = await fetchPRDetails(
                 token,
                 pr.repoOwner,
                 pr.repoName,
-                pr.headRef
+                pr.number
               );
               ciCache.set(key, newCI);
+              reviewCache.set(key, newReview);
               if (
                 oldCI &&
                 oldCI.status === 'pending' &&

@@ -1,7 +1,7 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useMemo, useState } from 'react';
 import type { LocalRepo } from './scanner.js';
-import type { CIInfo, CIStatus, ReviewInfo, ReviewStatus, UserPullRequest } from './types.js';
+import type { CIInfo, ReviewInfo, ReviewStatus, UserPullRequest } from './types.js';
 
 function relativeTime(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -19,19 +19,28 @@ function relativeTime(iso: string): string {
   return `${years}y ago`;
 }
 
-function ciIcon(status: CIStatus): { char: string; fg: string } {
-  switch (status) {
-    case 'passing':
-      return { char: '\u2713', fg: '#9ece6a' };
-    case 'failing':
-      return { char: 'x', fg: '#f7768e' };
-    case 'pending':
-      return { char: '~', fg: '#e0af68' };
-    case 'mixed':
-      return { char: '!', fg: '#ff9e64' };
-    default:
-      return { char: '?', fg: '#565f89' };
-  }
+function ciSummary(ci: CIInfo | undefined): { text: string; fg: string } {
+  if (!ci || ci.checks.length === 0) return { text: '?', fg: '#565f89' };
+  const pass = ci.checks.filter(
+    (c) =>
+      c.status === 'completed' &&
+      (c.conclusion === 'success' ||
+        c.conclusion === 'skipped' ||
+        c.conclusion === 'neutral')
+  ).length;
+  const fail = ci.checks.filter(
+    (c) => c.status === 'completed' && c.conclusion === 'failure'
+  ).length;
+  const pending = ci.checks.filter((c) => c.status !== 'completed').length;
+
+  const parts: string[] = [];
+  if (pass > 0) parts.push(`${pass}\u2713`);
+  if (fail > 0) parts.push(`${fail}x`);
+  if (pending > 0) parts.push(`${pending}~`);
+
+  const fg =
+    fail > 0 ? '#f7768e' : pending > 0 ? '#e0af68' : '#9ece6a';
+  return { text: parts.join(' '), fg };
 }
 
 function reviewLabel(status: ReviewStatus): { text: string; fg: string } {
@@ -172,7 +181,7 @@ export function PrApp({
   const localCol = 12;
   const statusCol = 8;
   const updatedCol = 12;
-  const ciCol = 4;
+  const ciCol = 12;
   const reviewCol = 15;
   const prCol = Math.min(30, Math.floor(width * 0.25));
   const repoCol = Math.min(25, Math.floor(width * 0.2));
@@ -242,7 +251,7 @@ export function PrApp({
 
             const prKey = `${pr.repoId}#${pr.number}`;
             const ci = ciCache.get(prKey);
-            const ciStatus = ciIcon(ci?.status ?? 'unknown');
+            const ciStatus = ciSummary(ci);
             const review = reviewCache.get(prKey);
             const rvw = reviewLabel(review?.status ?? 'needs-review');
 
@@ -269,7 +278,7 @@ export function PrApp({
                   <span fg={pr.draft ? '#e0af68' : '#9ece6a'}>
                     {(pr.draft ? 'Draft' : 'Open').padEnd(statusCol)}
                   </span>
-                  <span fg={ciStatus.fg}>{ciStatus.char.padEnd(ciCol)}</span>
+                  <span fg={ciStatus.fg}>{ciStatus.text.slice(0, ciCol - 1).padEnd(ciCol)}</span>
                   <span fg={rvw.fg}>{rvw.text.slice(0, reviewCol - 1).padEnd(reviewCol)}</span>
                   <span fg={localFg}>{localStatus.padEnd(localCol)}</span>
                 </text>
