@@ -85,7 +85,15 @@ const gitSwitchboard = cli('git-switchboard', {
 
           // 2. Show loading screen while fetching PRs and scanning repos
           const renderer = await createCliRenderer({ exitOnCtrlC: true });
-          const root = createRoot(renderer);
+          let root = createRoot(renderer);
+
+          // Helper: unmount old tree and create fresh root to avoid
+          // yoga-layout WASM crash when swapping between different component trees
+          const swapRoot = (element: React.ReactNode) => {
+            root.unmount();
+            root = createRoot(renderer);
+            root.render(element);
+          };
 
           let prProgress: import('./github.js').PRFetchProgress = {
             phase: 'authenticating',
@@ -162,7 +170,7 @@ const gitSwitchboard = cli('git-switchboard', {
           };
 
           const renderPRList = () => {
-            root.render(
+            swapRoot(
               createElement(PrApp, {
                 prs,
                 localRepos,
@@ -198,7 +206,7 @@ const gitSwitchboard = cli('git-switchboard', {
               fetchCIForPR(selectedPR!).then(() => renderPRDetail());
             }
 
-            root.render(
+            swapRoot(
               createElement(PrDetail, {
                 pr: selectedPR!,
                 ci,
@@ -250,7 +258,7 @@ const gitSwitchboard = cli('git-switchboard', {
           };
 
           const renderClonePrompt = () => {
-            root.render(
+            swapRoot(
               createElement(ClonePrompt, {
                 repoId: selectedPR!.repoId,
                 branchName: selectedPR!.headRef,
