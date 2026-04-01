@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { Octokit } from "@octokit/rest";
-import type { CheckRun, CIInfo, CIStatus, PullRequestInfo, UserPullRequest } from "./types.js";
+import type { CheckRun, CIInfo, CIStatus, PullRequestInfo, ReviewInfo, ReviewStatus, UserPullRequest } from "./types.js";
 
 function ghCliToken(): string | undefined {
   try {
@@ -289,5 +289,120 @@ export async function fetchCheckLogs(
     return String(response.data);
   } catch {
     return null;
+  }
+}
+
+/**
+ * Fetch review status for a PR.
+ * Computes effective status by looking at latest review per reviewer,
+ * then comparing against the last push time to detect re-review needed.
+ */
+export async function fetchReviewStatus(
+  token: string,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  headRef: string
+): Promise<ReviewInfo> {
+  const octokit = new Octokit({ auth: token });
+  try {
+    // Get all reviews
+    const { data: reviews } = await octokit.rest.pulls.listReviews({
+      owner,
+      repo,
+      pull_number: pullNumber,
+      per_page: 100,
+    });
+
+    if (reviews.length === 0) {
+      return { status: "needs-review", reviewers: [], fetchedAt: Date.now() };
+    }
+
+    // Get the latest commit time to detect pushes after reviews
+    const { data: commits } = await octokit.rest.pulls.listCommits({
+      owner,
+      repo,
+      pull_number: pullNumber,
+      per_page: 1,
+    });
+    // Last commit is the most recent (API returns chronological order, last page has newest)
+    // Actually listCommits returns ascending order, so we need the last entry
+    // With per_page: 1 we only get the first commit. Use a different approach:
+    const { data: prDetail } = await octokit.rest.pulls.get({
+      owner,
+      repo,
+      pull_number: pullNumber,
+    });
+    // The updated_at on the head ref's commit
+    const lastPushAt = prDetail.head.repo
+      ? new Date(prDetail.updated_at).getTime()
+      : 0;
+
+    // Build latest review state per reviewer (ignore COMMENTED and PENDING)
+    const latestByReviewer = new Map<
+      string,
+      { state: string; submittedAt: string }
+    >();
+    for (const review of reviews) {
+      if (!review.user?.login) continue;
+      if (review.state === "COMMENTED" || review.state === "PENDING") continue;
+      const existing = latestByReviewer.get(review.user.login);
+      if (
+        !existing ||
+        new Date(review.submitted_at ?? 0) >
+          new Date(existing.submittedAt)
+      ) {
+        latestByReviewer.set(review.user.login, {
+          state: review.state,
+          submittedAt: review.submitted_at ?? "",
+        });
+      }
+    }
+
+    const reviewers = [...latestByReviewer.keys()];
+
+    // Check if changes were requested then new commits pushed
+    const hasChangesRequested = [...latestByReviewer.values()].some(
+      (r) => r.state === "CHANGES_REQUESTED"
+    );
+    if (hasChangesRequested) {
+      // Find the latest "changes requested" review time
+      const lastChangesRequestedAt = Math.max(
+        ...[...latestByReviewer.values()]
+          .filter((r) => r.state === "CHANGES_REQUESTED")
+          .map((r) => new Date(r.submittedAt).getTime())
+      );
+      // If there were pushes after the changes requested, it's re-review needed
+      if (lastPushAt > lastChangesRequestedAt) {
+        return {
+          status: "re-review-needed",
+          reviewers,
+          fetchedAt: Date.now(),
+        };
+      }
+      return {
+        status: "changes-requested",
+        reviewers,
+        fetchedAt: Date.now(),
+      };
+    }
+
+    const allApproved = [...latestByReviewer.values()].every(
+      (r) => r.state === "APPROVED"
+    );
+    if (allApproved && latestByReviewer.size > 0) {
+      return { status: "approved", reviewers, fetchedAt: Date.now() };
+    }
+
+    const hasDismissed = [...latestByReviewer.values()].some(
+      (r) => r.state === "DISMISSED"
+    );
+    if (hasDismissed) {
+      return { status: "dismissed", reviewers, fetchedAt: Date.now() };
+    }
+
+    return { status: "needs-review", reviewers, fetchedAt: Date.now() };
+  } catch {
+    return { status: "needs-review", reviewers: [], fetchedAt: Date.now() };
   }
 }

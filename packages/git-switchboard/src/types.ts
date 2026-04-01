@@ -48,6 +48,20 @@ export interface CIInfo {
   fetchedAt: number;
 }
 
+export type ReviewStatus =
+  | "needs-review"
+  | "approved"
+  | "changes-requested"
+  | "commented"
+  | "dismissed"
+  | "re-review-needed";
+
+export interface ReviewInfo {
+  status: ReviewStatus;
+  reviewers: string[];
+  fetchedAt: number;
+}
+
 export interface BranchWithPR extends BranchInfo {
   pr?: PullRequestInfo;
 }

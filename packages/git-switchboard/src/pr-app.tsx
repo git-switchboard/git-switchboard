@@ -1,7 +1,7 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useMemo, useState } from 'react';
 import type { LocalRepo } from './scanner.js';
-import type { CIInfo, CIStatus, UserPullRequest } from './types.js';
+import type { CIInfo, CIStatus, ReviewInfo, ReviewStatus, UserPullRequest } from './types.js';
 
 function relativeTime(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -34,10 +34,28 @@ function ciIcon(status: CIStatus): { char: string; fg: string } {
   }
 }
 
+function reviewLabel(status: ReviewStatus): { text: string; fg: string } {
+  switch (status) {
+    case 'approved':
+      return { text: '\u2713 Approved', fg: '#9ece6a' };
+    case 'changes-requested':
+      return { text: 'x Changes req', fg: '#f7768e' };
+    case 're-review-needed':
+      return { text: '~ Re-review', fg: '#e0af68' };
+    case 'dismissed':
+      return { text: '- Dismissed', fg: '#565f89' };
+    case 'commented':
+      return { text: '- Commented', fg: '#a9b1d6' };
+    default:
+      return { text: '? Needs review', fg: '#565f89' };
+  }
+}
+
 interface PrAppProps {
   prs: UserPullRequest[];
   localRepos: LocalRepo[];
   ciCache: Map<string, CIInfo>;
+  reviewCache: Map<string, ReviewInfo>;
   onSelect: (pr: UserPullRequest, matches: LocalRepo[]) => void;
   onFetchCI: (pr: UserPullRequest) => void;
   onExit: () => void;
@@ -47,6 +65,7 @@ export function PrApp({
   prs,
   localRepos,
   ciCache,
+  reviewCache,
   onSelect,
   onFetchCI,
   onExit,
@@ -154,11 +173,20 @@ export function PrApp({
   const statusCol = 8;
   const updatedCol = 12;
   const ciCol = 4;
+  const reviewCol = 15;
   const prCol = Math.min(30, Math.floor(width * 0.25));
   const repoCol = Math.min(25, Math.floor(width * 0.2));
   const branchCol = Math.max(
     15,
-    width - prCol - repoCol - statusCol - updatedCol - localCol - ciCol - 6
+    width -
+      prCol -
+      repoCol -
+      statusCol -
+      updatedCol -
+      localCol -
+      ciCol -
+      reviewCol -
+      6
   );
 
   return (
@@ -185,9 +213,9 @@ export function PrApp({
             repoCol
           )}${'Branch'.padEnd(branchCol)}${'Updated'.padEnd(
             updatedCol
-          )}${'Status'.padEnd(statusCol)}${'CI'.padEnd(ciCol)}${'Local'.padEnd(
-            localCol
-          )}`}
+          )}${'Status'.padEnd(statusCol)}${'CI'.padEnd(ciCol)}${'Review'.padEnd(
+            reviewCol
+          )}${'Local'.padEnd(localCol)}`}
           fg="#bb9af7"
         />
       </box>
@@ -212,9 +240,11 @@ export function PrApp({
                 ? '#9ece6a'
                 : '#f7768e';
 
-            const ciKey = `${pr.repoId}#${pr.number}`;
-            const ci = ciCache.get(ciKey);
+            const prKey = `${pr.repoId}#${pr.number}`;
+            const ci = ciCache.get(prKey);
             const ciStatus = ciIcon(ci?.status ?? 'unknown');
+            const review = reviewCache.get(prKey);
+            const rvw = reviewLabel(review?.status ?? 'needs-review');
 
             const prLabel = `#${pr.number} ${pr.title}`.slice(0, prCol - 1);
             const repoLabel = `${pr.repoOwner}/${pr.repoName}`.slice(
@@ -240,6 +270,7 @@ export function PrApp({
                     {(pr.draft ? 'Draft' : 'Open').padEnd(statusCol)}
                   </span>
                   <span fg={ciStatus.fg}>{ciStatus.char.padEnd(ciCol)}</span>
+                  <span fg={rvw.fg}>{rvw.text.slice(0, reviewCol - 1).padEnd(reviewCol)}</span>
                   <span fg={localFg}>{localStatus.padEnd(localCol)}</span>
                 </text>
               </box>

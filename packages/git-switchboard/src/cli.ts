@@ -156,6 +156,7 @@ const gitSwitchboard = cli('git-switchboard', {
           // Phase tracking
           let currentMatches: import('./scanner.js').LocalRepo[] = [];
           const ciCache = new Map<string, import('./types.js').CIInfo>();
+          const reviewCache = new Map<string, import('./types.js').ReviewInfo>();
           const watchedPRs = new Set<string>();
           let watchInterval: ReturnType<typeof setInterval> | undefined;
 
@@ -177,6 +178,7 @@ const gitSwitchboard = cli('git-switchboard', {
                 prs,
                 localRepos,
                 ciCache,
+                reviewCache,
                 onSelect: (
                   pr: import('./types.js').UserPullRequest,
                   matches: import('./scanner.js').LocalRepo[]
