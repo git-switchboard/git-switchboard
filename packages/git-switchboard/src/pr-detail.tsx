@@ -2,6 +2,7 @@ import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LocalRepo } from './scanner.js';
 import type { CIInfo, CheckRun, ReviewInfo, ReviewerState, UserPullRequest } from './types.js';
+import { CHECKMARK, LEFT_ARROW, RETURN_SYMBOL } from './unicode.js';
 
 function relativeTime(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -55,7 +56,7 @@ function checkStyle(
   }
   switch (check.conclusion) {
     case 'success':
-      return { icon: '\u2713', fg: '#9ece6a', spinner: false }; // green checkmark ✓
+      return { icon: CHECKMARK, fg: '#9ece6a', spinner: false }; // green checkmark ✓
     case 'failure':
       return { icon: 'x', fg: '#f7768e', spinner: false }; // red x
     case 'skipped':
@@ -276,7 +277,7 @@ export function PrDetail({
   // Footer text
   const footerText = statusText
     ? ` ${statusText}`
-    : ` [Enter] Select | [c]opy logs | [r]efresh CI | [w]atch | [\u2190] Back | [q]uit`;
+    : ` [${RETURN_SYMBOL}] Select | [c]opy logs | [r]efresh CI | [w]atch | [${LEFT_ARROW}] Back | [q]uit`;
   const footerFg = statusText ? '#9ece6a' : '#565f89';
 
   return (
@@ -396,7 +397,7 @@ export function PrDetail({
         review.reviewers.map((r) => {
           const icon =
             r.state === 'APPROVED'
-              ? { char: '\u2713', fg: '#9ece6a' }
+              ? { char: CHECKMARK, fg: '#9ece6a' }
               : r.state === 'CHANGES_REQUESTED'
                 ? { char: 'x', fg: '#f7768e' }
                 : r.state === 'DISMISSED'

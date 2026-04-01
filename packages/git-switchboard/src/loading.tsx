@@ -1,6 +1,7 @@
 import { useTerminalDimensions } from "@opentui/react";
 import type { PRFetchProgress } from "./github.js";
 import type { ScanProgress } from "./scanner.js";
+import { GAUGE_EMPTY, GAUGE_FILLED } from "./unicode.js";
 
 interface LoadingProps {
   prProgress: PRFetchProgress;
@@ -11,7 +12,7 @@ interface LoadingProps {
 function gauge(fraction: number, width: number): string {
   const filled = Math.round(fraction * width);
   const empty = width - filled;
-  return "\u2588".repeat(filled) + "\u2591".repeat(empty);
+  return GAUGE_FILLED.repeat(filled) + GAUGE_EMPTY.repeat(empty);
 }
 
 function prStatusLine(p: PRFetchProgress, barWidth: number): { text: string; bar: string | null } {

@@ -2,6 +2,7 @@ import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useMemo, useState } from 'react';
 import type { LocalRepo } from './scanner.js';
 import type { CIInfo, ReviewInfo, ReviewStatus, UserPullRequest } from './types.js';
+import { CHECKMARK, DOWN_ARROW, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
 
 function relativeTime(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -34,7 +35,7 @@ function ciSummary(ci: CIInfo | undefined): { text: string; fg: string } {
   const pending = ci.checks.filter((c) => c.status !== 'completed').length;
 
   const parts: string[] = [];
-  if (pass > 0) parts.push(`${pass}\u2713`);
+  if (pass > 0) parts.push(`${pass}${CHECKMARK}`);
   if (fail > 0) parts.push(`${fail}x`);
   if (pending > 0) parts.push(`${pending}~`);
 
@@ -46,7 +47,7 @@ function ciSummary(ci: CIInfo | undefined): { text: string; fg: string } {
 function reviewLabel(status: ReviewStatus): { text: string; fg: string } {
   switch (status) {
     case 'approved':
-      return { text: '\u2713 Approved', fg: '#9ece6a' };
+      return { text: `${CHECKMARK} Approved`, fg: '#9ece6a' };
     case 'changes-requested':
       return { text: 'x Changes req', fg: '#f7768e' };
     case 're-review-needed':
@@ -291,7 +292,7 @@ export function PrApp({
       <box style={{ height: 1, width: '100%' }}>
         <text
           content={
-            ` [\u2191\u2193] Navigate | [Enter] Select | [c] Fetch CI | [/] Search | [q]uit`
+            ` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [c] Fetch CI | [/] Search | [q]uit`
           }
           fg="#565f89"
         />

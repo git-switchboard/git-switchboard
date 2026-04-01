@@ -1,6 +1,7 @@
 import { useKeyboard } from "@opentui/react";
 import { useState } from "react";
 import type { EditorInfo } from "./editor.js";
+import { DOWN_ARROW, RETURN_SYMBOL, UP_ARROW } from "./unicode.js";
 
 interface EditorPromptProps {
   editors: EditorInfo[];
@@ -63,7 +64,7 @@ export function EditorPrompt({
       </box>
 
       <box style={{ height: 1, width: "100%" }}>
-        <text content={` [\u2191\u2193] Navigate | [Enter] Select | [q] Cancel`} fg="#565f89" />
+        <text content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [q] Cancel`} fg="#565f89" />
       </box>
     </box>
   );

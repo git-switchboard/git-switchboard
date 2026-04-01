@@ -1,6 +1,7 @@
-import { useKeyboard } from "@opentui/react";
-import { useState } from "react";
-import type { LocalRepo } from "./scanner.js";
+import { useKeyboard } from '@opentui/react';
+import { useState } from 'react';
+import type { LocalRepo } from './scanner.js';
+import { DOWN_ARROW, LEFT_ARROW, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
 
 interface ClonePromptProps {
   repoId: string;
@@ -21,25 +22,25 @@ export function ClonePrompt({
 }: ClonePromptProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [inputMode, setInputMode] = useState(false);
-  const [worktreePath, setWorktreePath] = useState("");
+  const [worktreePath, setWorktreePath] = useState('');
 
   // Items: existing clones + "Create new worktree" option
   const items = [
     ...matches.map((m) => {
       const onBranch = m.currentBranch === branchName;
-      let status = m.isClean ? "clean" : "dirty";
-      if (onBranch) status += ", on branch";
-      const suffix = m.isWorktree ? " [worktree]" : "";
+      let status = m.isClean ? 'clean' : 'dirty';
+      if (onBranch) status += ', on branch';
+      const suffix = m.isWorktree ? ' [worktree]' : '';
       return {
         label: `${m.path} (${status})${suffix}`,
-        type: "clone" as const,
+        type: 'clone' as const,
         repo: m,
         onBranch,
       };
     }),
     {
-      label: "+ Create new worktree",
-      type: "new-worktree" as const,
+      label: '+ Create new worktree',
+      type: 'new-worktree' as const,
       repo: undefined as LocalRepo | undefined,
       onBranch: false,
     },
@@ -50,88 +51,102 @@ export function ClonePrompt({
 
   useKeyboard((key) => {
     if (inputMode) {
-      if (key.name === "escape") {
+      if (key.name === 'escape') {
         setInputMode(false);
-        setWorktreePath("");
-      } else if (key.name === "return" && worktreePath) {
+        setWorktreePath('');
+      } else if (key.name === 'return' && worktreePath) {
         onCreateWorktree(worktreePath);
-      } else if (key.name === "backspace") {
+      } else if (key.name === 'backspace') {
         setWorktreePath((p) => p.slice(0, -1));
-      } else if (key.raw && key.raw.length === 1 && key.raw >= " ") {
+      } else if (key.raw && key.raw.length === 1 && key.raw >= ' ') {
         setWorktreePath((p) => p + key.raw);
       }
       return;
     }
 
     switch (key.name) {
-      case "up":
-      case "k":
+      case 'up':
+      case 'k':
         setSelectedIndex((i) => clampIndex(i - 1));
         break;
-      case "down":
-      case "j":
+      case 'down':
+      case 'j':
         setSelectedIndex((i) => clampIndex(i + 1));
         break;
-      case "return": {
+      case 'return': {
         const item = items[selectedIndex];
-        if (item.type === "clone" && item.repo) {
+        if (item.type === 'clone' && item.repo) {
           onSelect(item.repo, item.onBranch);
-        } else if (item.type === "new-worktree") {
+        } else if (item.type === 'new-worktree') {
           setInputMode(true);
         }
         break;
       }
-      case "backspace":
-      case "escape":
-      case "q":
+      case 'backspace':
+      case 'escape':
+      case 'q':
         onCancel();
         break;
     }
   });
 
   return (
-    <box flexDirection="column" style={{ width: "100%", height: "100%", padding: 1 }}>
-      <box style={{ height: 1, width: "100%" }}>
-        <text content={` Select clone for ${repoId} (branch: ${branchName})`} fg="#7aa2f7" />
+    <box
+      flexDirection="column"
+      style={{ width: '100%', height: '100%', padding: 1 }}
+    >
+      <box style={{ height: 1, width: '100%' }}>
+        <text
+          content={` Select clone for ${repoId} (branch: ${branchName})`}
+          fg="#7aa2f7"
+        />
       </box>
 
       <box style={{ height: 1 }} />
 
       {inputMode ? (
         <box
-          style={{ height: 3, width: "100%", border: true }}
+          style={{ height: 3, width: '100%', border: true }}
           title="Worktree path (relative to cwd or absolute)"
         >
-          <text content={worktreePath || " "} fg="#c0caf5" />
+          <text content={worktreePath || ' '} fg="#c0caf5" />
         </box>
       ) : (
-        <box flexDirection="column" style={{ flexGrow: 1, width: "100%" }}>
+        <box flexDirection="column" style={{ flexGrow: 1, width: '100%' }}>
           {items.map((item, i) => {
             const isSelected = i === selectedIndex;
-            const bg = isSelected ? "#292e42" : undefined;
+            const bg = isSelected ? '#292e42' : undefined;
             const fg =
-              item.type === "new-worktree"
-                ? "#7aa2f7"
+              item.type === 'new-worktree'
+                ? '#7aa2f7'
                 : item.onBranch
-                  ? "#73daca"
-                  : "#c0caf5";
+                ? '#73daca'
+                : '#c0caf5';
 
             return (
               <box
                 key={item.label}
-                style={{ height: 1, width: "100%", backgroundColor: bg }}
+                style={{ height: 1, width: '100%', backgroundColor: bg }}
               >
-                <text content={` ${item.onBranch ? "* " : "  "}${item.label}`} fg={fg} />
+                <text
+                  content={` ${item.onBranch ? '* ' : '  '}${item.label}`}
+                  fg={fg}
+                />
               </box>
             );
           })}
         </box>
       )}
 
-      <box style={{ height: 1, width: "100%" }}>
-        <text content={inputMode
-            ? " Type path, [Enter] confirm, [Esc] cancel"
-            : ` [\u2191\u2193] Navigate | [Enter] Select | [\u2190] Back`} fg="#565f89" />
+      <box style={{ height: 1, width: '100%' }}>
+        <text
+          content={
+            inputMode
+              ? ` Type path, [${RETURN_SYMBOL}] confirm, [Esc] cancel`
+              : ` [${UP_ARROW}\\${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [${LEFT_ARROW}] Back`
+          }
+          fg="#565f89"
+        />
       </box>
     </box>
   );
