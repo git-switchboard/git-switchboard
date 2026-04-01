@@ -37,7 +37,7 @@ export const rateLimit: { current: RateLimitInfo | null } = { current: null };
 
 /** Create an Octokit instance that tracks rate limit from response headers */
 export function createOctokit(token: string): Octokit {
-  const octokit = createOctokit(token);
+  const octokit = new Octokit({ auth: token });
   octokit.hook.after('request', (response) => {
     const h = response.headers as Record<string, string | undefined>;
     const remaining = h['x-ratelimit-remaining'];
