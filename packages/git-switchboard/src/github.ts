@@ -132,6 +132,36 @@ const SEARCH_USER_PRS = graphql(`
             owner { login }
             name
           }
+          commits(last: 1) {
+            nodes {
+              commit {
+                committedDate
+                statusCheckRollup {
+                  contexts(first: 100) {
+                    nodes {
+                      __typename
+                      ... on CheckRun {
+                        databaseId
+                        name
+                        status
+                        conclusion
+                        detailsUrl
+                        startedAt
+                        completedAt
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          reviews(last: 100) {
+            nodes {
+              author { login }
+              state
+              submittedAt
+            }
+          }
         }
       }
     }
@@ -187,12 +217,20 @@ export interface PRFetchProgress {
   failedRepos: string[];
 }
 
+export interface FetchUserPRsResult {
+  prs: UserPullRequest[];
+  ciCache: Map<string, CIInfo>;
+  reviewCache: Map<string, ReviewInfo>;
+}
+
 export async function fetchUserPRs(
   token: string,
   onProgress?: (progress: PRFetchProgress) => void
-): Promise<UserPullRequest[]> {
+): Promise<FetchUserPRsResult> {
   const octokit = new Octokit({ auth: token });
   const prs: UserPullRequest[] = [];
+  const ciCache = new Map<string, CIInfo>();
+  const reviewCache = new Map<string, ReviewInfo>();
 
   const progress: PRFetchProgress = {
     phase: 'authenticating',
@@ -210,7 +248,7 @@ export async function fetchUserPRs(
     progress.phase = 'searching';
     onProgress?.(progress);
 
-    // Single GraphQL query gets all PRs with headRef — no per-PR REST calls
+    // Single GraphQL query gets PRs + CI + reviews in one call
     const result = await execute(octokit, SEARCH_USER_PRS, {
       searchQuery: `is:pr is:open author:${username}`,
     });
@@ -224,6 +262,7 @@ export async function fetchUserPRs(
       const forkId = headRepo
         ? `${headRepo.owner.login}/${headRepo.name}`.toLowerCase()
         : null;
+      const prKey = `${baseId}#${node.number}`;
 
       prs.push({
         number: node.number,
@@ -238,6 +277,45 @@ export async function fetchUserPRs(
         updatedAt: node.updatedAt,
         url: node.url,
       });
+
+      // Extract CI from commits → statusCheckRollup
+      const commitNode = (node.commits?.nodes ?? [])[0];
+      const lastCommitDate = commitNode?.commit.committedDate ?? '';
+      const contextNodes =
+        commitNode?.commit.statusCheckRollup?.contexts.nodes ?? [];
+
+      const checks: CheckRun[] = contextNodes
+        .filter(
+          (n): n is typeof n & { __typename: 'CheckRun'; name: string } =>
+            n != null && n.__typename === 'CheckRun' && n.name != null
+        )
+        .map((n) => ({
+          id: n.databaseId ?? 0,
+          name: n.name,
+          status: (n.status?.toLowerCase() ?? 'queued') as CheckRun['status'],
+          conclusion: n.conclusion?.toLowerCase() ?? null,
+          detailsUrl: n.detailsUrl ?? null,
+          startedAt: n.startedAt ?? null,
+          completedAt: n.completedAt ?? null,
+        }));
+
+      ciCache.set(prKey, {
+        status: computeCIStatus(checks),
+        checks,
+        fetchedAt: Date.now(),
+      });
+
+      // Extract reviews
+      const reviewNodes: ReviewNodeInput[] = ((node.reviews?.nodes) ?? [])
+        .filter((n): n is NonNullable<typeof n> => n != null)
+        .filter((n) => n.submittedAt != null)
+        .map((n) => ({
+          author: n.author ? { login: n.author.login } : null,
+          state: n.state,
+          submittedAt: n.submittedAt!,
+        }));
+
+      reviewCache.set(prKey, computeReviewStatus(reviewNodes, lastCommitDate));
     }
 
     progress.fetchedPRs = prs.length;
@@ -247,7 +325,7 @@ export async function fetchUserPRs(
     console.error(`Failed to fetch PRs: ${describeApiError(error)}`);
   }
 
-  return prs;
+  return { prs, ciCache, reviewCache };
 }
 
 // ─── fetchPRDetails (GraphQL) — CI + Reviews in one call ────────

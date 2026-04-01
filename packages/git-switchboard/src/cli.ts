@@ -143,7 +143,15 @@ const gitSwitchboard = cli('git-switchboard', {
             return repos;
           });
 
-          const [prs, localRepos] = await Promise.all([prPromise, scanPromise]);
+          const [prResult, localRepos] = await Promise.all([
+            prPromise,
+            scanPromise,
+          ]);
+          const { prs } = prResult;
+
+          // Seed caches from the initial search query
+          const ciCache = new Map(prResult.ciCache);
+          const reviewCache = new Map(prResult.reviewCache);
 
           if (prs.length === 0) {
             renderer.destroy();
@@ -161,8 +169,6 @@ const gitSwitchboard = cli('git-switchboard', {
 
           // Phase tracking
           let currentMatches: import('./scanner.js').LocalRepo[] = [];
-          const ciCache = new Map<string, import('./types.js').CIInfo>();
-          const reviewCache = new Map<string, import('./types.js').ReviewInfo>();
           const watchedPRs = new Set<string>();
           let watchInterval: ReturnType<typeof setInterval> | undefined;
 

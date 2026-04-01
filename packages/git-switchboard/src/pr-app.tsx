@@ -1,8 +1,19 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LocalRepo } from './scanner.js';
-import type { CIInfo, ReviewInfo, ReviewStatus, UserPullRequest } from './types.js';
-import { CHECKMARK, CROSSMARK, DOWN_ARROW, EN_DASH, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
+import type {
+  CIInfo,
+  ReviewInfo,
+  ReviewStatus,
+  UserPullRequest,
+} from './types.js';
+import {
+  CHECKMARK,
+  CROSSMARK,
+  DOWN_ARROW,
+  RETURN_SYMBOL,
+  UP_ARROW,
+} from './unicode.js';
 
 function relativeTime(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -44,8 +55,7 @@ function ciSummary(
   if (fail > 0) parts.push(`${fail}${CROSSMARK}`);
   if (pending > 0) parts.push(`${pending}${spinnerChar}`);
 
-  const fg =
-    fail > 0 ? '#f7768e' : pending > 0 ? '#e0af68' : '#9ece6a';
+  const fg = fail > 0 ? '#f7768e' : pending > 0 ? '#e0af68' : '#9ece6a';
   return { text: parts.join(' '), fg };
 }
 
@@ -57,12 +67,8 @@ function reviewLabel(status: ReviewStatus): { text: string; fg: string } {
       return { text: CROSSMARK + ' Changes req', fg: '#f7768e' };
     case 're-review-needed':
       return { text: '~ Re-review', fg: '#e0af68' };
-    case 'dismissed':
-      return { text: EN_DASH + ' Dismissed', fg: '#565f89' };
-    case 'commented':
-      return { text: EN_DASH + ' Commented', fg: '#a9b1d6' };
     default:
-      return { text: '? Needs review', fg: '#565f89' };
+      return { text: 'Needs review', fg: '#565f89' };
   }
 }
 
@@ -276,8 +282,12 @@ export function PrApp({
                   <span fg="#565f89">
                     {relativeTime(pr.updatedAt).padEnd(updatedCol)}
                   </span>
-                  <span fg={ciStatus.fg}>{ciStatus.text.slice(0, ciCol - 1).padEnd(ciCol)}</span>
-                  <span fg={rvw.fg}>{rvw.text.slice(0, reviewCol - 1).padEnd(reviewCol)}</span>
+                  <span fg={ciStatus.fg}>
+                    {ciStatus.text.slice(0, ciCol - 1).padEnd(ciCol)}
+                  </span>
+                  <span fg={rvw.fg}>
+                    {rvw.text.slice(0, reviewCol - 1).padEnd(reviewCol)}
+                  </span>
                 </text>
               </box>
             );
@@ -287,9 +297,7 @@ export function PrApp({
       {/* Footer */}
       <box style={{ height: 1, width: '100%' }}>
         <text
-          content={
-            ` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [c] Fetch CI | [/] Search | [q]uit`
-          }
+          content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [c] Fetch CI | [/] Search | [q]uit`}
           fg="#565f89"
         />
       </box>
