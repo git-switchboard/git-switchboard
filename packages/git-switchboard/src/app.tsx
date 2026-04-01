@@ -29,6 +29,7 @@ export function App({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
 
   const authorFilterModes: AuthorFilterMode[] = useMemo(() => {
     const modes: AuthorFilterMode[] = ["all", "me"];
@@ -56,9 +57,20 @@ export function App({
     return result;
   }, [branches, authorFilter, currentUser, authorList, searchQuery]);
 
-  const clampIndex = useCallback(
-    (idx: number) => Math.max(0, Math.min(idx, filteredBranches.length - 1)),
-    [filteredBranches.length]
+  // Virtual scrolling: 3 chrome rows (header, column headers, footer) + 2 padding rows
+  const listHeight = Math.max(1, height - 5);
+
+  const moveTo = useCallback(
+    (newIndex: number) => {
+      const clamped = Math.max(0, Math.min(newIndex, filteredBranches.length - 1));
+      setSelectedIndex(clamped);
+      setScrollOffset((prev) => {
+        if (clamped < prev) return clamped;
+        if (clamped >= prev + listHeight) return clamped - listHeight + 1;
+        return prev;
+      });
+    },
+    [filteredBranches.length, listHeight]
   );
 
   useKeyboard((key) => {
@@ -73,6 +85,7 @@ export function App({
       } else if (key.raw && key.raw.length === 1 && key.raw >= ' ') {
         setSearchQuery((q) => q + key.raw);
         setSelectedIndex(0);
+        setScrollOffset(0);
       }
       return;
     }
@@ -80,11 +93,11 @@ export function App({
     switch (key.name) {
       case "up":
       case "k":
-        setSelectedIndex((i) => clampIndex(i - 1));
+        moveTo(selectedIndex - 1);
         break;
       case "down":
       case "j":
-        setSelectedIndex((i) => clampIndex(i + 1));
+        moveTo(selectedIndex + 1);
         break;
       case "return": {
         const branch = filteredBranches[selectedIndex];
@@ -97,6 +110,7 @@ export function App({
         const newBranches = fetchBranches(newShowRemote);
         setBranches(newBranches);
         setSelectedIndex(0);
+        setScrollOffset(0);
         break;
       }
       case "a": {
@@ -105,6 +119,7 @@ export function App({
           return authorFilterModes[(idx + 1) % authorFilterModes.length];
         });
         setSelectedIndex(0);
+        setScrollOffset(0);
         break;
       }
       case "slash":
@@ -130,27 +145,13 @@ export function App({
   const dateCol = 14;
   const branchCol = Math.max(20, width - prCol - authorCol - dateCol - 8);
 
-  // Virtual scrolling: 3 rows reserved for header, column headers, footer
-  const listHeight = Math.max(1, height - 3);
-  const scrollOffset = useMemo(() => {
-    if (selectedIndex < 0) return 0;
-    if (selectedIndex >= filteredBranches.length) return 0;
-    // Keep selected item in view
-    const maxOffset = Math.max(0, filteredBranches.length - listHeight);
-    let offset = 0;
-    if (selectedIndex >= listHeight) {
-      offset = selectedIndex - listHeight + 1;
-    }
-    return Math.min(offset, maxOffset);
-  }, [selectedIndex, filteredBranches.length, listHeight]);
-
   const visibleBranches = filteredBranches.slice(
     scrollOffset,
     scrollOffset + listHeight
   );
 
   return (
-    <box flexDirection="column" style={{ width: "100%", height: "100%" }}>
+    <box flexDirection="column" style={{ width: "100%", height: "100%", padding: 1 }}>
       {/* Header */}
       <box style={{ height: 1, width: "100%" }}>
         <text content={` git-switchboard  Remote: ${showRemote ? "ON" : "OFF"} | Author: ${authorLabel}${searchQuery ? ` | Search: ${searchQuery}` : ""}${searchMode ? " | (type to search, Enter to confirm, Esc to cancel)" : ""}`} fg="#7aa2f7" />

@@ -1,5 +1,5 @@
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import type { UserPullRequest } from "./types.js";
 import type { LocalRepo } from "./scanner.js";
 
@@ -13,6 +13,7 @@ interface PrAppProps {
 export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
   const { width, height } = useTerminalDimensions();
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState(false);
 
@@ -36,8 +37,21 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
     return map;
   }, [prs, localRepos]);
 
-  const clampIndex = (idx: number) =>
-    Math.max(0, Math.min(idx, filteredPRs.length - 1));
+  // 3 chrome rows (header, column headers, footer) + 2 padding rows
+  const listHeight = Math.max(1, height - 5);
+
+  const moveTo = useCallback(
+    (newIndex: number) => {
+      const clamped = Math.max(0, Math.min(newIndex, filteredPRs.length - 1));
+      setSelectedIndex(clamped);
+      setScrollOffset((prev) => {
+        if (clamped < prev) return clamped;
+        if (clamped >= prev + listHeight) return clamped - listHeight + 1;
+        return prev;
+      });
+    },
+    [filteredPRs.length, listHeight]
+  );
 
   useKeyboard((key) => {
     if (searchMode) {
@@ -51,6 +65,7 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
       } else if (key.raw && key.raw.length === 1 && key.raw >= " ") {
         setSearchQuery((q) => q + key.raw);
         setSelectedIndex(0);
+        setScrollOffset(0);
       }
       return;
     }
@@ -58,11 +73,11 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
     switch (key.name) {
       case "up":
       case "k":
-        setSelectedIndex((i) => clampIndex(i - 1));
+        moveTo(selectedIndex - 1);
         break;
       case "down":
       case "j":
-        setSelectedIndex((i) => clampIndex(i + 1));
+        moveTo(selectedIndex + 1);
         break;
       case "return": {
         const pr = filteredPRs[selectedIndex];
@@ -93,7 +108,7 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
   );
 
   return (
-    <box flexDirection="column" style={{ width: "100%", height: "100%" }}>
+    <box flexDirection="column" style={{ width: "100%", height: "100%", padding: 1 }}>
       {/* Header */}
       <box style={{ height: 1, width: "100%" }}>
         <text content={` git-switchboard pr  ${filteredPRs.length} open PRs${searchQuery ? ` | Search: ${searchQuery}` : ""}${searchMode ? " | (type to search)" : ""}`} fg="#7aa2f7" />
@@ -106,15 +121,7 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
 
       {/* PR list */}
       <box flexDirection="column" style={{ flexGrow: 1, width: "100%" }}>
-        {(() => {
-          const listHeight = Math.max(1, height - 3);
-          let scrollOffset = 0;
-          if (selectedIndex >= listHeight) {
-            scrollOffset = selectedIndex - listHeight + 1;
-          }
-          scrollOffset = Math.min(scrollOffset, Math.max(0, filteredPRs.length - listHeight));
-
-          return filteredPRs.slice(scrollOffset, scrollOffset + listHeight).map((pr, i) => {
+        {filteredPRs.slice(scrollOffset, scrollOffset + listHeight).map((pr, i) => {
             const actualIndex = scrollOffset + i;
             const isSelected = actualIndex === selectedIndex;
             const bg = isSelected ? "#292e42" : undefined;
@@ -162,8 +169,7 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
                 </text>
               </box>
             );
-          });
-        })()}
+          })}
       </box>
 
       {/* Footer */}
