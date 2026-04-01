@@ -62,16 +62,17 @@ const gitSwitchboard = cli('git-switchboard', {
           const { execSync } = await import('node:child_process');
           const { resolve } = await import('node:path');
 
-          const { resolveGitHubToken, fetchUserPRs } = await import(
-            './github.js'
-          );
+          const { resolveGitHubToken, fetchUserPRs, fetchChecks } =
+            await import('./github.js');
           const { scanForRepos } = await import('./scanner.js');
           const { resolveEditor, findInstalledEditors, openInEditor } =
             await import('./editor.js');
           const { PrApp } = await import('./pr-app.js');
+          const { PrDetail } = await import('./pr-detail.js');
           const { ClonePrompt } = await import('./clone-prompt.js');
           const { EditorPrompt } = await import('./editor-prompt.js');
           const { Loading } = await import('./loading.js');
+          const { openUrl, sendNotification } = await import('./notify.js');
 
           // 1. Resolve token
           const token = resolveGitHubToken(args['github-token']);
@@ -144,21 +145,70 @@ const gitSwitchboard = cli('git-switchboard', {
 
           // Phase tracking
           let currentMatches: import('./scanner.js').LocalRepo[] = [];
+          const ciCache = new Map<string, import('./types.js').CIInfo>();
+          const watchedPRs = new Set<string>();
+          let watchInterval: ReturnType<typeof setInterval> | undefined;
+
+          const fetchCIForPR = async (
+            pr: import('./types.js').UserPullRequest
+          ) => {
+            const ci = await fetchChecks(
+              token,
+              pr.repoOwner,
+              pr.repoName,
+              pr.headRef
+            );
+            ciCache.set(`${pr.repoId}#${pr.number}`, ci);
+          };
 
           const renderPRList = () => {
             root.render(
               createElement(PrApp, {
                 prs,
                 localRepos,
+                ciCache,
                 onSelect: (
                   pr: import('./types.js').UserPullRequest,
                   matches: import('./scanner.js').LocalRepo[]
                 ) => {
                   selectedPR = pr;
+                  currentMatches = matches;
+                  renderPRDetail();
+                },
+                onFetchCI: async (
+                  pr: import('./types.js').UserPullRequest
+                ) => {
+                  await fetchCIForPR(pr);
+                  renderPRList();
+                },
+                onExit: () => {
+                  renderer.destroy();
+                  done();
+                },
+              }) as React.ReactNode
+            );
+          };
 
-                  // Prefer clone already on the right branch
+          const renderPRDetail = () => {
+            const prKey = `${selectedPR!.repoId}#${selectedPR!.number}`;
+            const ci = ciCache.get(prKey) ?? null;
+
+            // Auto-fetch CI if not cached
+            if (!ci) {
+              fetchCIForPR(selectedPR!).then(() => renderPRDetail());
+            }
+
+            root.render(
+              createElement(PrDetail, {
+                pr: selectedPR!,
+                ci,
+                matches: currentMatches,
+                watched: watchedPRs.has(prKey),
+                onOpenInEditor: () => {
+                  // Clone selection logic (moved from old onSelect)
+                  const matches = currentMatches;
                   const onBranch = matches.filter(
-                    (r) => r.currentBranch === pr.headRef
+                    (r) => r.currentBranch === selectedPR!.headRef
                   );
                   if (onBranch.length === 1) {
                     selectedRepo = onBranch[0];
@@ -167,8 +217,6 @@ const gitSwitchboard = cli('git-switchboard', {
                     done();
                     return;
                   }
-
-                  // Auto-select if exactly one clean clone
                   const cleanMatches = matches.filter((r) => r.isClean);
                   if (cleanMatches.length === 1) {
                     selectedRepo = cleanMatches[0];
@@ -176,18 +224,23 @@ const gitSwitchboard = cli('git-switchboard', {
                     done();
                     return;
                   }
-
-                  // If matches exist but need user choice, show clone prompt
                   if (matches.length > 0) {
-                    currentMatches = matches;
                     renderClonePrompt();
                     return;
                   }
-
-                  // No local clones — still proceed (user can create worktree)
                   currentMatches = [];
                   renderClonePrompt();
                 },
+                onBack: () => renderPRList(),
+                onWatch: () => {
+                  if (watchedPRs.has(prKey)) {
+                    watchedPRs.delete(prKey);
+                  } else {
+                    watchedPRs.add(prKey);
+                  }
+                  renderPRDetail();
+                },
+                onOpenUrl: (url: string) => openUrl(url),
                 onExit: () => {
                   renderer.destroy();
                   done();
@@ -226,7 +279,42 @@ const gitSwitchboard = cli('git-switchboard', {
           };
 
           renderPRList();
+
+          watchInterval = setInterval(async () => {
+            if (watchedPRs.size === 0) return;
+            for (const key of watchedPRs) {
+              const match = key.match(/^(.+)#(\d+)$/);
+              if (!match) continue;
+              const pr = prs.find(
+                (p) => p.repoId === match[1] && p.number === Number(match[2])
+              );
+              if (!pr) continue;
+              const oldCI = ciCache.get(key);
+              const newCI = await fetchChecks(
+                token,
+                pr.repoOwner,
+                pr.repoName,
+                pr.headRef
+              );
+              ciCache.set(key, newCI);
+              if (
+                oldCI &&
+                oldCI.status === 'pending' &&
+                newCI.status !== 'pending' &&
+                newCI.status !== 'unknown'
+              ) {
+                const icon = newCI.status === 'passing' ? '*' : 'x';
+                sendNotification(
+                  `git-switchboard: CI ${newCI.status}`,
+                  `${icon} ${pr.repoOwner}/${pr.repoName}#${pr.number}: ${pr.title}`
+                );
+              }
+            }
+          }, 30_000);
+
           await promise;
+
+          if (watchInterval) clearInterval(watchInterval);
 
           if (!selectedPR) return;
 
