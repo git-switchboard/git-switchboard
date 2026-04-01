@@ -178,7 +178,7 @@ export async function fetchUserPRs(
             number: item.number,
             title: item.title,
             state: item.state,
-            draft: prDetail.draft,
+            draft: prDetail.draft ?? false,
             repoOwner: owner,
             repoName: name,
             repoId: repoKey.toLowerCase(),

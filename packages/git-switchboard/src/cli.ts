@@ -281,10 +281,8 @@ const gitSwitchboard = cli('git-switchboard', {
 
           // 5. Open in editor
           let editor = resolveEditor(args.editor);
-          console.log({ editor });
           if (!editor) {
             const installed = findInstalledEditors();
-            console.log({ installed });
             if (installed.length === 1) {
               editor = {
                 command: installed[0].command,

@@ -74,7 +74,7 @@ export interface ResolvedEditor {
  * Resolve which editor to use.
  * Returns undefined if detection fails and the caller should prompt.
  */
-export function resolveEditor(flagValue?: string): ResolvedEditor | undefined {
+export function resolveEditor(flagValue?: string): ResolvedEditor | null {
   // 1. Explicit flag
   if (flagValue) {
     const known = KNOWN_EDITORS.find((e) => e.command === flagValue);
@@ -87,9 +87,11 @@ export function resolveEditor(flagValue?: string): ResolvedEditor | undefined {
 
   // 2. $EDITOR env var
   const envEditor = process.env.EDITOR;
-  if (envEditor) {
+  if (
+    envEditor &&
+    (envEditor !== 'vi' || process.env.npm_lifecycle_event !== 'npx')
+  ) {
     const known = KNOWN_EDITORS.find((e) => e.command === envEditor);
-    console.log('Read editor from env', envEditor, known);
     return {
       command: envEditor,
       dirArg: known?.dirArg ?? ((d) => [d]),
@@ -101,7 +103,6 @@ export function resolveEditor(flagValue?: string): ResolvedEditor | undefined {
   const termEditor = detectTerminalEditor();
   if (termEditor) {
     const known = KNOWN_EDITORS.find((e) => e.command === termEditor);
-    console.log('Read editor from term');
     return {
       command: termEditor,
       dirArg: known?.dirArg ?? ((d) => [d]),
@@ -110,7 +111,7 @@ export function resolveEditor(flagValue?: string): ResolvedEditor | undefined {
   }
 
   // 4. Caller should prompt
-  return undefined;
+  return null;
 }
 
 export function openInEditor(editor: ResolvedEditor, dir: string): void {
