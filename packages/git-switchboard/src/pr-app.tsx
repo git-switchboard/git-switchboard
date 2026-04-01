@@ -80,7 +80,8 @@ interface PrAppProps {
   ciCache: Map<string, CIInfo>;
   reviewCache: Map<string, ReviewInfo>;
   onSelect: (pr: UserPullRequest, matches: LocalRepo[]) => void;
-  onFetchCI: (pr: UserPullRequest) => void;
+  /** Fetch CI + review for a PR. Resolves when caches are updated. */
+  onFetchCI: (pr: UserPullRequest) => Promise<void>;
   onExit: () => void;
 }
 
@@ -100,6 +101,8 @@ export function PrApp({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState(false);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
+  // Bump to force re-render after CI fetch (caches are mutated externally)
+  const [, forceRender] = useState(0);
 
   // Animate spinner when any PR has pending checks
   const hasPending = useMemo(
@@ -201,7 +204,9 @@ export function PrApp({
       }
       case 'c': {
         const pr = filteredPRs[selectedIndex];
-        if (pr) onFetchCI(pr);
+        if (pr) {
+          onFetchCI(pr).then(() => forceRender((n) => n + 1));
+        }
         break;
       }
       case 'escape':

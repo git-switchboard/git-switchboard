@@ -205,7 +205,8 @@ const gitSwitchboard = cli('git-switchboard', {
                   pr: import('./types.js').UserPullRequest
                 ) => {
                   await fetchDetailsForPR(pr);
-                  renderPRList();
+                  // Don't re-render from here — PrApp triggers its own
+                  // re-render via forceRender after the promise resolves
                 },
                 onExit: () => {
                   renderer.destroy();
