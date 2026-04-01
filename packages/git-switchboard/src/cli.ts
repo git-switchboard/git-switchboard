@@ -85,8 +85,14 @@ const gitSwitchboard = cli('git-switchboard', {
             process.exit(1);
           }
 
+          // Handle Ctrl+C cleanly — bypass React unmount to avoid yoga WASM crash
+          const sigintHandler = () => {
+            process.exit(0);
+          };
+          process.on('SIGINT', sigintHandler);
+
           // 2. Show loading screen while fetching PRs and scanning repos
-          const renderer = await createCliRenderer({ exitOnCtrlC: true });
+          const renderer = await createCliRenderer({ exitOnCtrlC: false });
           let root = createRoot(renderer);
 
           // Helper: unmount old tree and create fresh root to avoid
@@ -427,7 +433,7 @@ const gitSwitchboard = cli('git-switchboard', {
             } else if (installed.length > 0) {
               // Launch editor selection TUI
               const editorRenderer = await createCliRenderer({
-                exitOnCtrlC: true,
+                exitOnCtrlC: false,
               });
               const { promise: editorPromise, resolve: editorDone } =
                 Promise.withResolvers<void>();
@@ -519,8 +525,11 @@ const gitSwitchboard = cli('git-switchboard', {
       }
     }
 
+    // Handle Ctrl+C cleanly — bypass React unmount to avoid yoga WASM crash
+    process.on('SIGINT', () => process.exit(0));
+
     // Launch TUI
-    const renderer = await createCliRenderer({ exitOnCtrlC: true });
+    const renderer = await createCliRenderer({ exitOnCtrlC: false });
 
     let selectedBranch: string | undefined;
     const { promise, resolve } = Promise.withResolvers<void>();
