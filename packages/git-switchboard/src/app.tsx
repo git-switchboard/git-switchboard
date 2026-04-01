@@ -138,12 +138,14 @@ export function App({
         setScrollOffset(0);
         break;
       }
-      case 'slash':
-        setSearchMode(true);
-        break;
       case 'escape':
       case 'q':
         onExit();
+        break;
+      default:
+        if (key.raw === '/') {
+          setSearchMode(true);
+        }
         break;
     }
   });

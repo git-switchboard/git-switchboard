@@ -275,11 +275,21 @@ export function PrDetail({
     width - iconCol - conclusionCol - timeCol - openCol - 6
   );
 
-  // Footer text
-  const footerText = statusText
-    ? ` ${statusText}`
-    : ` [${RETURN_SYMBOL}] Select | [c]opy logs | [r]efresh CI | [w]atch | [${LEFT_ARROW}] Back | [q]uit${rateLimit.current ? `  API: ${rateLimit.current.remaining}/${rateLimit.current.limit}` : ''}`;
-  const footerFg = statusText ? '#9ece6a' : '#565f89';
+  // Footer text with right-aligned rate limit
+  let footerText: string;
+  let footerFg: string;
+  if (statusText) {
+    footerText = ` ${statusText}`;
+    footerFg = '#9ece6a';
+  } else {
+    const keys = ` [${RETURN_SYMBOL}] Select | [c]opy logs | [r]efresh CI | [w]atch | [${LEFT_ARROW}] Back | [q]uit`;
+    const rl = rateLimit.current
+      ? `API: ${rateLimit.current.remaining}/${rateLimit.current.limit} `
+      : '';
+    const gap = Math.max(1, width - 2 - keys.length - rl.length);
+    footerText = keys + ' '.repeat(gap) + rl;
+    footerFg = '#565f89';
+  }
 
   return (
     <box
@@ -341,7 +351,7 @@ export function PrDetail({
       {/* Check table header */}
       <box style={{ height: 1, width: '100%' }}>
         <text
-          content={`   ${''.padEnd(iconCol)}${fit('Check', nameCol)} ${fit('Result', conclusionCol)}${fit('Time', timeCol)}${''.padEnd(openCol)}`}
+          content={`    ${fit('Check', nameCol)} ${fit('Result', conclusionCol)}${fit('Time', timeCol)}${''.padEnd(openCol)}`}
           fg="#565f89"
         />
       </box>

@@ -202,12 +202,14 @@ export function PrApp({
         if (pr) onFetchCI(pr);
         break;
       }
-      case 'slash':
-        setSearchMode(true);
-        break;
       case 'escape':
       case 'q':
         onExit();
+        break;
+      default:
+        if (key.raw === '/') {
+          setSearchMode(true);
+        }
         break;
     }
   });
@@ -297,10 +299,16 @@ export function PrApp({
 
       {/* Footer */}
       <box style={{ height: 1, width: '100%' }}>
-        <text
-          content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [c] Fetch CI | [/] Search | [q]uit${rateLimit.current ? `  API: ${rateLimit.current.remaining}/${rateLimit.current.limit}` : ''}`}
-          fg="#565f89"
-        />
+        {(() => {
+          const keys = ` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [c] Fetch CI | [/] Search | [q]uit`;
+          const rl = rateLimit.current
+            ? `API: ${rateLimit.current.remaining}/${rateLimit.current.limit} `
+            : '';
+          const gap = Math.max(1, width - 2 - keys.length - rl.length);
+          return (
+            <text content={keys + ' '.repeat(gap) + rl} fg="#565f89" />
+          );
+        })()}
       </box>
     </box>
   );
