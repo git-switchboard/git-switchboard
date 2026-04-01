@@ -3,6 +3,22 @@ import { useState, useMemo, useCallback } from "react";
 import type { UserPullRequest } from "./types.js";
 import type { LocalRepo } from "./scanner.js";
 
+function relativeTime(iso: string): string {
+  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (seconds < 30) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  const years = Math.floor(days / 365);
+  return `${years}y ago`;
+}
+
 interface PrAppProps {
   prs: UserPullRequest[];
   localRepos: LocalRepo[];
@@ -100,11 +116,12 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
   // Column widths
   const localCol = 12;
   const statusCol = 8;
+  const updatedCol = 12;
   const prCol = Math.min(30, Math.floor(width * 0.25));
   const repoCol = Math.min(25, Math.floor(width * 0.2));
   const branchCol = Math.max(
     15,
-    width - prCol - repoCol - statusCol - localCol - 6
+    width - prCol - repoCol - statusCol - updatedCol - localCol - 6
   );
 
   return (
@@ -118,7 +135,7 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
 
       {/* Column headers */}
       <box style={{ height: 1, width: "100%" }}>
-        <text content={` ${"PR".padEnd(prCol)}${"Repo".padEnd(repoCol)}${"Branch".padEnd(branchCol)}${"Status".padEnd(statusCol)}${"Local".padEnd(localCol)}`} fg="#bb9af7" />
+        <text content={` ${"PR".padEnd(prCol)}${"Repo".padEnd(repoCol)}${"Branch".padEnd(branchCol)}${"Updated".padEnd(updatedCol)}${"Status".padEnd(statusCol)}${"Local".padEnd(localCol)}`} fg="#bb9af7" />
       </box>
 
       {/* PR list */}
@@ -163,6 +180,9 @@ export function PrApp({ prs, localRepos, onSelect, onExit }: PrAppProps) {
                   <span fg="#a9b1d6">{repoLabel.padEnd(repoCol)}</span>
                   <span fg="#ff9e64">
                     {pr.headRef.slice(0, branchCol - 1).padEnd(branchCol)}
+                  </span>
+                  <span fg="#565f89">
+                    {relativeTime(pr.updatedAt).padEnd(updatedCol)}
                   </span>
                   <span fg={pr.draft ? "#e0af68" : "#9ece6a"}>
                     {(pr.draft ? "Draft" : "Open").padEnd(statusCol)}
