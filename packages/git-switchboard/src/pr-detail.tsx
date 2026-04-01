@@ -40,16 +40,21 @@ function checkIcon(check: CheckRun): { char: string; fg: string } {
   }
 }
 
+const SPINNER_FRAMES = ["|", "/", "-", "\\"];
+
 interface PrDetailProps {
   pr: UserPullRequest;
   ci: CIInfo | null;
+  ciLoading: boolean;
   matches: LocalRepo[];
   watched: boolean;
   onOpenInEditor: () => void;
   onBack: () => void;
   onWatch: () => void;
+  onRefreshCI: () => void;
   onOpenUrl: (url: string) => void;
-  onCopyToClipboard: (text: string) => boolean;
+  /** Fetch and copy logs for a check run. Returns status message. */
+  onCopyLogs: (check: CheckRun) => Promise<string>;
   onExit: () => void;
 }
 
@@ -61,8 +66,10 @@ export function PrDetail({
   onOpenInEditor,
   onBack,
   onWatch,
+  onRefreshCI,
+  ciLoading,
   onOpenUrl,
-  onCopyToClipboard,
+  onCopyLogs,
   onExit,
 }: PrDetailProps) {
   const { width, height } = useTerminalDimensions();
@@ -71,6 +78,16 @@ export function PrDetail({
   const [scrollOffset, setScrollOffset] = useState(0);
   const [statusText, setStatusText] = useState("");
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
+
+  // Animate spinner when CI is loading
+  useEffect(() => {
+    if (!ciLoading) return;
+    const interval = setInterval(() => {
+      setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [ciLoading]);
 
   const checks = ci?.checks ?? [];
   // Total selectable items: 1 action row + N checks
@@ -160,13 +177,13 @@ export function PrDetail({
       default:
         if (key.raw === "w") {
           onWatch();
+        } else if (key.raw === "r") {
+          onRefreshCI();
         } else if (key.raw === "c" && selectedIndex > 0) {
           const check = checks[selectedIndex - 1];
-          if (check?.detailsUrl) {
-            const ok = onCopyToClipboard(check.detailsUrl);
-            showStatus(ok ? "Copied check URL to clipboard" : "Failed to copy to clipboard");
-          } else {
-            showStatus("No URL available for this check");
+          if (check) {
+            showStatus("Fetching logs...");
+            onCopyLogs(check).then((msg) => showStatus(msg));
           }
         }
         break;
@@ -189,11 +206,16 @@ export function PrDetail({
   const metaLine = metaParts.join("  |  ");
 
   // CI section header
-  let ciHeader = "CI Checks";
-  if (ci === null) {
+  let ciHeader: string;
+  if (ciLoading) {
+    ciHeader = `CI Checks ${SPINNER_FRAMES[spinnerFrame]} refreshing...`;
+  } else if (ci === null) {
     ciHeader = "CI Checks (loading...)";
   } else if (checks.length === 0) {
     ciHeader = "No checks found";
+  } else {
+    const fetchedAgo = relativeTime(new Date(ci.fetchedAt).toISOString());
+    ciHeader = `CI Checks (${checks.length}) - fetched ${fetchedAgo}`;
   }
 
   // Column layout for checks
@@ -214,7 +236,7 @@ export function PrDetail({
   // Footer text
   const footerText = statusText
     ? ` ${statusText}`
-    : " Enter Select | c Copy URL | w Watch | Backspace Back | q Quit";
+    : " Enter Select | c Copy logs | r Refresh CI | w Watch | Backspace Back | q Quit";
   const footerFg = statusText ? "#9ece6a" : "#565f89";
 
   return (

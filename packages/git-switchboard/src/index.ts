@@ -11,7 +11,7 @@ export type {
 } from "./types.js";
 export type { ScanProgress } from "./scanner.js";
 export { getBranches, getCurrentBranch, getCurrentUser, getCurrentUserAliases } from "./git.js";
-export { resolveGitHubToken, fetchOpenPRs, fetchUserPRs, fetchChecks, type PRFetchProgress } from "./github.js";
+export { resolveGitHubToken, fetchOpenPRs, fetchUserPRs, fetchChecks, fetchCheckLogs, type PRFetchProgress } from "./github.js";
 export { openUrl, sendNotification, copyToClipboard } from "./notify.js";
 export { scanForRepos, type LocalRepo } from "./scanner.js";
 export {

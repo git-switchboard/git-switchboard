@@ -42,6 +42,7 @@
     "@opentui/core": "^0.1.95",
     "@opentui/react": "^0.1.95",
     "cli-forge": "^1.2.0",
+    "clipboardy": "^5.3.1",
     "react": "^19.0.0",
     "tslib": "^2.5.0"
   },

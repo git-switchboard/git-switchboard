@@ -231,6 +231,7 @@ export async function fetchChecks(
       per_page: 100,
     });
     const checks: CheckRun[] = data.check_runs.map((run) => ({
+      id: run.id,
       name: run.name,
       status: run.status as CheckRun["status"],
       conclusion: run.conclusion ?? null,
@@ -257,5 +258,34 @@ export async function fetchChecks(
     return { status, checks, fetchedAt: Date.now() };
   } catch {
     return { status: "unknown", checks: [], fetchedAt: Date.now() };
+  }
+}
+
+/**
+ * Fetch the raw logs for a GitHub Actions job (check run).
+ * Returns the log text, or null if unavailable.
+ */
+export async function fetchCheckLogs(
+  token: string,
+  owner: string,
+  repo: string,
+  jobId: number
+): Promise<string | null> {
+  const octokit = new Octokit({ auth: token });
+  try {
+    // This endpoint returns a 302 redirect to the log download URL
+    const response = await octokit.rest.actions.downloadJobLogsForWorkflowRun({
+      owner,
+      repo,
+      job_id: jobId,
+    });
+    // Octokit follows the redirect and returns the data
+    if (typeof response.data === "string") {
+      return response.data;
+    }
+    // Some versions return a URL string; others return the body
+    return String(response.data);
+  } catch {
+    return null;
   }
 }

@@ -199,19 +199,26 @@ const gitSwitchboard = cli('git-switchboard', {
             );
           };
 
+          let ciLoadingForDetail = false;
+
           const renderPRDetail = () => {
             const prKey = `${selectedPR!.repoId}#${selectedPR!.number}`;
             const ci = ciCache.get(prKey) ?? null;
 
             // Auto-fetch CI if not cached
-            if (!ci) {
-              fetchCIForPR(selectedPR!).then(() => renderPRDetail());
+            if (!ci && !ciLoadingForDetail) {
+              ciLoadingForDetail = true;
+              fetchCIForPR(selectedPR!).then(() => {
+                ciLoadingForDetail = false;
+                renderPRDetail();
+              });
             }
 
             swapRoot(
               createElement(PrDetail, {
                 pr: selectedPR!,
                 ci,
+                ciLoading: ciLoadingForDetail,
                 matches: currentMatches,
                 watched: watchedPRs.has(prKey),
                 onOpenInEditor: () => {
@@ -242,6 +249,14 @@ const gitSwitchboard = cli('git-switchboard', {
                   renderClonePrompt();
                 },
                 onBack: () => renderPRList(),
+                onRefreshCI: () => {
+                  ciLoadingForDetail = true;
+                  renderPRDetail();
+                  fetchCIForPR(selectedPR!).then(() => {
+                    ciLoadingForDetail = false;
+                    renderPRDetail();
+                  });
+                },
                 onWatch: () => {
                   if (watchedPRs.has(prKey)) {
                     watchedPRs.delete(prKey);
@@ -251,7 +266,22 @@ const gitSwitchboard = cli('git-switchboard', {
                   renderPRDetail();
                 },
                 onOpenUrl: (url: string) => openUrl(url),
-                onCopyToClipboard: (text: string) => copyToClipboard(text),
+                onCopyLogs: async (
+                  check: import('./types.js').CheckRun
+                ): Promise<string> => {
+                  const { fetchCheckLogs } = await import('./github.js');
+                  const logs = await fetchCheckLogs(
+                    token,
+                    selectedPR!.repoOwner,
+                    selectedPR!.repoName,
+                    check.id
+                  );
+                  if (!logs) return 'No logs available (may not be a GitHub Action)';
+                  const ok = await copyToClipboard(logs);
+                  return ok
+                    ? `Copied ${logs.length} chars of logs to clipboard`
+                    : 'Failed to copy to clipboard';
+                },
                 onExit: () => {
                   renderer.destroy();
                   done();

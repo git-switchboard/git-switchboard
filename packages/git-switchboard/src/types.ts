@@ -33,6 +33,7 @@ export interface UserPullRequest {
 export type CIStatus = "unknown" | "pending" | "passing" | "failing" | "mixed";
 
 export interface CheckRun {
+  id: number;
   name: string;
   status: "queued" | "in_progress" | "completed";
   conclusion: string | null;
