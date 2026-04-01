@@ -89,7 +89,7 @@ export function resolveEditor(flagValue?: string): ResolvedEditor | undefined {
   const envEditor = process.env.EDITOR;
   if (envEditor) {
     const known = KNOWN_EDITORS.find((e) => e.command === envEditor);
-    console.log('Read editor from env');
+    console.log('Read editor from env', envEditor, known);
     return {
       command: envEditor,
       dirArg: known?.dirArg ?? ((d) => [d]),

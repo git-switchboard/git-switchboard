@@ -1,6 +1,7 @@
-import { readdirSync, statSync, readFileSync, existsSync } from "node:fs";
+import { readdir, stat, access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
 /** Directories to never recurse into */
 const IGNORED_DIRS = new Set([
@@ -50,31 +51,34 @@ export interface ScanProgress {
   completedTopLevel: number;
 }
 
-export function scanForRepos(
+/** Yield to the event loop so the TUI can repaint */
+const tick = () => new Promise<void>((r) => setTimeout(r, 0));
+
+export async function scanForRepos(
   roots: string[],
   maxDepth: number,
   onProgress?: (progress: ScanProgress) => void
-): LocalRepo[] {
+): Promise<LocalRepo[]> {
   const repos: LocalRepo[] = [];
   const visited = new Set<string>();
 
   // Pre-count top-level entries for a progress denominator
-  const topLevelEntries: { root: string; entry: string }[] = [];
+  const topLevelEntries: string[] = [];
   for (const root of roots) {
     const absRoot = resolve(root);
-    // If root itself is a git repo, just add it directly
     if (existsSync(join(absRoot, ".git"))) {
-      topLevelEntries.push({ root: absRoot, entry: absRoot });
+      topLevelEntries.push(absRoot);
       continue;
     }
     try {
-      for (const entry of readdirSync(absRoot)) {
+      const entries = await readdir(absRoot);
+      for (const entry of entries) {
         if (entry.startsWith(".") && entry !== ".git") continue;
         if (IGNORED_DIRS.has(entry)) continue;
         const fullPath = join(absRoot, entry);
         try {
-          if (statSync(fullPath).isDirectory()) {
-            topLevelEntries.push({ root: absRoot, entry: fullPath });
+          if ((await stat(fullPath)).isDirectory()) {
+            topLevelEntries.push(fullPath);
           }
         } catch {
           // skip
@@ -94,63 +98,64 @@ export function scanForRepos(
   };
 
   onProgress?.(progress);
+  await tick();
 
-  for (const { entry } of topLevelEntries) {
+  for (const entry of topLevelEntries) {
     progress.currentDir = entry;
     onProgress?.(progress);
 
-    scanDir(entry, 1, maxDepth, repos, visited, (p) => {
-      progress.currentDir = p.currentDir;
-      progress.reposFound = p.reposFound;
-      progress.dirsScanned = p.dirsScanned;
-      onProgress?.(progress);
-    });
+    await scanDir(entry, 1, maxDepth, repos, visited, progress, onProgress);
 
     progress.completedTopLevel++;
     progress.reposFound = repos.length;
     progress.dirsScanned = visited.size;
     onProgress?.(progress);
+    await tick();
   }
 
   return repos;
 }
 
-function scanDir(
+async function scanDir(
   dir: string,
   depth: number,
   maxDepth: number,
   repos: LocalRepo[],
   visited: Set<string>,
+  progress: ScanProgress,
   onProgress?: (progress: ScanProgress) => void
-): void {
+): Promise<void> {
   if (depth > maxDepth) return;
 
   const realDir = resolve(dir);
   if (visited.has(realDir)) return;
   visited.add(realDir);
 
-  onProgress?.({ currentDir: dir, reposFound: repos.length, dirsScanned: visited.size, totalTopLevel: 0, completedTopLevel: 0 });
+  progress.currentDir = dir;
+  progress.dirsScanned = visited.size;
+  onProgress?.(progress);
 
   const gitPath = join(dir, ".git");
-  if (existsSync(gitPath)) {
+  try {
+    await access(gitPath);
     // Found a git repo or worktree
-    const isWorktree = statSync(gitPath).isFile();
+    const isWorktree = (await stat(gitPath)).isFile();
     repos.push(buildLocalRepo(dir, isWorktree));
-    onProgress?.({ currentDir: dir, reposFound: repos.length, dirsScanned: visited.size, totalTopLevel: 0, completedTopLevel: 0 });
-
-    // Don't recurse into the repo itself (branches/worktrees are separate)
-    // But DO continue scanning siblings
+    progress.reposFound = repos.length;
+    onProgress?.(progress);
+    await tick();
     return;
+  } catch {
+    // No .git here, continue scanning
   }
 
-  // Not a git repo — recurse into subdirectories
   if (depth >= maxDepth) return;
 
   let entries: string[];
   try {
-    entries = readdirSync(dir);
+    entries = await readdir(dir);
   } catch {
-    return; // Permission denied, etc.
+    return;
   }
 
   for (const entry of entries) {
@@ -159,8 +164,8 @@ function scanDir(
 
     const fullPath = join(dir, entry);
     try {
-      if (statSync(fullPath).isDirectory()) {
-        scanDir(fullPath, depth + 1, maxDepth, repos, visited, onProgress);
+      if ((await stat(fullPath)).isDirectory()) {
+        await scanDir(fullPath, depth + 1, maxDepth, repos, visited, progress, onProgress);
       }
     } catch {
       // Permission denied, broken symlink, etc.

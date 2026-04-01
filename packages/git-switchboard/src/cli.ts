@@ -113,25 +113,18 @@ const gitSwitchboard = cli('git-switchboard', {
             renderLoading();
           });
 
-          const scanPromise = new Promise<import('./scanner.js').LocalRepo[]>(
-            (scanResolve) => {
-              // Defer to let the loading screen render first
-              setTimeout(() => {
-                const repos = scanForRepos(
-                  args['search-root'],
-                  args['search-depth'],
-                  (p) => {
-                    scanProgress = { ...p };
-                    // Scanner is sync, so renders won't paint mid-scan.
-                    // But the final state will be captured.
-                  }
-                );
-                scanDone = true;
-                renderLoading();
-                scanResolve(repos);
-              }, 0);
+          const scanPromise = scanForRepos(
+            args['search-root'],
+            args['search-depth'],
+            (p) => {
+              scanProgress = { ...p };
+              renderLoading();
             }
-          );
+          ).then((repos) => {
+            scanDone = true;
+            renderLoading();
+            return repos;
+          });
 
           const [prs, localRepos] = await Promise.all([prPromise, scanPromise]);
 
