@@ -1,0 +1,11 @@
+{
+  "name": "git-switchboard",
+  "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bun run packages/git-switchboard/src/cli.ts"
+      }
+    }
+  }
+}
