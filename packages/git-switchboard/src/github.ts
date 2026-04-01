@@ -1,8 +1,20 @@
+import { execSync } from "node:child_process";
 import { Octokit } from "@octokit/rest";
 import type { PullRequestInfo, UserPullRequest } from "./types.js";
 
+function ghCliToken(): string | undefined {
+  try {
+    return execSync("gh auth token", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function resolveGitHubToken(flagValue?: string): string | undefined {
-  return flagValue || process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+  return flagValue || process.env.GH_TOKEN || process.env.GITHUB_TOKEN || ghCliToken();
 }
 
 export async function fetchOpenPRs(
