@@ -227,7 +227,7 @@ export function App({
 
       {/* Footer */}
       <box style={{ height: 1, width: "100%" }}>
-        <text content={" [j/k] Navigate | [Enter] Select | [r]emote | [a]uthor | [/] Search | [q]uit"} fg="#565f89" />
+        <text content={` [\u2191\u2193] Navigate | [Enter] Select | [r]emote | [a]uthor | [/] Search | [q]uit`} fg="#565f89" />
       </box>
     </box>
   );

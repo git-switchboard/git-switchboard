@@ -63,7 +63,7 @@ export function EditorPrompt({
       </box>
 
       <box style={{ height: 1, width: "100%" }}>
-        <text content={" [j/k] Navigate | [Enter] Select | [q] Cancel"} fg="#565f89" />
+        <text content={` [\u2191\u2193] Navigate | [Enter] Select | [q] Cancel`} fg="#565f89" />
       </box>
     </box>
   );
