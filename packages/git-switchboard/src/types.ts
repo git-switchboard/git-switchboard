@@ -38,6 +38,8 @@ export interface CheckRun {
   status: "queued" | "in_progress" | "completed";
   conclusion: string | null;
   detailsUrl: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
 }
 
 export interface CIInfo {

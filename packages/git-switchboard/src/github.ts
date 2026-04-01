@@ -236,6 +236,8 @@ export async function fetchChecks(
       status: run.status as CheckRun["status"],
       conclusion: run.conclusion ?? null,
       detailsUrl: run.details_url ?? null,
+      startedAt: run.started_at ?? null,
+      completedAt: run.completed_at ?? null,
     }));
     let status: CIStatus = "unknown";
     if (checks.length > 0) {
