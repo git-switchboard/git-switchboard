@@ -279,14 +279,26 @@ export async function fetchUserPRs(
     progress.phase = 'searching';
     onProgress?.(progress);
 
-    // Single GraphQL query gets PRs + CI + reviews in one call
-    const result = await execute(octokit, SEARCH_USER_PRS, {
-      searchQuery: `is:pr is:open author:${username}`,
-    });
+    // Two queries: authored + assigned, then deduplicate
+    const [authored, assigned] = await Promise.all([
+      execute(octokit, SEARCH_USER_PRS, {
+        searchQuery: `is:pr is:open author:${username}`,
+      }),
+      execute(octokit, SEARCH_USER_PRS, {
+        searchQuery: `is:pr is:open assignee:${username}`,
+      }),
+    ]);
 
-    progress.totalPRs = result.search.issueCount;
+    // Merge and deduplicate by repo#number
+    const seen = new Set<string>();
+    const allNodes = [
+      ...(authored.search.nodes ?? []),
+      ...(assigned.search.nodes ?? []),
+    ];
 
-    for (const node of result.search.nodes ?? []) {
+    progress.totalPRs = authored.search.issueCount + assigned.search.issueCount;
+
+    for (const node of allNodes) {
       if (!node || node.__typename !== 'PullRequest') continue;
       const baseId = `${node.repository.owner.login}/${node.repository.name}`.toLowerCase();
       const headRepo = node.headRepository;
@@ -294,6 +306,9 @@ export async function fetchUserPRs(
         ? `${headRepo.owner.login}/${headRepo.name}`.toLowerCase()
         : null;
       const prKey = `${baseId}#${node.number}`;
+
+      if (seen.has(prKey)) continue;
+      seen.add(prKey);
 
       prs.push({
         number: node.number,
