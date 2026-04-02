@@ -19,6 +19,12 @@ const buildTargets = selectedTarget
   ? targets.filter(t => t.target === selectedTarget || t.output === selectedTarget)
   : targets;
 
+if (selectedTarget && buildTargets.length === 0) {
+  console.error(`Unknown target: ${selectedTarget}`);
+  console.error(`Valid targets: ${targets.map(t => t.target).join(', ')}`);
+  process.exit(1);
+}
+
 for (const { target, output } of buildTargets) {
   console.log(`Building ${output}...`);
   execSync(

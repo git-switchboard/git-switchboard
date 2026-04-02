@@ -7,12 +7,12 @@
     "url": "https://craigory.dev"
   },
   "bugs": {
-    "url": "https://github.com/AgentEnder/craigory-dev/issues"
+    "url": "https://github.com/git-switchboard/git-switchboard/issues"
   },
-  "homepage": "https://craigory.dev",
+  "homepage": "https://github.com/git-switchboard/git-switchboard",
   "repository": {
     "type": "git",
-    "url": "https://github.com/AgentEnder/craigory-dev.git",
+    "url": "https://github.com/git-switchboard/git-switchboard.git",
     "directory": "packages/git-switchboard"
   },
   "publishConfig": {
