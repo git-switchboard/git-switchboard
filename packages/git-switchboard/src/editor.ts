@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 
 interface EditorInfo {
   name: string;
@@ -116,6 +116,16 @@ export function openInEditor(editor: ResolvedEditor, dir: string): void {
   execSync(`${editor.command} ${args.map((a) => `"${a}"`).join(' ')}`, {
     stdio: 'inherit',
   });
+}
+
+/** Non-blocking variant that spawns the editor detached — suitable for use while a TUI is running. */
+export function openInEditorDetached(editor: ResolvedEditor, dir: string): void {
+  const args = editor.dirArg(dir);
+  const child = spawn(editor.command, args, {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
 }
 
 export { KNOWN_EDITORS, type EditorInfo };

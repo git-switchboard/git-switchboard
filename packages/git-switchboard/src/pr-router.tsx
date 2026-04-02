@@ -6,7 +6,7 @@ import { ClonePrompt } from './clone-prompt.js';
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
 import { sendNotification } from './notify.js';
 import { checkIsClean } from './scanner.js';
-import type { PrStoreApi, PrRouterResult } from './store.js';
+import type { PrStoreApi } from './store.js';
 import type { LocalRepo } from './scanner.js';
 
 export type { PrRouterResult } from './store.js';
@@ -24,6 +24,7 @@ export function PrRouter({ store }: PrRouterProps) {
   const ciCache = useStore(store, (s) => s.ciCache);
   const reviewCache = useStore(store, (s) => s.reviewCache);
   const ciLoading = useStore(store, (s) => s.ciLoading);
+  const refreshing = useStore(store, (s) => s.refreshing);
   const watchedPRs = useStore(store, (s) => s.watchedPRs);
   const onDone = useStore(store, (s) => s.onDone);
 
@@ -35,6 +36,8 @@ export function PrRouter({ store }: PrRouterProps) {
     copyLogs,
     toggleWatch,
     openInBrowser,
+    openEditorForPR,
+    refreshAllPRs,
   } = store.getState();
 
   // ─── Watch polling ────────────────────────────────────────────
@@ -82,7 +85,8 @@ export function PrRouter({ store }: PrRouterProps) {
     // Prefer clone already on the right branch
     const onBranch = matches.filter((r) => r.currentBranch === pr.headRef);
     if (onBranch.length === 1) {
-      onDone({ selectedPR: pr, selectedRepo: onBranch[0], skipCheckout: true });
+      const msg = await openEditorForPR(pr, onBranch[0], true);
+      store.getState().showStatus(msg);
       return;
     }
 
@@ -93,7 +97,8 @@ export function PrRouter({ store }: PrRouterProps) {
     const cleanMatches = matches.filter((_, i) => cleanResults[i]);
 
     if (cleanMatches.length === 1) {
-      onDone({ selectedPR: pr, selectedRepo: cleanMatches[0], skipCheckout: false });
+      const msg = await openEditorForPR(pr, cleanMatches[0], false);
+      store.getState().showStatus(msg);
       return;
     }
 
@@ -119,12 +124,14 @@ export function PrRouter({ store }: PrRouterProps) {
           localRepos={localRepos}
           ciCache={ciMap}
           reviewCache={reviewMap}
+          refreshing={refreshing}
           onSelect={(pr, matches) => {
             navigate({ type: 'pr-detail', pr, matches });
           }}
           onFetchCI={async (pr) => {
             await fetchDetailsForPR(pr);
           }}
+          onRefreshAll={() => refreshAllPRs()}
           onExit={() => onDone(null)}
         />
       );
@@ -162,12 +169,10 @@ export function PrRouter({ store }: PrRouterProps) {
           repoId={pr.repoId}
           branchName={pr.headRef}
           matches={matches}
-          onSelect={(repo, alreadyCheckedOut) => {
-            onDone({
-              selectedPR: pr,
-              selectedRepo: repo,
-              skipCheckout: alreadyCheckedOut,
-            });
+          onSelect={async (repo, alreadyCheckedOut) => {
+            const msg = await openEditorForPR(pr, repo, alreadyCheckedOut);
+            store.getState().showStatus(msg);
+            navigate({ type: 'pr-detail', pr, matches });
           }}
           onCreateWorktree={(path) => {
             onDone({ selectedPR: pr, skipCheckout: false, newWorktreePath: path });

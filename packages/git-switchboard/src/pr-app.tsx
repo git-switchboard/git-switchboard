@@ -91,9 +91,11 @@ interface PrAppProps {
   localRepos: LocalRepo[];
   ciCache: Map<string, CIInfo>;
   reviewCache: Map<string, ReviewInfo>;
+  refreshing: boolean;
   onSelect: (pr: UserPullRequest, matches: LocalRepo[]) => void;
   /** Fetch CI + review for a PR. Resolves when caches are updated. */
   onFetchCI: (pr: UserPullRequest) => Promise<void>;
+  onRefreshAll: () => void;
   onExit: () => void;
 }
 
@@ -102,8 +104,10 @@ export function PrApp({
   localRepos,
   ciCache,
   reviewCache,
+  refreshing,
   onSelect,
   onFetchCI,
+  onRefreshAll,
   onExit,
 }: PrAppProps) {
   useExitOnCtrlC();
@@ -233,6 +237,8 @@ export function PrApp({
       default:
         if (key.raw === '/') {
           setSearchMode(true);
+        } else if (key.raw === 'R') {
+          onRefreshAll();
         }
         break;
     }
@@ -257,7 +263,8 @@ export function PrApp({
       <box style={{ height: 1, width: '100%' }}>
         <text
           content={` git-switchboard pr  ${filteredPRs.length} open PRs${
-            searchQuery ? ` | Search: ${searchQuery}` : ''
+            refreshing ? ` | Refreshing...` : ''
+          }${searchQuery ? ` | Search: ${searchQuery}` : ''
           }${searchMode ? ' | (type to search)' : ''}`}
           fg="#7aa2f7"
         />
@@ -324,7 +331,7 @@ export function PrApp({
       {/* Footer */}
       <box style={{ height: 1, width: '100%' }}>
         {(() => {
-          const keys = ` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [c] Fetch CI | [/] Search | [q]uit`;
+          const keys = ` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [c] Fetch CI | [R]efresh all | [/] Search | [q]uit`;
           const rl = rateLimit.current
             ? `API: ${rateLimit.current.remaining}/${rateLimit.current.limit} `
             : '';

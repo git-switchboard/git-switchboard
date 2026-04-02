@@ -2,9 +2,10 @@ import { create } from 'zustand';
 import {
   fetchPRDetails,
   fetchCheckLogs,
+  fetchUserPRs,
   retryFailedJobs,
 } from './github.js';
-import { openUrl, sendNotification } from './notify.js';
+import { openUrl } from './notify.js';
 import type {
   UserPullRequest,
   CIInfo,
@@ -39,12 +40,15 @@ export interface PrStore {
 
   // ─── UI state ─────────────────────────────────────────────────
   ciLoading: boolean;
+  refreshing: boolean;
   statusText: string;
 
   // ─── Config (set once) ────────────────────────────────────────
   token: string;
   copyToClipboard: (text: string) => Promise<boolean>;
   onDone: (result: PrRouterResult | null) => void;
+  /** Open a PR in the editor without exiting the TUI. Returns a status message. */
+  openEditorForPR: (pr: UserPullRequest, repo: LocalRepo, skipCheckout: boolean) => Promise<string>;
 
   // ─── Actions ──────────────────────────────────────────────────
   fetchDetailsForPR: (pr: UserPullRequest) => Promise<void>;
@@ -52,6 +56,7 @@ export interface PrStore {
   retryChecks: (pr: UserPullRequest) => Promise<string>;
   copyLogs: (pr: UserPullRequest, check: CheckRun) => Promise<string>;
   toggleWatch: (pr: UserPullRequest) => void;
+  refreshAllPRs: () => Promise<void>;
   openInBrowser: (url: string) => void;
   showStatus: (text: string) => void;
   clearStatus: () => void;
@@ -69,6 +74,7 @@ export const createPrStore = (initial: {
   token: string;
   copyToClipboard: (text: string) => Promise<boolean>;
   onDone: (result: PrRouterResult | null) => void;
+  openEditorForPR: (pr: UserPullRequest, repo: LocalRepo, skipCheckout: boolean) => Promise<string>;
 }) =>
   create<PrStore>((set, get) => ({
     // ─── Data ───────────────────────────────────────────────────
@@ -84,12 +90,14 @@ export const createPrStore = (initial: {
 
     // ─── UI state ───────────────────────────────────────────────
     ciLoading: false,
+    refreshing: false,
     statusText: '',
 
     // ─── Config ─────────────────────────────────────────────────
     token: initial.token,
     copyToClipboard: initial.copyToClipboard,
     onDone: initial.onDone,
+    openEditorForPR: initial.openEditorForPR,
 
     // ─── Actions ────────────────────────────────────────────────
 
@@ -156,6 +164,22 @@ export const createPrStore = (initial: {
         }
         return { watchedPRs: next };
       });
+    },
+
+    refreshAllPRs: async () => {
+      const { token } = get();
+      set({ refreshing: true });
+      try {
+        const result = await fetchUserPRs(token);
+        set({
+          prs: result.prs,
+          ciCache: Object.fromEntries(result.ciCache),
+          reviewCache: Object.fromEntries(result.reviewCache),
+          refreshing: false,
+        });
+      } catch {
+        set({ refreshing: false });
+      }
     },
 
     openInBrowser: (url) => openUrl(url),

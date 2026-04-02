@@ -74,7 +74,7 @@ const gitSwitchboard = cli('git-switchboard', {
           const { resolveGitHubToken, fetchUserPRs } =
             await import('./github.js');
           const { scanForRepos } = await import('./scanner.js');
-          const { resolveEditor, findInstalledEditors, openInEditor } =
+          const { resolveEditor, findInstalledEditors, openInEditor, openInEditorDetached } =
             await import('./editor.js');
           const { Loading } = await import('./loading.js');
           const { copyToClipboard } = await import(
@@ -156,7 +156,20 @@ const gitSwitchboard = cli('git-switchboard', {
             process.exit(0);
           }
 
-          // 3. Launch PR router TUI (single React tree via zustand store)
+          // 3. Resolve editor up-front so we can open from within the TUI
+          let editor = resolveEditor(args.editor);
+          if (!editor) {
+            const installed = findInstalledEditors();
+            if (installed.length === 1) {
+              editor = {
+                command: installed[0].command,
+                dirArg: installed[0].dirArg,
+                source: 'prompt',
+              };
+            }
+          }
+
+          // 4. Launch PR router TUI (single React tree via zustand store)
           const { PrRouter } = await import('./pr-router.js');
           const { createPrStore } = await import('./store.js');
           const { promise, resolve: done } =
@@ -179,6 +192,27 @@ const gitSwitchboard = cli('git-switchboard', {
               }
               done(result);
             },
+            openEditorForPR: async (pr, repo, skipCheckout) => {
+              if (!editor) {
+                return 'No editor detected. Use --editor to specify one.';
+              }
+              if (!skipCheckout) {
+                try {
+                  execSync(`git fetch origin ${pr.headRef}`, {
+                    cwd: repo.path,
+                    stdio: 'pipe',
+                  });
+                  execSync(`git checkout ${pr.headRef}`, {
+                    cwd: repo.path,
+                    stdio: 'pipe',
+                  });
+                } catch {
+                  return 'Failed to checkout branch';
+                }
+              }
+              openInEditorDetached(editor, repo.path);
+              return `Opened ${repo.path} in ${editor.command}`;
+            },
           });
 
           root.render(
@@ -188,88 +222,40 @@ const gitSwitchboard = cli('git-switchboard', {
           const result = await promise;
           if (!result) return;
 
-          const { selectedPR, selectedRepo, skipCheckout, newWorktreePath } =
-            result;
+          const { selectedPR, newWorktreePath } = result;
 
-          // 4. Handle worktree creation if needed
-          let targetDir: string;
+          // 5. Handle worktree creation (the only remaining exit-to-shell path)
+          if (!newWorktreePath) return;
 
-          if (newWorktreePath) {
-            const absPath = resolve(newWorktreePath);
-            const sourceMatches = localRepos.filter(
-              (r) =>
-                r.repoId === selectedPR.repoId ||
-                (selectedPR.forkRepoId &&
-                  r.repoId === selectedPR.forkRepoId)
+          const absPath = resolve(newWorktreePath);
+          const sourceMatches = localRepos.filter(
+            (r) =>
+              r.repoId === selectedPR.repoId ||
+              (selectedPR.forkRepoId &&
+                r.repoId === selectedPR.forkRepoId)
+          );
+          const sourceRepo = sourceMatches[0];
+          if (!sourceRepo) {
+            console.error('No local clone available to create worktree from');
+            process.exit(1);
+          }
+
+          try {
+            execSync(
+              `git worktree add "${absPath}" -b "${selectedPR.headRef}" "origin/${selectedPR.headRef}"`,
+              { cwd: sourceRepo.path, stdio: 'inherit' }
             );
-            const sourceRepo = sourceMatches[0];
-            if (sourceRepo) {
-              try {
-                execSync(
-                  `git worktree add "${absPath}" -b "${selectedPR.headRef}" "origin/${selectedPR.headRef}"`,
-                  { cwd: sourceRepo.path, stdio: 'inherit' }
-                );
-                targetDir = absPath;
-              } catch {
-                console.error('Failed to create worktree');
-                process.exit(1);
-              }
-            } else {
-              console.error('No local clone available to create worktree from');
-              process.exit(1);
-            }
-          } else if (selectedRepo) {
-            targetDir = selectedRepo.path;
-            if (skipCheckout) {
-              console.log(
-                `Branch ${selectedPR.headRef} already checked out at ${targetDir}`
-              );
-            } else {
-              try {
-                execSync(`git fetch origin ${selectedPR.headRef}`, {
-                  cwd: targetDir,
-                  stdio: 'inherit',
-                });
-                execSync(`git checkout ${selectedPR.headRef}`, {
-                  cwd: targetDir,
-                  stdio: 'inherit',
-                });
-              } catch {
-                console.error('Failed to checkout branch');
-                process.exit(1);
-              }
-            }
+          } catch {
+            console.error('Failed to create worktree');
+            process.exit(1);
+          }
+
+          if (editor) {
+            console.log(`Opening ${absPath} in ${editor.command}...`);
+            openInEditor(editor, absPath);
           } else {
-            console.log('No local clone selected.');
-            return;
+            console.log(`Worktree created at: ${absPath}`);
           }
-
-          // 5. Open in editor
-          let editor = resolveEditor(args.editor);
-          if (!editor) {
-            const installed = findInstalledEditors();
-            if (installed.length === 1) {
-              editor = {
-                command: installed[0].command,
-                dirArg: installed[0].dirArg,
-                source: 'prompt',
-              };
-            } else if (installed.length > 0) {
-              console.log('Available editors:');
-              installed.forEach((e, i) =>
-                console.log(`  ${i + 1}. ${e.name} (${e.command})`)
-              );
-              console.log(`\nRun again with --editor <command> to select.`);
-              console.log(`Branch checked out at: ${targetDir!}`);
-              return;
-            } else {
-              console.log(`Branch checked out at: ${targetDir!}`);
-              return;
-            }
-          }
-
-          console.log(`Opening ${targetDir!} in ${editor.command}...`);
-          openInEditor(editor, targetDir!);
         },
       }),
   handler: async (args) => {
@@ -372,4 +358,6 @@ const gitSwitchboard = cli('git-switchboard', {
 
 export default gitSwitchboard;
 
-gitSwitchboard.forge();
+if (import.meta.main) {
+  gitSwitchboard.forge();
+}
