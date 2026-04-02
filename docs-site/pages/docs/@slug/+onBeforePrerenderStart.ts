@@ -1,20 +1,34 @@
 import type { OnBeforePrerenderStartAsync } from 'vike/types';
-import { join } from 'node:path';
-import { readdir } from 'node:fs/promises';
-import { basename, extname } from 'node:path';
+import { join, basename, extname } from 'node:path';
+import { readdir, access } from 'node:fs/promises';
 
 const onBeforePrerenderStart: OnBeforePrerenderStartAsync = async () => {
-  const docsDir = join(process.cwd(), 'docs');
-  let entries: string[];
+  const docsDir = join(process.cwd(), '..', 'docs');
+  const routes: string[] = [];
+
+  // Markdown docs from the docs/ directory
   try {
-    entries = await readdir(docsDir);
+    const entries = await readdir(docsDir);
+    for (const entry of entries) {
+      if (entry.endsWith('.md')) {
+        routes.push(`/docs/${basename(entry, extname(entry))}`);
+      }
+    }
   } catch {
-    return [];
+    // No docs directory
   }
 
-  return entries
-    .filter((entry) => entry.endsWith('.md'))
-    .map((entry) => `/docs/${basename(entry, extname(entry))}`);
+  // Generated usage page from CLI docs JSON
+  try {
+    await access(join(process.cwd(), 'generated', 'cli-docs.json'));
+    if (!routes.includes('/docs/usage')) {
+      routes.push('/docs/usage');
+    }
+  } catch {
+    // No CLI docs generated
+  }
+
+  return routes;
 };
 
 export default onBeforePrerenderStart;
