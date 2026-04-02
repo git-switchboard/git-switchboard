@@ -1,4 +1,5 @@
-node_modules
-dist
-.nx
-tmp
+node_modules/
+dist/
+native-builds/
+.nx/
+*.tsbuildinfo
