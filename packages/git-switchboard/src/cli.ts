@@ -1,5 +1,14 @@
 #!/usr/bin/env bun
 
+if (typeof Bun === 'undefined') {
+  console.error(
+    'git-switchboard requires the Bun runtime.\n' +
+    'Install Bun: https://bun.sh\n' +
+    'Or download a standalone binary: https://github.com/git-switchboard/git-switchboard/releases'
+  );
+  process.exit(1);
+}
+
 import { cli } from 'cli-forge';
 
 const gitSwitchboard = cli('git-switchboard', {
