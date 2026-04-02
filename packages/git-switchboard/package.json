@@ -1,0 +1,52 @@
+{
+  "name": "git-switchboard",
+  "version": "0.0.1",
+  "description": "Interactive TUI for browsing and checking out git branches",
+  "author": {
+    "name": "Craigory Coppola",
+    "url": "https://craigory.dev"
+  },
+  "bugs": {
+    "url": "https://github.com/AgentEnder/craigory-dev/issues"
+  },
+  "homepage": "https://craigory.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AgentEnder/craigory-dev.git",
+    "directory": "packages/git-switchboard"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "git-switchboard": "./dist/git-switchboard"
+  },
+  "scripts": {
+    "dev": "bun run src/cli.ts",
+    "build": "bun build src/cli.ts --compile --outfile=dist/git-switchboard",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@octokit/graphql-schema": "^15.26.1",
+    "@octokit/rest": "^22.0.0",
+    "@opentui/core": "^0.1.95",
+    "@opentui/react": "^0.1.95",
+    "@types/node": "22.18.1",
+    "@types/react": "^19.0.0",
+    "cli-forge": "^1.2.0",
+    "clipboardy": "^5.3.1",
+    "gql.tada": "^1.9.2",
+    "graphql": "^16.13.2",
+    "react": "^19.0.0",
+    "tslib": "^2.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "5.9.2",
+    "zustand": "^5.0.8"
+  },
+  "files": [
+    "dist/git-switchboard",
+    "README.md"
+  ]
+}
