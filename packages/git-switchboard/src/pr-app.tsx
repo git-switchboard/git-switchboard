@@ -61,6 +61,18 @@ function ciSummary(
   return { text: parts.join(' '), fg };
 }
 
+function reviewSortOrder(status: ReviewStatus): number {
+  switch (status) {
+    case 'approved': return 0;
+    case 'changes-requested': return 1;
+    case 're-review-needed': return 2;
+    case 'needs-review': return 3;
+    case 'dismissed': return 4;
+    case 'commented': return 5;
+    default: return 6;
+  }
+}
+
 function reviewLabel(status: ReviewStatus): { text: string; fg: string } {
   switch (status) {
     case 'approved':
@@ -132,12 +144,17 @@ export function PrApp({
           );
         })
       : [...prs];
-    result.sort(
-      (a, b) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    );
+    result.sort((a, b) => {
+      const aKey = `${a.repoId}#${a.number}`;
+      const bKey = `${b.repoId}#${b.number}`;
+      const aReview = reviewCache.get(aKey)?.status ?? 'needs-review';
+      const bReview = reviewCache.get(bKey)?.status ?? 'needs-review';
+      const order = reviewSortOrder(aReview) - reviewSortOrder(bReview);
+      if (order !== 0) return order;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
     return result;
-  }, [prs, searchQuery]);
+  }, [prs, searchQuery, reviewCache]);
 
   const repoMatchMap = useMemo(() => {
     const map = new Map<string, LocalRepo[]>();
