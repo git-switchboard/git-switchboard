@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>git-switchboard</id>
+    <version>{{VERSION}}</version>
+    <title>git-switchboard</title>
+    <authors>Craigory Coppola</authors>
+    <projectUrl>https://github.com/git-switchboard/git-switchboard</projectUrl>
+    <licenseUrl>https://github.com/git-switchboard/git-switchboard/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Interactive TUI for browsing and checking out git branches, with GitHub PR integration.</description>
+    <tags>git branch tui terminal cli</tags>
+  </metadata>
+  <files>
+    <file src="tools/**" target="tools" />
+  </files>
+</package>
