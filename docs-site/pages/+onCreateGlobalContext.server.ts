@@ -9,7 +9,7 @@ import {
 export async function onCreateGlobalContext(
   context: Partial<GlobalContextServer>
 ): Promise<void> {
-  const docsDir = join(process.cwd(), 'docs');
+  const docsDir = join(import.meta.dirname!, '..', '..', 'docs');
   const docs = await scanAndRenderDocs(docsDir);
   const navigation = buildNavigation(docs);
 

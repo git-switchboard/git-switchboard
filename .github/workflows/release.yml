@@ -93,8 +93,9 @@ jobs:
 
       # Publish to npm
       - name: Publish to npm
-        run: |
-          nx release publish
+        run: npx nx release publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Update Homebrew tap
       - name: Update Homebrew tap
