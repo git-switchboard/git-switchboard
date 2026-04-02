@@ -16,7 +16,7 @@ export function Link({
   return (
     <a
       href={href ? applyBaseUrl(href) : href}
-      className={`transition-colors duration-200 ${active ? 'text-switch-accent-bright font-medium' : 'text-switch-text-dim hover:text-switch-text'} ${className}`}
+      className={`transition-all duration-200 ${active ? 'text-switch-accent font-medium' : 'text-switch-text-dim hover:text-switch-text'} ${className.includes('no-underline') ? '' : 'hover:text-switch-accent'} ${className}`}
       {...props}
     >
       {children}
