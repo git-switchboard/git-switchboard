@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      specifier:
+        description: 'Version bump (major, minor, patch, or explicit like 1.2.3)'
+        required: false
+        type: string
+  push:
+    tags:
+      - 'git-switchboard@*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  # Phase 1: Version + Changelog (manual dispatch only)
+  version:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: |
+          git config user.name "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Version and changelog
+        run: |
+          npx nx release version ${{ inputs.specifier && format('--specifier {0}', inputs.specifier) || '' }} --yes
+          npx nx release changelog --yes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Phase 2: Build + Publish (triggered by tag from phase 1)
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/git-switchboard@')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+
+      # Extract version from tag (git-switchboard@1.2.3 -> 1.2.3)
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#git-switchboard@}" >> "$GITHUB_OUTPUT"
+
+      # Build JS bundle
+      - name: Build JS bundle
+        run: npx nx run git-switchboard:build
+
+      # Build all 6 native binaries
+      - name: Build native binaries
+        run: npx nx run git-switchboard:build:native
+
+      # Create GitHub Release with all assets
+      - name: Upload to GitHub Release
+        run: |
+          cd packages/git-switchboard
+          gh release upload "${{ github.ref_name }}" \
+            native-builds/git-switchboard-darwin-arm64 \
+            native-builds/git-switchboard-darwin-x64 \
+            native-builds/git-switchboard-linux-x64 \
+            native-builds/git-switchboard-linux-arm64 \
+            native-builds/git-switchboard-windows-x64.exe \
+            native-builds/git-switchboard-windows-arm64.exe \
+            dist/git-switchboard.js
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Publish to npm
+      - name: Publish to npm
+        run: |
+          cd packages/git-switchboard
+          npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Update Homebrew tap
+      - name: Update Homebrew tap
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.TAP_GITHUB_TOKEN }}
+          repository: git-switchboard/homebrew-tap
+          event-type: release
+          client-payload: '{"version": "${{ steps.version.outputs.version }}", "tag": "${{ github.ref_name }}"}'
+
+      # Publish Chocolatey package
+      - name: Publish to Chocolatey
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cd packages/git-switchboard
+          # Download Windows binary for checksum
+          WINDOWS_URL="https://github.com/git-switchboard/git-switchboard/releases/download/${{ github.ref_name }}/git-switchboard-windows-x64.exe"
+          CHECKSUM=$(sha256sum native-builds/git-switchboard-windows-x64.exe | awk '{print $1}')
+          # Render nuspec and install script
+          mkdir -p /tmp/tools
+          sed "s/{{VERSION}}/$VERSION/g" ../../packaging/choco/git-switchboard.nuspec > /tmp/git-switchboard.nuspec
+          sed -e "s|{{URL}}|$WINDOWS_URL|g" -e "s/{{CHECKSUM}}/$CHECKSUM/g" ../../packaging/choco/tools/chocolateyinstall.ps1 > /tmp/tools/chocolateyinstall.ps1
+          cd /tmp
+          choco pack git-switchboard.nuspec
+          choco push git-switchboard.$VERSION.nupkg --source https://push.chocolatey.org/ --api-key ${{ secrets.CHOCO_API_KEY }}
