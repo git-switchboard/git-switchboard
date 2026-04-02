@@ -619,3 +619,27 @@ export async function fetchCheckLogs(
     return null;
   }
 }
+
+/**
+ * Retry failed GitHub Actions jobs for a PR.
+ * Re-runs each failed job individually.
+ */
+export async function retryFailedJobs(
+  token: string,
+  owner: string,
+  repo: string,
+  failedChecks: CheckRun[]
+): Promise<void> {
+  const octokit = createOctokit(token);
+  await Promise.allSettled(
+    failedChecks
+      .filter((c) => c.id > 0)
+      .map((c) =>
+        octokit.rest.actions.reRunJobForWorkflowRun({
+          owner,
+          repo,
+          job_id: c.id,
+        })
+      )
+  );
+}

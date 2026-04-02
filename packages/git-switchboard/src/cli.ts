@@ -147,29 +147,33 @@ const gitSwitchboard = cli('git-switchboard', {
             process.exit(0);
           }
 
-          // 3. Launch PR router TUI (single React tree, no swapRoot)
+          // 3. Launch PR router TUI (single React tree via zustand store)
           const { PrRouter } = await import('./pr-router.js');
+          const { createPrStore } = await import('./store.js');
           const { promise, resolve: done } =
             Promise.withResolvers<
-              import('./pr-router.js').PrRouterResult | null
+              import('./store.js').PrRouterResult | null
             >();
 
-          root.render(
-            createElement(PrRouter, {
-              prs,
-              localRepos,
-              initialCICache: ciCache,
-              initialReviewCache: reviewCache,
-              token,
-              onDone: (result) => {
+          const store = createPrStore({
+            prs,
+            localRepos,
+            ciCache,
+            reviewCache,
+            token,
+            copyToClipboard,
+            onDone: (result) => {
+              try {
                 renderer.destroy();
-                done(result);
-              },
-              findInstalledEditors,
-              resolveEditor,
-              editorFlag: args.editor,
-              copyToClipboard,
-            }) as React.ReactNode
+              } catch {
+                // yoga crash during teardown — ignore
+              }
+              done(result);
+            },
+          });
+
+          root.render(
+            createElement(PrRouter, { store }) as React.ReactNode
           );
 
           const result = await promise;

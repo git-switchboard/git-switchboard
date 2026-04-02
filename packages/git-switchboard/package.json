@@ -47,7 +47,8 @@
     "gql.tada": "^1.9.2",
     "graphql": "^16.13.2",
     "react": "^19.0.0",
-    "tslib": "^2.5.0"
+    "tslib": "^2.5.0",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@types/node": "22.18.1",

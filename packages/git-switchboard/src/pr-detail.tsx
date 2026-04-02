@@ -92,6 +92,7 @@ interface PrDetailProps {
   onBack: () => void;
   onWatch: () => void;
   onRefreshCI: () => void;
+  onRetryChecks: () => Promise<string>;
   onOpenUrl: (url: string) => void;
   /** Fetch and copy logs for a check run. Returns status message. */
   onCopyLogs: (check: CheckRun) => Promise<string>;
@@ -109,6 +110,7 @@ export function PrDetail({
   onBack,
   onWatch,
   onRefreshCI,
+  onRetryChecks,
   onOpenUrl,
   onCopyLogs,
   onExit,
@@ -228,6 +230,9 @@ export function PrDetail({
           onWatch();
         } else if (key.raw === 'r') {
           onRefreshCI();
+        } else if (key.raw === 't') {
+          showStatus('Retrying failed checks...');
+          onRetryChecks().then((msg) => showStatus(msg));
         } else if (key.raw === 'c' && selectedIndex >= ACTION_COUNT) {
           const check = checks[selectedIndex - ACTION_COUNT];
           if (check) {
@@ -284,7 +289,7 @@ export function PrDetail({
     footerText = ` ${statusText}`;
     footerFg = '#9ece6a';
   } else {
-    const keys = ` [${RETURN_SYMBOL}] Select | [c]opy logs | [r]efresh CI | [w]atch | [${LEFT_ARROW}] Back | [q]uit`;
+    const keys = ` [${RETURN_SYMBOL}] Select | [c]opy logs | [r]efresh | re[t]ry | [w]atch | [${LEFT_ARROW}] Back | [q]uit`;
     const rl = rateLimit.current
       ? `API: ${rateLimit.current.remaining}/${rateLimit.current.limit} `
       : '';

@@ -1,13 +1,19 @@
-import { useKeyboard } from '@opentui/react';
+import { useKeyboard, useRenderer } from '@opentui/react';
 
 /**
  * Exit the process on Ctrl+C.
- * Needed because exitOnCtrlC is disabled on the renderer
- * to avoid yoga-layout WASM crashes during React unmount.
+ * Restores terminal state (alt screen, mouse tracking) before exiting.
  */
 export function useExitOnCtrlC(): void {
+  const renderer = useRenderer();
+
   useKeyboard((key) => {
     if (key.ctrl && key.name === 'c') {
+      try {
+        renderer.destroy();
+      } catch {
+        // yoga crash during teardown — ignore, we're exiting anyway
+      }
       process.exit(0);
     }
   });
