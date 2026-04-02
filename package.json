@@ -1,0 +1,7 @@
+{
+  "name": "@git-switchboard/source",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@10.7.0"
+}
