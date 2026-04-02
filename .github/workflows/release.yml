@@ -40,6 +40,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push version commit and tags
+        run: git push --follow-tags
 
   # Phase 2: Build + Publish (triggered by tag from phase 1)
   publish:
@@ -56,6 +58,9 @@ jobs:
           node-version: 22
           cache: pnpm
           registry-url: https://registry.npmjs.org
+
+      - run: npm install -g npm@11
+
       - run: pnpm install --frozen-lockfile
 
       # Extract version from tag (git-switchboard@1.2.3 -> 1.2.3)
@@ -89,10 +94,7 @@ jobs:
       # Publish to npm
       - name: Publish to npm
         run: |
-          cd packages/git-switchboard
-          npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          nx release publish
 
       # Update Homebrew tap
       - name: Update Homebrew tap
@@ -107,14 +109,19 @@ jobs:
       - name: Publish to Chocolatey
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          cd packages/git-switchboard
-          # Download Windows binary for checksum
           WINDOWS_URL="https://github.com/git-switchboard/git-switchboard/releases/download/${{ github.ref_name }}/git-switchboard-windows-x64.exe"
-          CHECKSUM=$(sha256sum native-builds/git-switchboard-windows-x64.exe | awk '{print $1}')
-          # Render nuspec and install script
-          mkdir -p /tmp/tools
-          sed "s/{{VERSION}}/$VERSION/g" ../../packaging/choco/git-switchboard.nuspec > /tmp/git-switchboard.nuspec
-          sed -e "s|{{URL}}|$WINDOWS_URL|g" -e "s/{{CHECKSUM}}/$CHECKSUM/g" ../../packaging/choco/tools/chocolateyinstall.ps1 > /tmp/tools/chocolateyinstall.ps1
-          cd /tmp
-          choco pack git-switchboard.nuspec
-          choco push git-switchboard.$VERSION.nupkg --source https://push.chocolatey.org/ --api-key ${{ secrets.CHOCO_API_KEY }}
+          CHECKSUM=$(sha256sum packages/git-switchboard/native-builds/git-switchboard-windows-x64.exe | awk '{print $1}')
+          # Render nuspec and install script into a staging directory
+          mkdir -p /tmp/choco-staging/tools
+          sed "s/{{VERSION}}/$VERSION/g" packaging/choco/git-switchboard.nuspec > /tmp/choco-staging/git-switchboard.nuspec
+          sed -e "s|{{URL}}|$WINDOWS_URL|g" -e "s/{{CHECKSUM}}/$CHECKSUM/g" packaging/choco/tools/chocolateyinstall.ps1 > /tmp/choco-staging/tools/chocolateyinstall.ps1
+          # Install choco on ubuntu via mono
+          sudo apt-get install -y mono-complete
+          wget -q https://dist.nuget.org/win-x86-commandline/latest/nuget.exe -O /tmp/nuget.exe
+          cd /tmp/choco-staging
+          mono /tmp/nuget.exe pack git-switchboard.nuspec
+          # Push via Chocolatey API using curl
+          curl -X PUT \
+            -H "X-NuGet-ApiKey: ${{ secrets.CHOCO_API_KEY }}" \
+            -F "package=@git-switchboard.$VERSION.nupkg" \
+            https://push.chocolatey.org/api/v2/package
