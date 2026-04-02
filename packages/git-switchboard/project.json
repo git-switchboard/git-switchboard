@@ -1,8 +1,12 @@
 {
   "name": "git-switchboard",
   "targets": {
-    "run": {
+    "dev": {
       "command": "bun run packages/git-switchboard/src/cli.ts"
+    },
+    "build": {
+      "command": "pnpm --filter git-switchboard run build",
+      "outputs": ["{projectRoot}/dist"]
     }
   }
 }

@@ -21,43 +21,32 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "git-switchboard": "./dist/cli.js"
-  },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
+    "git-switchboard": "./dist/git-switchboard"
   },
   "scripts": {
     "dev": "bun run src/cli.ts",
-    "build": "tsc -b tsconfig.lib.json",
+    "build": "bun build src/cli.ts --compile --outfile=dist/git-switchboard",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": {
+  "devDependencies": {
     "@octokit/graphql-schema": "^15.26.1",
     "@octokit/rest": "^22.0.0",
     "@opentui/core": "^0.1.95",
     "@opentui/react": "^0.1.95",
+    "@types/node": "22.18.1",
+    "@types/react": "^19.0.0",
     "cli-forge": "^1.2.0",
     "clipboardy": "^5.3.1",
     "gql.tada": "^1.9.2",
     "graphql": "^16.13.2",
     "react": "^19.0.0",
     "tslib": "^2.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "5.9.2",
     "zustand": "^5.0.8"
   },
-  "devDependencies": {
-    "@types/node": "22.18.1",
-    "@types/react": "^19.0.0",
-    "tsx": "^4.21.0",
-    "typescript": "5.9.2"
-  },
   "files": [
-    "dist",
+    "dist/git-switchboard",
     "README.md"
   ]
 }
