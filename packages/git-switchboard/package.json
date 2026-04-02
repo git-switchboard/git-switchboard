@@ -26,7 +26,6 @@
   "scripts": {
     "dev": "bun run src/cli.ts",
     "build": "bun build src/cli.ts --target=bun --outdir=dist --entry-naming='git-switchboard.js' --banner='#!/usr/bin/env bun'",
-    "build:native": "node scripts/build-native.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

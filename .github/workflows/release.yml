@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       specifier:
-        description: 'Version bump (major, minor, patch, or explicit like 1.2.3)'
+        description: "Version bump (major, minor, patch, or explicit like 1.2.3)"
         required: false
         type: string
   push:
     tags:
-      - 'git-switchboard@*'
+      - "git-switchboard@*"
 
 permissions:
   contents: write
@@ -28,10 +28,18 @@ jobs:
           git config user.name "${GITHUB_ACTOR}"
           git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
+          registry-url: https://registry.npmjs.org/
+
+      - name: Upgrade npm for OIDC support
+        # Two-step upgrade: npm 10.9.7 (bundled with Node 22.22.2) crashes
+        # self-upgrading directly to npm@latest due to npm/cli#9151.
+        # First upgrade to 11.11.0 (which still bundles promise-retry),
+        # then to latest.
+        run: npm install -g npm@11.11.0 && npm install -g npm@latest
       - run: pnpm install --frozen-lockfile
       - name: Version and changelog
         run: |
@@ -43,9 +51,56 @@ jobs:
       - name: Push version commit and tags
         run: git push --follow-tags
 
-  # Phase 2: Build + Publish (triggered by tag from phase 1)
+  # Phase 2: Build native binaries on matching platforms
+  build-native:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/git-switchboard@')
+    strategy:
+      matrix:
+        include:
+          - target: bun-darwin-arm64
+            output: git-switchboard-darwin-arm64
+            os: macos-latest
+          - target: bun-darwin-x64
+            output: git-switchboard-darwin-x64
+            os: macos-13
+          - target: bun-linux-x64
+            output: git-switchboard-linux-x64
+            os: ubuntu-latest
+          - target: bun-linux-arm64
+            output: git-switchboard-linux-arm64
+            os: ubuntu-24.04-arm
+          - target: bun-windows-x64
+            output: git-switchboard-windows-x64.exe
+            os: windows-latest
+          - target: bun-windows-arm64
+            output: git-switchboard-windows-arm64.exe
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org/
+
+      - name: Upgrade npm for OIDC support
+        # Two-step upgrade workaround for npm/cli#9151
+        run: npm install -g npm@11.11.0 && npm install -g npm@latest
+      - run: pnpm install --frozen-lockfile
+      - name: Build native binary
+        run: npx nx run git-switchboard:build:native -- ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: packages/git-switchboard/native-builds/${{ matrix.output }}
+
+  # Phase 3: Publish (after all native builds complete)
   publish:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/git-switchboard@')
+    needs: build-native
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,13 +108,16 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-          registry-url: https://registry.npmjs.org
+          registry-url: https://registry.npmjs.org/
 
-      - run: npm install -g npm@11
+      - name: Upgrade npm for OIDC support
+        # Two-step upgrade workaround for npm/cli#9151
+        run: npm install -g npm@11.11.0 && npm install -g npm@latest
 
       - run: pnpm install --frozen-lockfile
 
@@ -72,9 +130,11 @@ jobs:
       - name: Build JS bundle
         run: npx nx run git-switchboard:build
 
-      # Build all 6 native binaries
-      - name: Build native binaries
-        run: npx nx run git-switchboard:build:native
+      # Download all native binaries
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages/git-switchboard/native-builds
+          merge-multiple: true
 
       # Create GitHub Release with all assets
       - name: Upload to GitHub Release
@@ -94,8 +154,6 @@ jobs:
       # Publish to npm
       - name: Publish to npm
         run: npx nx release publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Update Homebrew tap
       - name: Update Homebrew tap

@@ -1,7 +1,10 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "namedInputs": {
-    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals"
+    ],
     "production": [
       "default",
       "!{projectRoot}/eslint.config.{js,cjs,mjs}",
@@ -12,7 +15,9 @@
   },
   "targetDefaults": {
     "build": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "cache": true
     },
     "typecheck": {
@@ -20,7 +25,9 @@
     }
   },
   "release": {
-    "projects": ["packages/*"],
+    "projects": [
+      "packages/*"
+    ],
     "projectsRelationship": "independent",
     "version": {
       "preVersionCommand": "npx nx run-many -t build -p packages/*",
@@ -44,5 +51,6 @@
         }
       }
     }
-  ]
+  ],
+  "analytics": true
 }

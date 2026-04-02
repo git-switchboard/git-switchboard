@@ -1,17 +1,16 @@
 {
   "name": "git-switchboard",
   "targets": {
-    "dev": {
+    "run": {
       "command": "bun run packages/git-switchboard/src/cli.ts"
     },
     "build": {
-      "command": "pnpm --filter git-switchboard run build",
       "outputs": ["{projectRoot}/dist"]
     },
     "build:native": {
-      "command": "pnpm --filter git-switchboard run build:native",
+      "command": "bun {projectRoot}/scripts/build-native.js",
       "outputs": ["{projectRoot}/native-builds"],
-      "dependsOn": []
+      "dependsOn": ["^build:native"]
     }
   }
 }

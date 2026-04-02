@@ -1,5 +1,5 @@
-import { execSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
+import { join } from "node:path";
 
 const targets = [
   { target: 'bun-darwin-arm64', output: 'git-switchboard-darwin-arm64' },
@@ -27,10 +27,23 @@ if (selectedTarget && buildTargets.length === 0) {
 
 for (const { target, output } of buildTargets) {
   console.log(`Building ${output}...`);
-  execSync(
-    `bun build src/cli.ts --compile --target=${target} --outfile=native-builds/${output}`,
-    { stdio: 'inherit', cwd: process.cwd() }
-  );
+  const result = await Bun.build({
+    entrypoints: [join(import.meta.dirname, '../src/cli.ts')],
+    compile: {
+      target,
+      outfile: `native-builds/${output}`,
+    },
+
+    minify: true,
+  });
+
+  if (!result.success) {
+    console.error(`Failed to build ${output}:`);
+    for (const log of result.logs) {
+      console.error(log);
+    }
+    process.exit(1);
+  }
 }
 
 console.log(`Built ${buildTargets.length} native binaries.`);
