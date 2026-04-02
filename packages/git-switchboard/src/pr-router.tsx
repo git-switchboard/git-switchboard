@@ -5,6 +5,7 @@ import { PrDetail } from './pr-detail.js';
 import { ClonePrompt } from './clone-prompt.js';
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
 import { sendNotification } from './notify.js';
+import { checkIsClean } from './scanner.js';
 import type { PrStoreApi, PrRouterResult } from './store.js';
 import type { LocalRepo } from './scanner.js';
 
@@ -77,18 +78,31 @@ export function PrRouter({ store }: PrRouterProps) {
 
   // ─── Helper: open in editor (clone selection logic) ───────────
 
-  const handleOpenInEditor = (pr: typeof prs[number], matches: LocalRepo[]) => {
+  const handleOpenInEditor = async (pr: typeof prs[number], matches: LocalRepo[]) => {
+    // Prefer clone already on the right branch
     const onBranch = matches.filter((r) => r.currentBranch === pr.headRef);
     if (onBranch.length === 1) {
       onDone({ selectedPR: pr, selectedRepo: onBranch[0], skipCheckout: true });
       return;
     }
-    const cleanMatches = matches.filter((r) => r.isClean);
+
+    // Check clean status lazily (expensive — deferred from scan)
+    const cleanResults = await Promise.all(
+      matches.map((r) => checkIsClean(r.path))
+    );
+    const cleanMatches = matches.filter((_, i) => cleanResults[i]);
+
     if (cleanMatches.length === 1) {
       onDone({ selectedPR: pr, selectedRepo: cleanMatches[0], skipCheckout: false });
       return;
     }
-    navigate({ type: 'clone-prompt', pr, matches });
+
+    // Update isClean on matches for clone prompt display
+    const updatedMatches = matches.map((r, i) => ({
+      ...r,
+      isClean: cleanResults[i],
+    }));
+    navigate({ type: 'clone-prompt', pr, matches: updatedMatches });
   };
 
   // ─── Render active screen ─────────────────────────────────────
