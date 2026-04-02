@@ -3,3 +3,4 @@ dist/
 native-builds/
 .nx/
 *.tsbuildinfo
+docs-site/generated
