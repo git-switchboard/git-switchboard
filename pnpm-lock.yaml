@@ -11,6 +11,9 @@ importers:
       '@nx/js':
         specifier: ^22.5.0
         version: 22.6.4(@babel/traverse@7.29.0)(nx@22.6.4)
+      cli-forge:
+        specifier: ^1.2.0
+        version: 1.7.1(tsx@4.21.0)
       ejs:
         specifier: ^5.0.1
         version: 5.0.1
