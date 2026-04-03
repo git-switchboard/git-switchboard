@@ -12,8 +12,8 @@ importers:
         specifier: ^22.5.0
         version: 22.6.4(@babel/traverse@7.29.0)(nx@22.6.4)
       cli-forge:
-        specifier: ^1.2.0
-        version: 1.7.1(tsx@4.21.0)
+        specifier: ^1.7.2
+        version: 1.7.2(tsx@4.21.0)
       ejs:
         specifier: ^5.0.1
         version: 5.0.1
@@ -124,8 +124,8 @@ importers:
         specifier: ^19.0.0
         version: 19.2.14
       cli-forge:
-        specifier: ^1.2.0
-        version: 1.7.1(tsx@4.21.0)
+        specifier: ^1.7.2
+        version: 1.7.2(tsx@4.21.0)
       clipboardy:
         specifier: ^5.3.1
         version: 5.3.1
@@ -728,8 +728,8 @@ packages:
   '@brillout/vite-plugin-server-entry@0.7.18':
     resolution: {integrity: sha512-j3neG+vaIZ2AbP2/vGgaIyJwrFIxlK3xd3Ey2EGBswCvAGeI4QSSfXGbb7R3b3H8223PgTTsWOZuZH0Y8Ope2w==}
 
-  '@cli-forge/parser@1.7.1':
-    resolution: {integrity: sha512-BaMbTSzvbOEt0b26U22zU/5UIICgwrJFZnUXojUGEj7VT60MU9IuHJLrJQyeWlqg566s56c0Qy2fzgynEwMYkQ==}
+  '@cli-forge/parser@1.7.2':
+    resolution: {integrity: sha512-h4FeC4RprmBK3Ne0AYZCbIODzcCWtVHKyJGuNb5BB/iHXsAR7hahBSpd3Fhn2TOtvuzkHNH5IcLU2W083N9Fcw==}
 
   '@dimforge/rapier2d-simd-compat@0.17.3':
     resolution: {integrity: sha512-bijvwWz6NHsNj5e5i1vtd3dU2pDhthSaTUZSh14DUGGKJfw8eMnlWZsxwHBxB/a3AXVNDjL9abuHw1k9FGR+jg==}
@@ -1798,8 +1798,8 @@ packages:
     resolution: {integrity: sha512-I/zHAwsKf9FqGoXM4WWRACob9+SNukZTd94DWF57E4toouRulbCxcUh6RKUEOQlYTHJnzkPMySvPNaaSLNfLZw==}
     engines: {node: '>=8'}
 
-  cli-forge@1.7.1:
-    resolution: {integrity: sha512-JbL4lKljcF9xhz8PbzUJhI4KDAm6118VLvOdm+j1lsrT3q8jwcNqvOhDBiUmy8qOS4OF+y+SWmnWelZSwPIk1g==}
+  cli-forge@1.7.2:
+    resolution: {integrity: sha512-iJHXA8iQPfsrXlkEA9iIy32UXga5Vi1r67o5c2nAX9MYZVeUSSLZ0Zr8mgA9cCw6IcI09njdFDdqG6E/+ZX7RA==}
     hasBin: true
     peerDependencies:
       '@clack/prompts': '*'
@@ -4133,7 +4133,7 @@ snapshots:
       '@brillout/import': 0.2.6
       '@brillout/picocolors': 1.0.30
 
-  '@cli-forge/parser@1.7.1':
+  '@cli-forge/parser@1.7.2':
     dependencies:
       tslib: 2.8.1
 
@@ -5198,9 +5198,9 @@ snapshots:
     dependencies:
       restore-cursor: 3.1.0
 
-  cli-forge@1.7.1(tsx@4.21.0):
+  cli-forge@1.7.2(tsx@4.21.0):
     dependencies:
-      '@cli-forge/parser': 1.7.1
+      '@cli-forge/parser': 1.7.2
       tslib: 2.8.1
     optionalDependencies:
       tsx: 4.21.0

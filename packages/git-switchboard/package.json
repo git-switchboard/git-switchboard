@@ -35,7 +35,7 @@
     "@opentui/react": "^0.1.95",
     "@types/node": "22.18.1",
     "@types/react": "^19.0.0",
-    "cli-forge": "^1.2.0",
+    "cli-forge": "^1.7.2",
     "clipboardy": "^5.3.1",
     "gql.tada": "^1.9.2",
     "graphql": "^16.13.2",

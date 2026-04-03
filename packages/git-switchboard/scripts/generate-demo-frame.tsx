@@ -349,6 +349,7 @@ async function main() {
         refreshing={false}
         onSelect={() => {}}
         onFetchCI={async () => {}}
+        onPrefetchDetails={() => {}}
         onRetryChecks={async () => ''}
         onRefreshAll={() => {}}
         onExit={() => {}}

@@ -14,7 +14,7 @@
     "build:native": {
       "command": "bun scripts/build-native.js",
       "options": {
-        "cwd": {"projectRoot"}
+        "cwd": "{projectRoot}"
       },
       "outputs": ["{projectRoot}/native-builds"],
       "dependsOn": ["^build:native"]
