@@ -5,8 +5,17 @@
   "license": "MIT",
   "packageManager": "pnpm@10.24.0",
   "scripts": {},
+  "nx": {
+    "targets": {
+      "validate-readme": {
+        "command": "node scripts/validate-readme.mjs {projectRoot}",
+        "cache": false
+      }
+    }
+  },
   "devDependencies": {
     "@nx/js": "^22.5.0",
+    "ejs": "^5.0.1",
     "nx": "^22.5.0",
     "nx-github-pages": "^1.2.0",
     "typescript": "^5.9.2"
