@@ -24,6 +24,7 @@ export function PrRouter({ store }: PrRouterProps) {
   const screen = useStore(store, (s) => s.screen);
   const prs = useStore(store, (s) => s.prs);
   const localRepos = useStore(store, (s) => s.localRepos);
+  const repoScanDone = useStore(store, (s) => s.repoScanDone);
   const ciCache = useStore(store, (s) => s.ciCache);
   const reviewCache = useStore(store, (s) => s.reviewCache);
   const mergeableCache = useStore(store, (s) => s.mergeableCache);
@@ -44,8 +45,10 @@ export function PrRouter({ store }: PrRouterProps) {
     toggleWatch,
     openInBrowser,
     openEditorForPR,
-    refreshAllPRs,
+    refreshPRs,
     setEditor,
+    setLocalRepos,
+    waitForLocalRepos,
   } = store.getState();
 
   // ─── Editor picker modal state ────────────────────────────────
@@ -151,16 +154,34 @@ export function PrRouter({ store }: PrRouterProps) {
 
   // ─── Helper: open in editor (clone selection logic) ───────────
 
+  const getMatchesForPR = useCallback(
+    (
+      pr: UserPullRequest,
+      repos: readonly LocalRepo[] = localRepos
+    ) =>
+      repos.filter(
+        (r) => r.repoId === pr.repoId || r.repoId === pr.forkRepoId
+      ),
+    [localRepos]
+  );
+
   const handleOpenInEditor = async (pr: typeof prs[number], matches: LocalRepo[]) => {
+    let currentMatches = matches;
+    if (!repoScanDone) {
+      const repos = await waitForLocalRepos();
+      setLocalRepos(repos, true);
+      currentMatches = getMatchesForPR(pr, repos);
+    }
+
     // If no editor resolved yet and multiple selectable editors are installed, show picker modal
     const selectableCount = installedEditors.filter((e) => !e.disabled).length;
     if (!store.getState().editor && selectableCount > 1) {
-      setEditorModal({ pr, matches, selectedIndex: 0 });
+      setEditorModal({ pr, matches: currentMatches, selectedIndex: 0 });
       return;
     }
 
     // Prefer clone already on the right branch
-    const onBranch = matches.filter((r) => r.currentBranch === pr.headRef);
+    const onBranch = currentMatches.filter((r) => r.currentBranch === pr.headRef);
     if (onBranch.length === 1) {
       const msg = await openEditorForPR(pr, onBranch[0], true);
       store.getState().showStatus(msg);
@@ -169,9 +190,9 @@ export function PrRouter({ store }: PrRouterProps) {
 
     // Check clean status lazily (expensive — deferred from scan)
     const cleanResults = await Promise.all(
-      matches.map((r) => checkIsClean(r.path))
+      currentMatches.map((r) => checkIsClean(r.path))
     );
-    const cleanMatches = matches.filter((_, i) => cleanResults[i]);
+    const cleanMatches = currentMatches.filter((_, i) => cleanResults[i]);
 
     if (cleanMatches.length === 1) {
       const msg = await openEditorForPR(pr, cleanMatches[0], false);
@@ -180,7 +201,7 @@ export function PrRouter({ store }: PrRouterProps) {
     }
 
     // Update isClean on matches for clone prompt display
-    const updatedMatches = matches.map((r, i) => ({
+    const updatedMatches = currentMatches.map((r, i) => ({
       ...r,
       isClean: cleanResults[i],
     }));
@@ -275,14 +296,18 @@ export function PrRouter({ store }: PrRouterProps) {
             repoMode={repoMode}
             refreshing={refreshing}
             onSelect={(pr, matches) => {
-              navigate({ type: 'pr-detail', pr, matches });
+              navigate({
+                type: 'pr-detail',
+                pr,
+                matches: matches.length > 0 ? matches : getMatchesForPR(pr),
+              });
             }}
             onFetchCI={async (pr) => {
               await fetchDetailsForPR(pr);
             }}
             onPrefetchDetails={prefetchDetailsForPRs}
             onRetryChecks={async (pr) => retryChecks(pr)}
-            onRefreshAll={() => refreshAllPRs()}
+            onRefreshAll={async (prs) => refreshPRs(prs)}
             onExit={() => onDone(null)}
           />
           {editorModalOverlay}
@@ -292,6 +317,8 @@ export function PrRouter({ store }: PrRouterProps) {
     case 'pr-detail': {
       const { pr, matches } = screen;
       const prKey = `${pr.repoId}#${pr.number}`;
+      const currentMatches =
+        repoScanDone || matches.length === 0 ? getMatchesForPR(pr) : matches;
       return (
         <>
           <PrDetail
@@ -299,9 +326,9 @@ export function PrRouter({ store }: PrRouterProps) {
             ci={ciCache[prKey] ?? null}
             review={reviewCache[prKey] ?? null}
             ciLoading={ciLoading}
-            matches={matches}
+            matches={currentMatches}
             watched={watchedPRs.has(prKey)}
-            onOpenInEditor={() => handleOpenInEditor(pr, matches)}
+            onOpenInEditor={() => handleOpenInEditor(pr, currentMatches)}
             onBack={() => navigate({ type: 'pr-list' })}
             onRefreshCI={() => refreshCI(pr)}
             onRetryChecks={async () => retryChecks(pr)}

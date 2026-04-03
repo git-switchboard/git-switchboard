@@ -1,5 +1,5 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { muteColor } from './colors.js';
 import { buildFooterRows, FooterRows } from './footer.js';
 import { rateLimit } from './github.js';
@@ -47,6 +47,7 @@ function fit(str: string, width: number): string {
 }
 
 const SPINNER_FRAMES = ['|', '/', '-', '\\'];
+const PREFETCH_BUFFER_ROWS = 5;
 
 function ciSummary(
   ci: CIInfo | undefined,
@@ -177,7 +178,7 @@ interface PrAppProps {
   onFetchCI: (pr: UserPullRequest) => Promise<void>;
   onPrefetchDetails: (prs: UserPullRequest[]) => void;
   onRetryChecks: (pr: UserPullRequest) => Promise<string>;
-  onRefreshAll: () => void;
+  onRefreshAll: (prs: UserPullRequest[]) => Promise<void>;
   onExit: () => void;
 }
 
@@ -206,6 +207,11 @@ export function PrApp({
   const [statusText, setStatusText] = useState('');
   const [sortLayers, setSortLayers] = useState<SortLayer[]>(DEFAULT_SORT);
   const [sortModal, setSortModal] = useState<{ selectedIndex: number } | null>(null);
+  const refreshSessionRef = useRef<{
+    signature: string;
+    refreshedKeys: Set<string>;
+  } | null>(null);
+  const queuedRefreshCountRef = useRef(0);
   // Bump to force re-render after CI fetch (caches are mutated externally)
   const [, forceRender] = useState(0);
 
@@ -318,11 +324,75 @@ export function PrApp({
     () => filteredPRs.slice(scrollOffset, scrollOffset + listHeight),
     [filteredPRs, scrollOffset, listHeight]
   );
+  const prefetchedPRs = useMemo(() => {
+    const start = Math.max(0, scrollOffset - PREFETCH_BUFFER_ROWS);
+    const end = Math.min(
+      filteredPRs.length,
+      scrollOffset + listHeight + PREFETCH_BUFFER_ROWS
+    );
+    return filteredPRs.slice(start, end);
+  }, [filteredPRs, scrollOffset, listHeight]);
+  const refreshSessionSignature = useMemo(
+    () =>
+      `${filteredPRs
+        .map((pr) => `${pr.repoId}#${pr.number}`)
+        .sort()
+        .join('|')}::${scrollOffset}::${listHeight}`,
+    [filteredPRs, scrollOffset, listHeight]
+  );
 
   useEffect(() => {
-    if (visiblePRs.length === 0) return;
-    onPrefetchDetails(visiblePRs);
-  }, [visiblePRs, onPrefetchDetails]);
+    if (prefetchedPRs.length === 0) return;
+    onPrefetchDetails(prefetchedPRs);
+  }, [prefetchedPRs, onPrefetchDetails, selectedIndex]);
+
+  const refreshCurrentChunk = useCallback(() => {
+    if (filteredPRs.length === 0) return;
+
+    const chunkSize = Math.min(listHeight, filteredPRs.length);
+    const orderedPRs = [
+      ...filteredPRs.slice(scrollOffset),
+      ...filteredPRs.slice(0, scrollOffset),
+    ];
+
+    if (
+      refreshSessionRef.current == null ||
+      refreshSessionRef.current.signature !== refreshSessionSignature
+    ) {
+      refreshSessionRef.current = {
+        signature: refreshSessionSignature,
+        refreshedKeys: new Set(),
+      };
+    }
+
+    const session = refreshSessionRef.current;
+    let chunk = orderedPRs
+      .filter((pr) => !session.refreshedKeys.has(`${pr.repoId}#${pr.number}`))
+      .slice(0, chunkSize);
+
+    if (chunk.length === 0) {
+      session.refreshedKeys.clear();
+      chunk = orderedPRs.slice(0, chunkSize);
+    }
+
+    for (const pr of chunk) {
+      session.refreshedKeys.add(`${pr.repoId}#${pr.number}`);
+    }
+
+    void onRefreshAll(chunk);
+  }, [
+    filteredPRs,
+    listHeight,
+    onRefreshAll,
+    refreshSessionSignature,
+    scrollOffset,
+  ]);
+
+  useEffect(() => {
+    if (refreshing || queuedRefreshCountRef.current === 0) return;
+    queuedRefreshCountRef.current -= 1;
+    refreshCurrentChunk();
+  }, [refreshCurrentChunk, refreshing]);
 
   const moveTo = useCallback(
     (newIndex: number) => {
@@ -412,9 +482,13 @@ export function PrApp({
       return;
     }
 
-    // Ctrl+R or Shift+R → refresh all PRs
+    // Ctrl+R or Shift+R → refresh filtered PRs one screen at a time
     if ((key.ctrl && key.name === 'r') || key.raw === 'R') {
-      onRefreshAll();
+      if (refreshing) {
+        queuedRefreshCountRef.current += 1;
+      } else {
+        refreshCurrentChunk();
+      }
       return;
     }
 
