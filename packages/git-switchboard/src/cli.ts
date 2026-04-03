@@ -76,7 +76,12 @@ const gitSwitchboard = cli('git-switchboard', {
           const { execSync } = await import('node:child_process');
           const { resolve } = await import('node:path');
 
-          const { resolveGitHubToken, fetchUserPRs, fetchRepoPRs, readCachedPRs } =
+          const {
+            resolveGitHubToken,
+            fetchUserPRs,
+            fetchRepoPRs,
+            readCachedPRsSnapshot,
+          } =
             await import('./github.js');
           const { scanForRepos } = await import('./scanner.js');
           const { resolveEditor, findInstalledEditors, openInEditor, openInEditorDetached } =
@@ -114,8 +119,10 @@ const gitSwitchboard = cli('git-switchboard', {
           };
           let scanProgress: import('./scanner.js').ScanProgress | null = null;
           let scanDone = false;
+          let loadingActive = true;
 
           const renderLoading = () => {
+            if (!loadingActive) return;
             root.render(
               createElement(Loading, {
                 prProgress: { ...prProgress },
@@ -128,24 +135,6 @@ const gitSwitchboard = cli('git-switchboard', {
 
           const repoMode = args.repo ?? null;
 
-          // Check for cached PR data for instant startup
-          const cachedPRs = await readCachedPRs(token, repoMode ?? undefined);
-          let usedCache = false;
-
-          // Run PR fetch (or skip if cached) and repo scan in parallel
-          const prPromise = cachedPRs
-            ? Promise.resolve(cachedPRs)
-            : repoMode
-              ? fetchRepoPRs(token, repoMode, (p) => {
-                  prProgress = { ...p };
-                  renderLoading();
-                })
-              : fetchUserPRs(token, (p) => {
-                  prProgress = { ...p };
-                  renderLoading();
-                });
-          if (cachedPRs) usedCache = true;
-
           const scanPromise = scanForRepos(
             args['search-root'],
             args['search-depth'],
@@ -157,12 +146,31 @@ const gitSwitchboard = cli('git-switchboard', {
             scanDone = true;
             renderLoading();
             return repos;
+          }).catch(() => {
+            scanDone = true;
+            renderLoading();
+            return [];
           });
 
-          const [prResult, localRepos] = await Promise.all([
-            prPromise,
-            scanPromise,
-          ]).catch((error: unknown) => {
+          // Check for cached PR data for instant startup, including stale snapshots.
+          const cachedPRs = await readCachedPRsSnapshot(token, repoMode ?? undefined);
+          let usedCache = false;
+
+          // Use cached PRs immediately when available and revalidate in the background later.
+          const prPromise = cachedPRs
+            ? Promise.resolve(cachedPRs.result)
+            : repoMode
+              ? fetchRepoPRs(token, repoMode, (p) => {
+                  prProgress = { ...p };
+                  renderLoading();
+                })
+              : fetchUserPRs(token, (p) => {
+                  prProgress = { ...p };
+                  renderLoading();
+                });
+          if (cachedPRs) usedCache = true;
+
+          const prResult = await prPromise.catch((error: unknown) => {
             try {
               renderer.destroy();
             } catch {
@@ -206,9 +214,12 @@ const gitSwitchboard = cli('git-switchboard', {
               import('./store.js').PrRouterResult | null
             >();
 
+          const initialLocalRepos = scanDone ? await scanPromise : [];
+
           const store = createPrStore({
             prs,
-            localRepos,
+            localRepos: initialLocalRepos,
+            repoScanDone: scanDone,
             ciCache,
             reviewCache,
             mergeableCache,
@@ -217,6 +228,7 @@ const gitSwitchboard = cli('git-switchboard', {
             copyToClipboard,
             editor,
             installedEditors,
+            waitForLocalRepos: () => scanPromise,
             onDone: (result) => {
               try {
                 renderer.destroy();
@@ -249,6 +261,13 @@ const gitSwitchboard = cli('git-switchboard', {
             },
           });
 
+          if (!scanDone) {
+            void scanPromise.then((repos) => {
+              store.getState().setLocalRepos(repos, true);
+            });
+          }
+
+          loadingActive = false;
           root.render(
             createElement(PrRouter, { store }) as React.ReactNode
           );
@@ -259,7 +278,8 @@ const gitSwitchboard = cli('git-switchboard', {
           }
 
           const result = await promise;
-          if (!result) return;
+          process.removeListener('SIGINT', sigintHandler);
+          if (!result) process.exit(0);
 
           const { selectedPR, newWorktreePath } = result;
 
@@ -267,7 +287,7 @@ const gitSwitchboard = cli('git-switchboard', {
           if (!newWorktreePath) return;
 
           const absPath = resolve(newWorktreePath);
-          const sourceMatches = localRepos.filter(
+          const sourceMatches = store.getState().localRepos.filter(
             (r) =>
               r.repoId === selectedPR.repoId ||
               (selectedPR.forkRepoId &&

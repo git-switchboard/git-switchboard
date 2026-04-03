@@ -5,6 +5,7 @@ import {
   fetchCheckLogs,
   fetchUserPRs,
   fetchRepoPRs,
+  persistPRCache,
   retryFailedJobs,
 } from './github.js';
 import { openUrl } from './notify.js';
@@ -34,6 +35,7 @@ export interface PrStore {
   // ─── Data ─────────────────────────────────────────────────────
   prs: UserPullRequest[];
   localRepos: LocalRepo[];
+  repoScanDone: boolean;
   ciCache: Record<string, CIInfo>;
   reviewCache: Record<string, ReviewInfo>;
   mergeableCache: Record<string, MergeableStatus>;
@@ -56,11 +58,13 @@ export interface PrStore {
   onDone: (result: PrRouterResult | null) => void;
   /** Open a PR in the editor without exiting the TUI. Returns a status message. */
   openEditorForPR: (pr: UserPullRequest, repo: LocalRepo, skipCheckout: boolean) => Promise<string>;
+  waitForLocalRepos: () => Promise<LocalRepo[]>;
 
   // ─── Editor ───────────────────────────────────────────────────
   editor: ResolvedEditor | null;
   installedEditors: EditorInfo[];
   setEditor: (editor: ResolvedEditor) => void;
+  setLocalRepos: (localRepos: LocalRepo[], repoScanDone?: boolean) => void;
 
   // ─── Actions ──────────────────────────────────────────────────
   fetchDetailsForPR: (pr: UserPullRequest) => Promise<void>;
@@ -70,6 +74,7 @@ export interface PrStore {
   retryCheck: (pr: UserPullRequest, check: CheckRun) => Promise<string>;
   copyLogs: (pr: UserPullRequest, check: CheckRun) => Promise<string>;
   toggleWatch: (pr: UserPullRequest) => void;
+  refreshPRs: (prs: UserPullRequest[]) => Promise<void>;
   refreshAllPRs: () => Promise<void>;
   openInBrowser: (url: string) => void;
   showStatus: (text: string) => void;
@@ -82,6 +87,7 @@ interface PrStoreDeps {
   fetchCheckLogs: typeof fetchCheckLogs;
   fetchUserPRs: typeof fetchUserPRs;
   fetchRepoPRs: typeof fetchRepoPRs;
+  persistPRCache: typeof persistPRCache;
   retryFailedJobs: typeof retryFailedJobs;
   openUrl: typeof openUrl;
 }
@@ -92,6 +98,7 @@ const DEFAULT_DEPS: PrStoreDeps = {
   fetchCheckLogs,
   fetchUserPRs,
   fetchRepoPRs,
+  persistPRCache,
   retryFailedJobs,
   openUrl,
 };
@@ -116,6 +123,7 @@ function retainCacheEntries<T>(
 export const createPrStore = (initial: {
   prs: UserPullRequest[];
   localRepos: LocalRepo[];
+  repoScanDone: boolean;
   ciCache: Map<string, CIInfo>;
   reviewCache: Map<string, ReviewInfo>;
   mergeableCache: Map<string, MergeableStatus>;
@@ -124,6 +132,7 @@ export const createPrStore = (initial: {
   copyToClipboard: (text: string) => Promise<boolean>;
   onDone: (result: PrRouterResult | null) => void;
   openEditorForPR: (pr: UserPullRequest, repo: LocalRepo, skipCheckout: boolean) => Promise<string>;
+  waitForLocalRepos: () => Promise<LocalRepo[]>;
   editor: ResolvedEditor | null;
   installedEditors: EditorInfo[];
 }, deps: Partial<PrStoreDeps> = {}) => {
@@ -133,6 +142,7 @@ export const createPrStore = (initial: {
     fetchCheckLogs: fetchCheckLogsImpl,
     fetchUserPRs: fetchUserPRsImpl,
     fetchRepoPRs: fetchRepoPRsImpl,
+    persistPRCache: persistPRCacheImpl,
     retryFailedJobs: retryFailedJobsImpl,
     openUrl: openUrlImpl,
   } = { ...DEFAULT_DEPS, ...deps };
@@ -147,6 +157,26 @@ export const createPrStore = (initial: {
       const queuedDetailKeys = new Set<string>();
       const detailQueue: UserPullRequest[] = [];
       let activePrefetchBatches = 0;
+      let persistQueued = false;
+
+      const schedulePersistPRCache = () => {
+        if (persistQueued) return;
+        persistQueued = true;
+        queueMicrotask(() => {
+          persistQueued = false;
+          const state = get();
+          persistPRCacheImpl(
+            state.token,
+            {
+              prs: state.prs,
+              ciCache: new Map(Object.entries(state.ciCache)),
+              reviewCache: new Map(Object.entries(state.reviewCache)),
+              mergeableCache: new Map(Object.entries(state.mergeableCache)),
+            },
+            state.repoMode ?? undefined
+          );
+        });
+      };
 
       const hasFreshDetails = (pr: UserPullRequest): boolean => {
         const key = prKey(pr);
@@ -189,6 +219,7 @@ export const createPrStore = (initial: {
             reviewCache: { ...s.reviewCache, [key]: review },
             mergeableCache: { ...s.mergeableCache, [key]: mergeable },
           }));
+          schedulePersistPRCache();
         })().finally(() => {
           inFlightDetailRequests.delete(key);
         });
@@ -229,6 +260,7 @@ export const createPrStore = (initial: {
               ),
             },
           }));
+          schedulePersistPRCache();
         })().finally(() => {
           for (const pr of batch) {
             inFlightDetailRequests.delete(prKey(pr));
@@ -298,6 +330,7 @@ export const createPrStore = (initial: {
     // ─── Data ───────────────────────────────────────────────────
     prs: initial.prs,
     localRepos: initial.localRepos,
+    repoScanDone: initial.repoScanDone,
     ciCache: Object.fromEntries(initial.ciCache),
     reviewCache: Object.fromEntries(initial.reviewCache),
     mergeableCache: Object.fromEntries(initial.mergeableCache),
@@ -318,11 +351,14 @@ export const createPrStore = (initial: {
     copyToClipboard: initial.copyToClipboard,
     onDone: initial.onDone,
     openEditorForPR: initial.openEditorForPR,
+    waitForLocalRepos: initial.waitForLocalRepos,
 
     // ─── Editor ─────────────────────────────────────────────────
     editor: initial.editor,
     installedEditors: initial.installedEditors,
     setEditor: (editor) => set({ editor }),
+    setLocalRepos: (localRepos, repoScanDone = true) =>
+      set({ localRepos, repoScanDone }),
 
     // ─── Actions ────────────────────────────────────────────────
 
@@ -409,6 +445,41 @@ export const createPrStore = (initial: {
       });
     },
 
+    refreshPRs: async (prs) => {
+      const uniquePRs = [...new Map(prs.map((pr) => [prKey(pr), pr])).values()];
+      if (uniquePRs.length === 0) return;
+
+      const { token } = get();
+      set({ refreshing: true });
+      try {
+        const detailsByKey = await fetchPRDetailsBatchImpl(token, uniquePRs);
+        set((state) => ({
+          ciCache: {
+            ...state.ciCache,
+            ...Object.fromEntries(
+              [...detailsByKey.entries()].map(([key, detail]) => [key, detail.ci])
+            ),
+          },
+          reviewCache: {
+            ...state.reviewCache,
+            ...Object.fromEntries(
+              [...detailsByKey.entries()].map(([key, detail]) => [key, detail.review])
+            ),
+          },
+          mergeableCache: {
+            ...state.mergeableCache,
+            ...Object.fromEntries(
+              [...detailsByKey.entries()].map(([key, detail]) => [key, detail.mergeable])
+            ),
+          },
+          refreshing: false,
+        }));
+        schedulePersistPRCache();
+      } catch {
+        set({ refreshing: false });
+      }
+    },
+
     refreshAllPRs: async () => {
       const { token, repoMode } = get();
       set({ refreshing: true });
@@ -435,6 +506,7 @@ export const createPrStore = (initial: {
             refreshing: false,
           };
         });
+        schedulePersistPRCache();
       } catch {
         set({ refreshing: false });
       }
