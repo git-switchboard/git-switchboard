@@ -12,7 +12,10 @@
       "outputs": ["{projectRoot}/dist"]
     },
     "build:native": {
-      "command": "bun {projectRoot}/scripts/build-native.js",
+      "command": "bun scripts/build-native.js",
+      "options": {
+        "cwd": {"projectRoot"}
+      },
       "outputs": ["{projectRoot}/native-builds"],
       "dependsOn": ["^build:native"]
     }
