@@ -1,9 +1,14 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { muteColor } from './colors.js';
+import { buildFooterRows, FooterRows } from './footer.js';
 import { rateLimit } from './github.js';
+import { ScrollList, handleListKey } from './scroll-list.js';
 import type { LocalRepo } from './scanner.js';
 import type {
   CIInfo,
+  MergeableStatus,
+  PRRole,
   ReviewInfo,
   ReviewStatus,
   UserPullRequest,
@@ -12,6 +17,7 @@ import {
   CHECKMARK,
   CROSSMARK,
   DOWN_ARROW,
+  ELLIPSIS,
   RETURN_SYMBOL,
   UP_ARROW,
 } from './unicode.js';
@@ -31,6 +37,13 @@ function relativeTime(iso: string): string {
   if (months < 12) return `${months}mo ago`;
   const years = Math.floor(days / 365);
   return `${years}y ago`;
+}
+
+function fit(str: string, width: number): string {
+  if (width <= 0) return '';
+  if (str.length <= width) return str.padEnd(width);
+  if (width === 1) return ELLIPSIS;
+  return str.slice(0, width - 1) + ELLIPSIS;
 }
 
 const SPINNER_FRAMES = ['|', '/', '-', '\\'];
@@ -61,7 +74,51 @@ function ciSummary(
   return { text: parts.join(' '), fg };
 }
 
-function reviewSortOrder(status: ReviewStatus): number {
+// ─── Sort system ─────────────────────────────────────────────
+
+type SortField = 'updated' | 'review' | 'ci' | 'repo' | 'merge' | 'number';
+type SortDir = 'asc' | 'desc';
+
+interface SortLayer {
+  field: SortField;
+  dir: SortDir;
+}
+
+const SORT_FIELDS: { field: SortField; label: string; defaultDir: SortDir }[] = [
+  { field: 'updated', label: 'Updated', defaultDir: 'desc' },
+  { field: 'review', label: 'Review Status', defaultDir: 'asc' },
+  { field: 'ci', label: 'CI Status', defaultDir: 'asc' },
+  { field: 'repo', label: 'Repository', defaultDir: 'asc' },
+  { field: 'merge', label: 'Merge Status', defaultDir: 'asc' },
+  { field: 'number', label: 'PR Number', defaultDir: 'desc' },
+];
+
+const DEFAULT_SORT: SortLayer[] = [
+  { field: 'review', dir: 'asc' },
+  { field: 'updated', dir: 'desc' },
+];
+
+function ciSortOrder(status: string | undefined): number {
+  switch (status) {
+    case 'failing': return 0;
+    case 'mixed': return 1;
+    case 'pending': return 2;
+    case 'passing': return 3;
+    default: return 4;
+  }
+}
+
+function mergeSortOrder(status: string | undefined): number {
+  switch (status) {
+    case 'CONFLICTING': return 0;
+    case 'UNKNOWN': return 1;
+    case 'MERGEABLE': return 2;
+    default: return 3;
+  }
+}
+
+function reviewSortOrder(status: ReviewStatus | undefined): number {
+  if (status == null) return 6;
   switch (status) {
     case 'approved': return 0;
     case 'changes-requested': return 1;
@@ -73,7 +130,28 @@ function reviewSortOrder(status: ReviewStatus): number {
   }
 }
 
-function reviewLabel(status: ReviewStatus): { text: string; fg: string } {
+function roleIndicator(role: PRRole): { text: string; fg: string } {
+  switch (role) {
+    case 'author':
+      return { text: '✎', fg: '#7aa2f7' };
+    case 'assigned':
+      return { text: '→', fg: '#e0af68' };
+    case 'both':
+      return { text: '✎→', fg: '#bb9af7' };
+  }
+}
+
+function mergeLabel(status: MergeableStatus | undefined): { text: string; fg: string } {
+  if (status === 'CONFLICTING') {
+    return { text: `${CROSSMARK} Conflict`, fg: '#f7768e' };
+  }
+  return { text: '', fg: '#565f89' };
+}
+
+function reviewLabel(status: ReviewStatus | undefined): { text: string; fg: string } {
+  if (status == null) {
+    return { text: ELLIPSIS, fg: '#565f89' };
+  }
   switch (status) {
     case 'approved':
       return { text: `${CHECKMARK} Approved`, fg: '#9ece6a' };
@@ -91,10 +169,14 @@ interface PrAppProps {
   localRepos: LocalRepo[];
   ciCache: Map<string, CIInfo>;
   reviewCache: Map<string, ReviewInfo>;
+  mergeableCache: Record<string, MergeableStatus>;
+  repoMode: string | null;
   refreshing: boolean;
   onSelect: (pr: UserPullRequest, matches: LocalRepo[]) => void;
   /** Fetch CI + review for a PR. Resolves when caches are updated. */
   onFetchCI: (pr: UserPullRequest) => Promise<void>;
+  onPrefetchDetails: (prs: UserPullRequest[]) => void;
+  onRetryChecks: (pr: UserPullRequest) => Promise<string>;
   onRefreshAll: () => void;
   onExit: () => void;
 }
@@ -104,9 +186,13 @@ export function PrApp({
   localRepos,
   ciCache,
   reviewCache,
+  mergeableCache,
+  repoMode,
   refreshing,
   onSelect,
   onFetchCI,
+  onPrefetchDetails,
+  onRetryChecks,
   onRefreshAll,
   onExit,
 }: PrAppProps) {
@@ -117,10 +203,13 @@ export function PrApp({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState(false);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
+  const [statusText, setStatusText] = useState('');
+  const [sortLayers, setSortLayers] = useState<SortLayer[]>(DEFAULT_SORT);
+  const [sortModal, setSortModal] = useState<{ selectedIndex: number } | null>(null);
   // Bump to force re-render after CI fetch (caches are mutated externally)
   const [, forceRender] = useState(0);
 
-  // Animate spinner when any PR has pending checks
+  // Animate spinner when any PR has pending checks or a refresh is in flight
   const hasPending = useMemo(
     () =>
       [...ciCache.values()].some((ci) =>
@@ -128,14 +217,15 @@ export function PrApp({
       ),
     [ciCache]
   );
+  const animateSpinner = hasPending || refreshing;
 
   useEffect(() => {
-    if (!hasPending) return;
+    if (!animateSpinner) return;
     const interval = setInterval(() => {
       setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length);
     }, 100);
     return () => clearInterval(interval);
-  }, [hasPending]);
+  }, [animateSpinner]);
 
   const filteredPRs = useMemo(() => {
     const result = searchQuery
@@ -144,21 +234,46 @@ export function PrApp({
           return (
             pr.title.toLowerCase().includes(q) ||
             pr.repoId.includes(q) ||
-            pr.headRef.toLowerCase().includes(q)
+            pr.headRef.toLowerCase().includes(q) ||
+            pr.author.toLowerCase().includes(q)
           );
         })
       : [...prs];
     result.sort((a, b) => {
-      const aKey = `${a.repoId}#${a.number}`;
-      const bKey = `${b.repoId}#${b.number}`;
-      const aReview = reviewCache.get(aKey)?.status ?? 'needs-review';
-      const bReview = reviewCache.get(bKey)?.status ?? 'needs-review';
-      const order = reviewSortOrder(aReview) - reviewSortOrder(bReview);
-      if (order !== 0) return order;
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      for (const layer of sortLayers) {
+        const dir = layer.dir === 'asc' ? 1 : -1;
+        let cmp = 0;
+        const aKey = `${a.repoId}#${a.number}`;
+        const bKey = `${b.repoId}#${b.number}`;
+        switch (layer.field) {
+          case 'updated':
+            cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
+            break;
+          case 'review':
+            cmp = reviewSortOrder(reviewCache.get(aKey)?.status)
+              - reviewSortOrder(reviewCache.get(bKey)?.status);
+            break;
+          case 'ci':
+            cmp = ciSortOrder(ciCache.get(aKey)?.status)
+              - ciSortOrder(ciCache.get(bKey)?.status);
+            break;
+          case 'repo':
+            cmp = a.repoId.localeCompare(b.repoId);
+            break;
+          case 'merge':
+            cmp = mergeSortOrder(mergeableCache[aKey])
+              - mergeSortOrder(mergeableCache[bKey]);
+            break;
+          case 'number':
+            cmp = a.number - b.number;
+            break;
+        }
+        if (cmp !== 0) return cmp * dir;
+      }
+      return 0;
     });
     return result;
-  }, [prs, searchQuery, reviewCache]);
+  }, [prs, searchQuery, reviewCache, ciCache, mergeableCache, sortLayers]);
 
   const repoMatchMap = useMemo(() => {
     const map = new Map<string, LocalRepo[]>();
@@ -173,8 +288,41 @@ export function PrApp({
     return map;
   }, [prs, localRepos]);
 
+  const footerRows = useMemo(() => {
+    const selectedPR = filteredPRs[selectedIndex];
+    const selectedKey = selectedPR ? `${selectedPR.repoId}#${selectedPR.number}` : '';
+    const selectedCI = selectedKey ? ciCache.get(selectedKey) : undefined;
+    const hasFailedChecks = selectedCI?.checks.some(
+      (c) => c.status === 'completed' && c.conclusion === 'failure'
+    );
+    const parts = [
+      `[${UP_ARROW}${DOWN_ARROW}] Navigate`,
+      `[${RETURN_SYMBOL}] Select`,
+      '[c] Fetch CI',
+      ...(hasFailedChecks ? ['[r]etry checks'] : []),
+      '[^R]efresh all',
+      '[s]ort',
+      '[/] Search',
+      '[q]uit',
+    ];
+    const quota = rateLimit.current
+      ? `API: ${rateLimit.current.remaining}/${rateLimit.current.limit}`
+      : undefined;
+    return buildFooterRows(parts, width, quota);
+  }, [filteredPRs, selectedIndex, ciCache, width]);
+
   // 4 chrome rows (header, spacer, column headers, footer) + 2 padding rows
-  const listHeight = Math.max(1, height - 6);
+  const footerHeight = statusText ? 1 : footerRows.length;
+  const listHeight = Math.max(1, height - 5 - footerHeight);
+  const visiblePRs = useMemo(
+    () => filteredPRs.slice(scrollOffset, scrollOffset + listHeight),
+    [filteredPRs, scrollOffset, listHeight]
+  );
+
+  useEffect(() => {
+    if (visiblePRs.length === 0) return;
+    onPrefetchDetails(visiblePRs);
+  }, [visiblePRs, onPrefetchDetails]);
 
   const moveTo = useCallback(
     (newIndex: number) => {
@@ -189,12 +337,70 @@ export function PrApp({
     [filteredPRs.length, listHeight]
   );
 
+  const toggleSortField = useCallback((field: SortField) => {
+    setSortLayers((prev) => {
+      const existing = prev.findIndex((l) => l.field === field);
+      const defaults = SORT_FIELDS.find((f) => f.field === field)!;
+      if (existing === -1) {
+        // Add with default direction
+        return [...prev, { field, dir: defaults.defaultDir }];
+      }
+      const current = prev[existing];
+      if (current.dir === defaults.defaultDir) {
+        // Flip direction
+        return prev.map((l, i) =>
+          i === existing ? { ...l, dir: current.dir === 'asc' ? 'desc' : 'asc' } : l
+        );
+      }
+      // Remove (was already flipped, so toggle off)
+      return prev.filter((_, i) => i !== existing);
+    });
+  }, []);
+
   useKeyboard((key) => {
+    // ─── Sort modal ─────────────────────────────────────────
+    if (sortModal) {
+      switch (key.name) {
+        case 'up':
+        case 'k':
+          setSortModal((m) =>
+            m ? { selectedIndex: Math.max(0, m.selectedIndex - 1) } : m
+          );
+          break;
+        case 'down':
+        case 'j':
+          setSortModal((m) =>
+            m
+              ? { selectedIndex: Math.min(SORT_FIELDS.length - 1, m.selectedIndex + 1) }
+              : m
+          );
+          break;
+        case 'return': {
+          const field = SORT_FIELDS[sortModal.selectedIndex];
+          if (field) toggleSortField(field.field);
+          break;
+        }
+        case 'escape':
+        case 'q':
+        case 's':
+          setSortModal(null);
+          break;
+      }
+      return;
+    }
+
     if (searchMode) {
+      const shouldCommitSearch =
+        key.name === 'return' ||
+        key.name === 'tab' ||
+        key.name === 'up' ||
+        key.name === 'down' ||
+        key.raw === '\t';
+
       if (key.name === 'escape') {
         setSearchMode(false);
         setSearchQuery('');
-      } else if (key.name === 'return') {
+      } else if (shouldCommitSearch) {
         setSearchMode(false);
       } else if (key.name === 'backspace') {
         setSearchQuery((q) => q.slice(0, -1));
@@ -205,6 +411,14 @@ export function PrApp({
       }
       return;
     }
+
+    // Ctrl+R or Shift+R → refresh all PRs
+    if ((key.ctrl && key.name === 'r') || key.raw === 'R') {
+      onRefreshAll();
+      return;
+    }
+
+    if (handleListKey(key.name, selectedIndex, filteredPRs.length, listHeight, moveTo)) return;
 
     switch (key.name) {
       case 'up':
@@ -230,29 +444,60 @@ export function PrApp({
         }
         break;
       }
+      case 'r': {
+        const pr = filteredPRs[selectedIndex];
+        if (pr) {
+          onRetryChecks(pr).then((msg) => {
+            setStatusText(msg);
+            setTimeout(() => setStatusText(''), 4000);
+          });
+        }
+        break;
+      }
       case 'escape':
       case 'q':
         onExit();
         break;
+      case 's':
+        setSortModal({ selectedIndex: 0 });
+        break;
       default:
         if (key.raw === '/') {
           setSearchMode(true);
-        } else if (key.raw === 'R') {
-          onRefreshAll();
         }
         break;
     }
   });
 
-  // Column widths
+  // Column widths — repo mode replaces role+repo with author
+  const authorCol = repoMode ? Math.min(20, Math.floor(width * 0.15)) : 0;
+  const roleCol = repoMode ? 0 : 4;
+  const repoCol = repoMode ? 0 : Math.min(25, Math.floor(width * 0.2));
   const updatedCol = 12;
   const ciCol = 12;
+  const mergeCol = 11;
   const reviewCol = 15;
-  const repoCol = Math.min(25, Math.floor(width * 0.2));
   const prCol = Math.max(
     20,
-    width - repoCol - updatedCol - ciCol - reviewCol - 6
+    width - authorCol - roleCol - repoCol - updatedCol - ciCol - mergeCol - reviewCol - 6
   );
+
+  const sortHeader = (label: string, field: SortField, colWidth: number): string => {
+    const layerIdx = sortLayers.findIndex((l) => l.field === field);
+    if (layerIdx === -1) return label.padEnd(colWidth);
+    const arrow = sortLayers[layerIdx].dir === 'asc' ? '↑' : '↓';
+    return `${label}${arrow}`.padEnd(colWidth);
+  };
+  const tableFocused = !searchMode && !sortModal;
+  const headerText = ` git-switchboard pr${repoMode ? ` ${repoMode}` : ''}  ${
+    searchQuery ? `${filteredPRs.length}/${prs.length}` : String(filteredPRs.length)
+  } open PRs${searchQuery ? ` | Search: ${searchQuery}` : ''}${
+    searchMode ? ` | (type to search, [${RETURN_SYMBOL}] confirm)` : ''
+  }`;
+  const headerWidth = Math.max(1, width - 4);
+  const headerContent = refreshing
+    ? `${fit(headerText, Math.max(1, headerWidth - 2))} ${SPINNER_FRAMES[spinnerFrame]}`
+    : fit(headerText, headerWidth);
 
   return (
     <box
@@ -261,13 +506,7 @@ export function PrApp({
     >
       {/* Header */}
       <box style={{ height: 1, width: '100%' }}>
-        <text
-          content={` git-switchboard pr  ${filteredPRs.length} open PRs${
-            refreshing ? ` | Refreshing...` : ''
-          }${searchQuery ? ` | Search: ${searchQuery}` : ''
-          }${searchMode ? ' | (type to search)' : ''}`}
-          fg="#7aa2f7"
-        />
+        <text content={headerContent} fg="#7aa2f7" />
       </box>
 
       <box style={{ height: 1 }} />
@@ -275,29 +514,45 @@ export function PrApp({
       {/* Column headers */}
       <box style={{ height: 1, width: '100%' }}>
         <text
-          content={` ${'PR'.padEnd(prCol)}${'Repo'.padEnd(
-            repoCol
-          )}${'Updated'.padEnd(updatedCol)}${'CI'.padEnd(
-            ciCol
-          )}${'Review'.padEnd(reviewCol)}`}
-          fg="#bb9af7"
+          content={` ${repoMode ? 'Author'.padEnd(authorCol) : ''.padEnd(roleCol)}${sortHeader('PR', 'number', prCol)}${repoMode ? '' : sortHeader('Repo', 'repo', repoCol)}${sortHeader('Updated', 'updated', updatedCol)}${sortHeader('CI', 'ci', ciCol)}${sortHeader('', 'merge', mergeCol)}${sortHeader('Review', 'review', reviewCol)}`}
+          fg={tableFocused ? '#bb9af7' : muteColor('#bb9af7')}
         />
       </box>
 
-      {/* PR list */}
-      <box flexDirection="column" style={{ flexGrow: 1, width: '100%' }}>
-        {filteredPRs
-          .slice(scrollOffset, scrollOffset + listHeight)
-          .map((pr, i) => {
+      {/* PR list + scrollbar */}
+      <ScrollList
+        totalItems={filteredPRs.length}
+        selectedIndex={selectedIndex}
+        scrollOffset={scrollOffset}
+        listHeight={listHeight}
+        onMove={moveTo}
+      >
+        {visiblePRs.map((pr, i) => {
             const actualIndex = scrollOffset + i;
             const isSelected = actualIndex === selectedIndex;
-            const bg = isSelected ? '#292e42' : undefined;
+            const bg = isSelected
+              ? tableFocused
+                ? '#292e42'
+                : muteColor('#292e42', 0.35)
+              : undefined;
 
             const prKey = `${pr.repoId}#${pr.number}`;
             const ci = ciCache.get(prKey);
             const ciStatus = ciSummary(ci, SPINNER_FRAMES[spinnerFrame]);
             const review = reviewCache.get(prKey);
-            const rvw = reviewLabel(review?.status ?? 'needs-review');
+            const rvw = reviewLabel(review?.status);
+            const merge = mergeLabel(mergeableCache[prKey]);
+            const roleIcon = roleIndicator(pr.role);
+            const authorColor = tableFocused ? '#bb9af7' : muteColor('#bb9af7');
+            const roleColor = tableFocused ? roleIcon.fg : muteColor(roleIcon.fg);
+            const titleColor = tableFocused ? '#c0caf5' : muteColor('#c0caf5');
+            const repoColor = tableFocused ? '#a9b1d6' : muteColor('#a9b1d6');
+            const updatedColor = tableFocused
+              ? '#565f89'
+              : muteColor('#565f89', 0.3);
+            const ciColor = tableFocused ? ciStatus.fg : muteColor(ciStatus.fg);
+            const mergeColor = tableFocused ? merge.fg : muteColor(merge.fg);
+            const reviewColor = tableFocused ? rvw.fg : muteColor(rvw.fg);
 
             const prLabel = `#${pr.number} ${pr.title}`.slice(0, prCol - 1);
             const repoLabel = `${pr.repoOwner}/${pr.repoName}`.slice(
@@ -309,38 +564,121 @@ export function PrApp({
               <box
                 key={`${pr.repoId}#${pr.number}`}
                 style={{ height: 1, width: '100%', backgroundColor: bg }}
+                onMouseDown={() => {
+                  if (actualIndex === selectedIndex) {
+                    // Double-click effect: second click on same row opens it
+                    const matches = repoMatchMap.get(`${pr.repoId}#${pr.number}`) ?? [];
+                    onSelect(pr, matches);
+                  } else {
+                    moveTo(actualIndex);
+                  }
+                }}
               >
                 <text>
-                  <span fg="#c0caf5"> {prLabel.padEnd(prCol)}</span>
-                  <span fg="#a9b1d6">{repoLabel.padEnd(repoCol)}</span>
-                  <span fg="#565f89">
+                  {repoMode ? (
+                    <span fg={authorColor}> {pr.author.slice(0, authorCol - 2).padEnd(authorCol)}</span>
+                  ) : (
+                    <span fg={roleColor}> {roleIcon.text.padEnd(roleCol)}</span>
+                  )}
+                  <span fg={titleColor}>{prLabel.padEnd(prCol)}</span>
+                  {!repoMode && <span fg={repoColor}>{repoLabel.padEnd(repoCol)}</span>}
+                  <span fg={updatedColor}>
                     {relativeTime(pr.updatedAt).padEnd(updatedCol)}
                   </span>
-                  <span fg={ciStatus.fg}>
+                  <span fg={ciColor}>
                     {ciStatus.text.slice(0, ciCol - 1).padEnd(ciCol)}
                   </span>
-                  <span fg={rvw.fg}>
+                  <span fg={mergeColor}>
+                    {merge.text.slice(0, mergeCol - 1).padEnd(mergeCol)}
+                  </span>
+                  <span fg={reviewColor}>
                     {rvw.text.slice(0, reviewCol - 1).padEnd(reviewCol)}
                   </span>
                 </text>
               </box>
             );
           })}
-      </box>
+      </ScrollList>
 
-      {/* Footer */}
-      <box style={{ height: 1, width: '100%' }}>
-        {(() => {
-          const keys = ` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [c] Fetch CI | [R]efresh all | [/] Search | [q]uit`;
-          const rl = rateLimit.current
-            ? `API: ${rateLimit.current.remaining}/${rateLimit.current.limit} `
-            : '';
-          const gap = Math.max(1, width - 2 - keys.length - rl.length);
-          return (
-            <text content={keys + ' '.repeat(gap) + rl} fg="#565f89" />
-          );
-        })()}
-      </box>
+      {/* Footer — shows status text when active, keybindings otherwise */}
+      {statusText ? (
+        <box style={{ height: 1, width: '100%' }}>
+          <text
+            content={` ${statusText}`}
+            fg={
+              tableFocused
+                ? /^(Failed|No |Cannot )/i.test(statusText)
+                  ? '#f7768e'
+                  : '#9ece6a'
+                : muteColor(
+                    /^(Failed|No |Cannot )/i.test(statusText)
+                      ? '#f7768e'
+                      : '#9ece6a'
+                  )
+            }
+          />
+        </box>
+      ) : (
+        <FooterRows
+          rows={footerRows}
+          fg={tableFocused ? '#565f89' : muteColor('#565f89', 0.3)}
+        />
+      )}
+
+      {/* Sort modal */}
+      {sortModal && (
+        <box
+          style={{
+            position: 'absolute',
+            top: Math.floor(height / 2) - Math.floor((SORT_FIELDS.length + 4) / 2),
+            left: Math.floor(width / 2) - 20,
+            width: 40,
+            height: SORT_FIELDS.length + 4,
+          }}
+        >
+          <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content=" Sort Order" fg="#7aa2f7" />
+            </box>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content={`${'─'.repeat(40)}`} fg="#292e42" />
+            </box>
+            {SORT_FIELDS.map((sf, i) => {
+              const isActive = i === sortModal.selectedIndex;
+              const layerIdx = sortLayers.findIndex((l) => l.field === sf.field);
+              const layer = layerIdx !== -1 ? sortLayers[layerIdx] : null;
+              const indicator = layer
+                ? `${layerIdx + 1}${layer.dir === 'asc' ? '↑' : '↓'}`
+                : '  ';
+              return (
+                <box
+                  key={sf.field}
+                  style={{
+                    height: 1,
+                    width: '100%',
+                    backgroundColor: isActive ? '#292e42' : '#1a1b26',
+                  }}
+                  onMouseDown={() => {
+                    if (isActive) {
+                      toggleSortField(sf.field);
+                    } else {
+                      setSortModal({ selectedIndex: i });
+                    }
+                  }}
+                >
+                  <text
+                    content={` ${indicator} ${isActive ? '>' : ' '} ${sf.label}`}
+                    fg={layer ? (isActive ? '#c0caf5' : '#7aa2f7') : (isActive ? '#a9b1d6' : '#565f89')}
+                  />
+                </box>
+              );
+            })}
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content=" Enter toggle | Esc close" fg="#565f89" />
+            </box>
+          </box>
+        </box>
+      )}
     </box>
   );
 }

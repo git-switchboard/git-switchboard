@@ -22,4 +22,5 @@ export {
   findInstalledEditors,
   detectTerminalEditor,
   openInEditor,
+  invalidateEditorCache,
 } from "./editor.js";

@@ -105,6 +105,8 @@ const MOCK_PRS: UserPullRequest[] = [
     headRef: 'feat/add-pr-dashboard',
     updatedAt: new Date(NOW.getTime() - 2 * 3600_000).toISOString(),
     url: '',
+    author: 'craigory',
+    role: 'author',
   },
   {
     number: 127,
@@ -118,6 +120,8 @@ const MOCK_PRS: UserPullRequest[] = [
     headRef: 'refactor/auth-middleware',
     updatedAt: new Date(NOW.getTime() - 5 * 3600_000).toISOString(),
     url: '',
+    author: 'sarah-dev',
+    role: 'assigned',
   },
   {
     number: 89,
@@ -131,6 +135,8 @@ const MOCK_PRS: UserPullRequest[] = [
     headRef: 'feat/branch-filters',
     updatedAt: new Date(NOW.getTime() - 24 * 3600_000).toISOString(),
     url: '',
+    author: 'craigory',
+    role: 'both',
   },
   {
     number: 15,
@@ -144,6 +150,8 @@ const MOCK_PRS: UserPullRequest[] = [
     headRef: 'fix/unicode-rendering',
     updatedAt: new Date(NOW.getTime() - 3 * 24 * 3600_000).toISOString(),
     url: '',
+    author: 'craigory',
+    role: 'author',
   },
   {
     number: 8,
@@ -157,6 +165,8 @@ const MOCK_PRS: UserPullRequest[] = [
     headRef: 'chore/update-formula',
     updatedAt: new Date(NOW.getTime() - 4 * 24 * 3600_000).toISOString(),
     url: '',
+    author: 'craigory',
+    role: 'author',
   },
   {
     number: 301,
@@ -170,6 +180,8 @@ const MOCK_PRS: UserPullRequest[] = [
     headRef: 'feat/retry-checks',
     updatedAt: new Date(NOW.getTime() - 6 * 3600_000).toISOString(),
     url: '',
+    author: 'alex',
+    role: 'assigned',
   },
 ];
 
@@ -255,6 +267,15 @@ const MOCK_REVIEW_CACHE = new Map<string, ReviewInfo>([
   ],
 ]);
 
+const MOCK_MERGEABLE_CACHE: Record<string, 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'> = {
+  'git-switchboard/git-switchboard#42': 'MERGEABLE',
+  'acme/backend-api#127': 'CONFLICTING',
+  'git-switchboard/git-switchboard#89': 'MERGEABLE',
+  'opentui/opentui#15': 'MERGEABLE',
+  'git-switchboard/homebrew-tap#8': 'UNKNOWN',
+  'acme/frontend#301': 'CONFLICTING',
+};
+
 // ── Capture helpers ──
 
 interface SerializedFrame {
@@ -323,8 +344,13 @@ async function main() {
         localRepos={[]}
         ciCache={MOCK_CI_CACHE}
         reviewCache={MOCK_REVIEW_CACHE}
+        mergeableCache={MOCK_MERGEABLE_CACHE}
+        repoMode={null}
+        refreshing={false}
         onSelect={() => {}}
         onFetchCI={async () => {}}
+        onRetryChecks={async () => ''}
+        onRefreshAll={() => {}}
         onExit={() => {}}
       />,
       96,

@@ -1,5 +1,7 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useMemo, useState } from 'react';
+import { muteColor } from './colors.js';
+import { ScrollList, handleListKey } from './scroll-list.js';
 import type { AuthorFilterMode, BranchWithPR } from './types.js';
 import { DOWN_ARROW, ELLIPSIS, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
@@ -93,10 +95,17 @@ export function App({
 
   useKeyboard((key) => {
     if (searchMode) {
+      const shouldCommitSearch =
+        key.name === 'return' ||
+        key.name === 'tab' ||
+        key.name === 'up' ||
+        key.name === 'down' ||
+        key.raw === '\t';
+
       if (key.name === 'escape') {
         setSearchMode(false);
         setSearchQuery('');
-      } else if (key.name === 'return') {
+      } else if (shouldCommitSearch) {
         setSearchMode(false);
       } else if (key.name === 'backspace') {
         setSearchQuery((q) => q.slice(0, -1));
@@ -107,6 +116,8 @@ export function App({
       }
       return;
     }
+
+    if (handleListKey(key.name, selectedIndex, filteredBranches.length, listHeight, moveTo)) return;
 
     switch (key.name) {
       case 'up':
@@ -170,6 +181,7 @@ export function App({
     scrollOffset,
     scrollOffset + listHeight
   );
+  const tableFocused = !searchMode;
 
   return (
     <box
@@ -185,7 +197,7 @@ export function App({
             searchQuery ? ` | Search: ${searchQuery}` : ''
           }${
             searchMode
-              ? ' | (type to search, Enter to confirm, Esc to cancel)'
+              ? ` | (type to search, [${RETURN_SYMBOL}] confirm)`
               : ''
           }`}
           fg="#7aa2f7"
@@ -201,23 +213,32 @@ export function App({
             'Author',
             authorCol
           )} ${fit('Updated', dateCol)} ${fit('PR', prCol)}`}
-          fg="#bb9af7"
+          fg={tableFocused ? '#bb9af7' : muteColor('#bb9af7')}
         />
       </box>
 
-      {/* Branch list */}
-      <box
-        flexDirection="column"
-        style={{
-          flexGrow: 1,
-          width: '100%',
-        }}
+      {/* Branch list + scrollbar */}
+      <ScrollList
+        totalItems={filteredBranches.length}
+        selectedIndex={selectedIndex}
+        scrollOffset={scrollOffset}
+        listHeight={listHeight}
+        onMove={moveTo}
       >
         {visibleBranches.map((branch, i) => {
           const actualIndex = scrollOffset + i;
           const isSelected = actualIndex === selectedIndex;
-          const bg = isSelected ? '#292e42' : undefined;
+          const bg = isSelected
+            ? tableFocused
+              ? '#292e42'
+              : muteColor('#292e42', 0.35)
+            : undefined;
           const marker = branch.isCurrent ? ' * ' : '   ';
+          const rowColor = branch.isCurrent
+            ? '#73daca'
+            : branch.isRemote
+            ? '#ff9e64'
+            : '#c0caf5';
 
           const prText = branch.pr
             ? `#${branch.pr.number} ${branch.pr.draft ? 'Draft' : 'Open'}`
@@ -241,27 +262,28 @@ export function App({
                 width: '100%',
                 backgroundColor: bg,
               }}
+              onMouseDown={() => {
+                if (actualIndex === selectedIndex) {
+                  onSelect(branch);
+                } else {
+                  moveTo(actualIndex);
+                }
+              }}
             >
               <text
                 content={line}
-                fg={
-                  branch.isCurrent
-                    ? '#73daca'
-                    : branch.isRemote
-                    ? '#ff9e64'
-                    : '#c0caf5'
-                }
+                fg={tableFocused ? rowColor : muteColor(rowColor)}
               />
             </box>
           );
         })}
-      </box>
+      </ScrollList>
 
       {/* Footer */}
       <box style={{ height: 1, width: '100%' }}>
         <text
           content={` [${UP_ARROW}\\${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [r]emote | [a]uthor | [/] Search | [q]uit`}
-          fg="#565f89"
+          fg={tableFocused ? '#565f89' : muteColor('#565f89', 0.3)}
         />
       </box>
     </box>

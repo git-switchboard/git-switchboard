@@ -61,6 +61,11 @@ const gitSwitchboard = cli('git-switchboard', {
               type: 'string',
               description:
                 'GitHub token (falls back to GH_TOKEN / GITHUB_TOKEN)',
+            })
+            .option('repo', {
+              type: 'string',
+              description:
+                'Show all PRs for a specific repo (owner/name) instead of user PRs',
             }),
         handler: async (args) => {
           // Dynamic imports
@@ -71,7 +76,7 @@ const gitSwitchboard = cli('git-switchboard', {
           const { execSync } = await import('node:child_process');
           const { resolve } = await import('node:path');
 
-          const { resolveGitHubToken, fetchUserPRs } =
+          const { resolveGitHubToken, fetchUserPRs, fetchRepoPRs, readCachedPRs } =
             await import('./github.js');
           const { scanForRepos } = await import('./scanner.js');
           const { resolveEditor, findInstalledEditors, openInEditor, openInEditorDetached } =
@@ -97,7 +102,7 @@ const gitSwitchboard = cli('git-switchboard', {
           process.on('SIGINT', sigintHandler);
 
           // 2. Show loading screen while fetching PRs and scanning repos
-          const renderer = await createCliRenderer({ exitOnCtrlC: false });
+          const renderer = await createCliRenderer({ exitOnCtrlC: false, useMouse: true });
           const root = createRoot(renderer);
 
           let prProgress: import('./github.js').PRFetchProgress = {
@@ -121,11 +126,25 @@ const gitSwitchboard = cli('git-switchboard', {
           };
           renderLoading();
 
-          // Run PR fetch and repo scan in parallel
-          const prPromise = fetchUserPRs(token, (p) => {
-            prProgress = { ...p };
-            renderLoading();
-          });
+          const repoMode = args.repo ?? null;
+
+          // Check for cached PR data for instant startup
+          const cachedPRs = await readCachedPRs(token, repoMode ?? undefined);
+          let usedCache = false;
+
+          // Run PR fetch (or skip if cached) and repo scan in parallel
+          const prPromise = cachedPRs
+            ? Promise.resolve(cachedPRs)
+            : repoMode
+              ? fetchRepoPRs(token, repoMode, (p) => {
+                  prProgress = { ...p };
+                  renderLoading();
+                })
+              : fetchUserPRs(token, (p) => {
+                  prProgress = { ...p };
+                  renderLoading();
+                });
+          if (cachedPRs) usedCache = true;
 
           const scanPromise = scanForRepos(
             args['search-root'],
@@ -143,12 +162,23 @@ const gitSwitchboard = cli('git-switchboard', {
           const [prResult, localRepos] = await Promise.all([
             prPromise,
             scanPromise,
-          ]);
+          ]).catch((error: unknown) => {
+            try {
+              renderer.destroy();
+            } catch {
+              // ignore teardown failures while aborting startup
+            }
+            console.error(
+              error instanceof Error ? error.message : String(error)
+            );
+            process.exit(1);
+          });
           const { prs } = prResult;
 
           // Seed caches from the initial search query
           const ciCache = new Map(prResult.ciCache);
           const reviewCache = new Map(prResult.reviewCache);
+          const mergeableCache = new Map(prResult.mergeableCache);
 
           if (prs.length === 0) {
             renderer.destroy();
@@ -158,15 +188,14 @@ const gitSwitchboard = cli('git-switchboard', {
 
           // 3. Resolve editor up-front so we can open from within the TUI
           let editor = resolveEditor(args.editor);
-          if (!editor) {
-            const installed = findInstalledEditors();
-            if (installed.length === 1) {
-              editor = {
-                command: installed[0].command,
-                dirArg: installed[0].dirArg,
-                source: 'prompt',
-              };
-            }
+          const installedEditors = findInstalledEditors();
+          const selectableEditors = installedEditors.filter((e) => !e.disabled);
+          if (!editor && selectableEditors.length === 1) {
+            editor = {
+              command: selectableEditors[0].command,
+              dirArg: selectableEditors[0].dirArg,
+              source: 'prompt',
+            };
           }
 
           // 4. Launch PR router TUI (single React tree via zustand store)
@@ -182,8 +211,12 @@ const gitSwitchboard = cli('git-switchboard', {
             localRepos,
             ciCache,
             reviewCache,
+            mergeableCache,
+            repoMode,
             token,
             copyToClipboard,
+            editor,
+            installedEditors,
             onDone: (result) => {
               try {
                 renderer.destroy();
@@ -193,7 +226,8 @@ const gitSwitchboard = cli('git-switchboard', {
               done(result);
             },
             openEditorForPR: async (pr, repo, skipCheckout) => {
-              if (!editor) {
+              const currentEditor = store.getState().editor;
+              if (!currentEditor) {
                 return 'No editor detected. Use --editor to specify one.';
               }
               if (!skipCheckout) {
@@ -210,14 +244,19 @@ const gitSwitchboard = cli('git-switchboard', {
                   return 'Failed to checkout branch';
                 }
               }
-              openInEditorDetached(editor, repo.path);
-              return `Opened ${repo.path} in ${editor.command}`;
+              openInEditorDetached(currentEditor, repo.path);
+              return `Opened ${repo.path} in ${currentEditor.command}`;
             },
           });
 
           root.render(
             createElement(PrRouter, { store }) as React.ReactNode
           );
+
+          // If we used cached data, trigger a background refresh
+          if (usedCache) {
+            store.getState().refreshAllPRs();
+          }
 
           const result = await promise;
           if (!result) return;
@@ -250,9 +289,10 @@ const gitSwitchboard = cli('git-switchboard', {
             process.exit(1);
           }
 
-          if (editor) {
-            console.log(`Opening ${absPath} in ${editor.command}...`);
-            openInEditor(editor, absPath);
+          const finalEditor = store.getState().editor;
+          if (finalEditor) {
+            console.log(`Opening ${absPath} in ${finalEditor.command}...`);
+            openInEditor(finalEditor, absPath);
           } else {
             console.log(`Worktree created at: ${absPath}`);
           }
@@ -306,7 +346,7 @@ const gitSwitchboard = cli('git-switchboard', {
     process.on('SIGINT', () => process.exit(0));
 
     // Launch TUI
-    const renderer = await createCliRenderer({ exitOnCtrlC: false });
+    const renderer = await createCliRenderer({ exitOnCtrlC: false, useMouse: true });
 
     let selectedBranch: string | undefined;
     const { promise, resolve } = Promise.withResolvers<void>();

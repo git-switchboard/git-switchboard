@@ -31,9 +31,11 @@ export function EditorPrompt({
       case "j":
         setSelectedIndex((i) => clampIndex(i + 1));
         break;
-      case "return":
-        onSelect(editors[selectedIndex]);
+      case "return": {
+        const editor = editors[selectedIndex];
+        if (!editor.disabled) onSelect(editor);
         break;
+      }
       case "escape":
       case "q":
         onCancel();
@@ -50,6 +52,12 @@ export function EditorPrompt({
       <box flexDirection="column" style={{ flexGrow: 1, width: "100%" }}>
         {editors.map((editor, i) => {
           const isSelected = i === selectedIndex;
+          const isDisabled = !!editor.disabled;
+          const reason = isSelected && typeof editor.disabled === 'string' ? ` — ${editor.disabled}` : '';
+          const label = ` ${editor.name} (${editor.command})${reason}`;
+          const fg = isDisabled
+            ? '#565f89'
+            : isSelected ? '#c0caf5' : '#a9b1d6';
           return (
             <box
               key={editor.command}
@@ -59,7 +67,7 @@ export function EditorPrompt({
                 backgroundColor: isSelected ? "#292e42" : undefined,
               }}
             >
-              <text content={` ${editor.name} (${editor.command})`} fg={isSelected ? "#c0caf5" : "#a9b1d6"} />
+              <text content={label} fg={fg} />
             </box>
           );
         })}

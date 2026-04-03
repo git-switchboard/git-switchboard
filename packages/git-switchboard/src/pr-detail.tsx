@@ -1,6 +1,8 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { buildFooterRows, FooterRows } from './footer.js';
 import { rateLimit } from './github.js';
+import { ScrollList, handleListKey } from './scroll-list.js';
 import type { LocalRepo } from './scanner.js';
 import type { CIInfo, CheckRun, ReviewInfo, ReviewerState, UserPullRequest } from './types.js';
 import { CHECKMARK, CROSSMARK, EN_DASH, LEFT_ARROW, RETURN_SYMBOL } from './unicode.js';
@@ -81,6 +83,34 @@ function checkTimeLabel(check: CheckRun): string {
   return '';
 }
 
+interface CheckAction {
+  label: string;
+  id: 'open' | 'rerun' | 'copy-logs' | 'open-logs';
+}
+
+function getCheckActions(check: CheckRun): CheckAction[] {
+  const actions: CheckAction[] = [];
+  if (check.detailsUrl) {
+    actions.push({ label: 'Open in browser', id: 'open' });
+  }
+  const canRetry =
+    check.id > 0 &&
+    check.status === 'completed' &&
+    (check.conclusion === 'failure' || check.conclusion === 'cancelled');
+  if (canRetry) {
+    actions.push({ label: 'Rerun this check', id: 'rerun' });
+  }
+  // Logs are available for any GitHub Actions job with an ID
+  if (check.id > 0) {
+    actions.push({ label: 'Copy logs to clipboard', id: 'copy-logs' });
+  }
+  if (check.detailsUrl) {
+    const logsUrl = check.detailsUrl.replace(/\/?$/, '/logs');
+    actions.push({ label: `Open raw logs (${logsUrl})`, id: 'open-logs' });
+  }
+  return actions;
+}
+
 interface PrDetailProps {
   pr: UserPullRequest;
   ci: CIInfo | null;
@@ -93,6 +123,7 @@ interface PrDetailProps {
   onWatch: () => void;
   onRefreshCI: () => void;
   onRetryChecks: () => Promise<string>;
+  onRetryCheck: (check: CheckRun) => Promise<string>;
   onOpenUrl: (url: string) => void;
   /** Fetch and copy logs for a check run. Returns status message. */
   onCopyLogs: (check: CheckRun) => Promise<string>;
@@ -111,17 +142,21 @@ export function PrDetail({
   onWatch,
   onRefreshCI,
   onRetryChecks,
+  onRetryCheck,
   onOpenUrl,
   onCopyLogs,
   onExit,
 }: PrDetailProps) {
   useExitOnCtrlC();
   const { width, height } = useTerminalDimensions();
+  const prIdentity = `${pr.repoId}#${pr.number}`;
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [statusText, setStatusText] = useState('');
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
+  const [modal, setModal] = useState<{ check: CheckRun; selectedOption: number } | null>(null);
+  const initialLoadRequestedRef = useRef<string | null>(null);
 
   // Animate spinner for in-progress checks and loading state
   useEffect(() => {
@@ -143,10 +178,32 @@ export function PrDetail({
   const ACTION_COUNT = 2;
   const totalItems = ACTION_COUNT + checks.length;
 
-  const reviewRowCount = review ? Math.max(1, review.reviewers.length) : 1;
+  const hasReviewers = review && review.reviewers.length > 0;
+  // With reviewers: header(1) + reviewer rows. Without: just "No reviews yet"(1)
+  const reviewRowCount = hasReviewers ? 1 + review.reviewers.length : 1;
+
+  // Compute wrapped footer rows
+  const footerKeyParts = [
+    `[${RETURN_SYMBOL}] Select`,
+    '[c]opy logs',
+    '[^R]efresh',
+    '[r]etry',
+    '[w]atch',
+    `[${LEFT_ARROW}] Back`,
+    '[q]uit',
+  ];
+  const footerRows = buildFooterRows(
+    footerKeyParts,
+    width,
+    rateLimit.current
+      ? `API: ${rateLimit.current.remaining}/${rateLimit.current.limit}`
+      : undefined
+  );
+  const footerHeight = statusText ? 1 : footerRows.length;
+
   // Chrome: header(1) + meta(1) + spacer(1) + actions-header(1) + 2 actions(2) + spacer(1) +
-  //         ci-header(1) + checks-header(1) + spacer(1) + reviews-header(1) + reviewRows + spacer(1) + footer(1) + padding(2) = 15 + reviewRows
-  const checkListHeight = Math.max(1, height - 15 - reviewRowCount);
+  //         ci-header(1) + checks-header(1) + spacer(1) + reviewRows + spacer(1) + footer + padding(2) = 13 + reviewRows + footerHeight
+  const checkListHeight = Math.max(1, height - 13 - reviewRowCount - footerHeight);
 
   const moveTo = useCallback(
     (newIndex: number) => {
@@ -187,7 +244,81 @@ export function PrDetail({
     };
   }, []);
 
+  useEffect(() => {
+    initialLoadRequestedRef.current = null;
+  }, [prIdentity]);
+
+  useEffect(() => {
+    if (ciLoading || (ci != null && review != null)) return;
+    if (initialLoadRequestedRef.current === prIdentity) return;
+    initialLoadRequestedRef.current = prIdentity;
+    void onRefreshCI();
+  }, [prIdentity, ci, review, ciLoading, onRefreshCI]);
+
+  const executeModalAction = useCallback(
+    (check: CheckRun, action: CheckAction) => {
+      setModal(null);
+      switch (action.id) {
+        case 'open':
+          if (check.detailsUrl) onOpenUrl(check.detailsUrl);
+          break;
+        case 'rerun':
+          showStatus(`Retrying ${check.name}...`);
+          onRetryCheck(check).then((msg) => showStatus(msg));
+          break;
+        case 'copy-logs':
+          showStatus('Fetching logs...');
+          onCopyLogs(check).then((msg) => showStatus(msg));
+          break;
+        case 'open-logs':
+          if (check.detailsUrl) {
+            onOpenUrl(check.detailsUrl.replace(/\/?$/, '/logs'));
+          }
+          break;
+      }
+    },
+    [onOpenUrl, onRetryCheck, onCopyLogs, showStatus]
+  );
+
   useKeyboard((key) => {
+    // ─── Modal mode ─────────────────────────────────────────
+    if (modal) {
+      const actions = getCheckActions(modal.check);
+      switch (key.name) {
+        case 'up':
+        case 'k':
+          setModal((m) =>
+            m ? { ...m, selectedOption: Math.max(0, m.selectedOption - 1) } : m
+          );
+          break;
+        case 'down':
+        case 'j':
+          setModal((m) =>
+            m
+              ? {
+                  ...m,
+                  selectedOption: Math.min(
+                    actions.length - 1,
+                    m.selectedOption + 1
+                  ),
+                }
+              : m
+          );
+          break;
+        case 'return': {
+          const action = actions[modal.selectedOption];
+          if (action) executeModalAction(modal.check, action);
+          break;
+        }
+        case 'escape':
+        case 'q':
+          setModal(null);
+          break;
+      }
+      return;
+    }
+
+    // ─── Normal mode ────────────────────────────────────────
     if (statusText && key.name !== 'c') {
       setStatusText('');
       if (statusTimerRef.current) {
@@ -195,6 +326,14 @@ export function PrDetail({
         statusTimerRef.current = null;
       }
     }
+
+    // Ctrl+R or Shift+R → refresh CI
+    if ((key.ctrl && key.name === 'r') || key.raw === 'R') {
+      onRefreshCI();
+      return;
+    }
+
+    if (handleListKey(key.name, selectedIndex, totalItems, checkListHeight, moveTo)) return;
 
     switch (key.name) {
       case 'up':
@@ -212,8 +351,11 @@ export function PrDetail({
           onOpenUrl(pr.url);
         } else {
           const check = checks[selectedIndex - ACTION_COUNT];
-          if (check?.detailsUrl) {
-            onOpenUrl(check.detailsUrl);
+          if (check) {
+            const actions = getCheckActions(check);
+            if (actions.length > 0) {
+              setModal({ check, selectedOption: 0 });
+            }
           }
         }
         break;
@@ -229,8 +371,6 @@ export function PrDetail({
         if (key.raw === 'w') {
           onWatch();
         } else if (key.raw === 'r') {
-          onRefreshCI();
-        } else if (key.raw === 't') {
           showStatus('Retrying failed checks...');
           onRetryChecks().then((msg) => showStatus(msg));
         } else if (key.raw === 'c' && selectedIndex >= ACTION_COUNT) {
@@ -282,21 +422,8 @@ export function PrDetail({
     width - iconCol - conclusionCol - timeCol - openCol - 6
   );
 
-  // Footer text with right-aligned rate limit
-  let footerText: string;
-  let footerFg: string;
-  if (statusText) {
-    footerText = ` ${statusText}`;
-    footerFg = '#9ece6a';
-  } else {
-    const keys = ` [${RETURN_SYMBOL}] Select | [c]opy logs | [r]efresh | re[t]ry | [w]atch | [${LEFT_ARROW}] Back | [q]uit`;
-    const rl = rateLimit.current
-      ? `API: ${rateLimit.current.remaining}/${rateLimit.current.limit} `
-      : '';
-    const gap = Math.max(1, width - 2 - keys.length - rl.length);
-    footerText = keys + ' '.repeat(gap) + rl;
-    footerFg = '#565f89';
-  }
+  // Footer: status message or wrapped keybindings
+  const statusIsError = statusText ? /^(Failed|No |Cannot )/i.test(statusText) : false;
 
   return (
     <box
@@ -328,6 +455,10 @@ export function PrDetail({
           width: '100%',
           backgroundColor: selectedIndex === 0 ? '#292e42' : undefined,
         }}
+        onMouseDown={() => {
+          if (selectedIndex === 0) onOpenInEditor();
+          else moveTo(0);
+        }}
       >
         <text
           content="   > Open in editor"
@@ -339,6 +470,10 @@ export function PrDetail({
           height: 1,
           width: '100%',
           backgroundColor: selectedIndex === 1 ? '#292e42' : undefined,
+        }}
+        onMouseDown={() => {
+          if (selectedIndex === 1) onOpenUrl(pr.url);
+          else moveTo(1);
         }}
       >
         <text
@@ -364,7 +499,13 @@ export function PrDetail({
       </box>
 
       {/* Check rows (scrollable) */}
-      <box flexDirection="column" style={{ flexGrow: 1, width: '100%' }}>
+      <ScrollList
+        totalItems={checks.length}
+        selectedIndex={selectedIndex}
+        scrollOffset={scrollOffset}
+        listHeight={checkListHeight}
+        onMove={moveTo}
+      >
         {checks
           .slice(scrollOffset, scrollOffset + checkListHeight)
           .map((check, i) => {
@@ -397,40 +538,53 @@ export function PrDetail({
               <box
                 key={`${check.name}-${actualCheckIndex}`}
                 style={{ height: 1, width: '100%', backgroundColor: bg }}
+                onMouseDown={() => {
+                  if (actualIndex === selectedIndex && check.detailsUrl) {
+                    onOpenUrl(check.detailsUrl);
+                  } else {
+                    moveTo(actualIndex);
+                  }
+                }}
               >
                 <text content={line} fg={rowFg} />
               </box>
             );
           })}
-      </box>
+      </ScrollList>
 
       {/* Spacer */}
       <box style={{ height: 1 }} />
 
       {/* Reviews section */}
-      <box style={{ height: 1, width: '100%' }}>
-        <text content={` Reviews${review ? ` (${review.reviewers.length})` : ''}`} fg="#bb9af7" />
-      </box>
-      {review && review.reviewers.length > 0 ? (
-        review.reviewers.map((r) => {
-          const icon =
-            r.state === 'APPROVED'
-              ? { char: CHECKMARK, fg: '#9ece6a' }
-              : r.state === 'CHANGES_REQUESTED'
-                ? { char: CROSSMARK, fg: '#f7768e' }
-                : r.state === 'DISMISSED'
-                  ? { char: EN_DASH, fg: '#565f89' }
-                  : { char: '~', fg: '#e0af68' };
-          const stateLabel = r.state.toLowerCase().replace(/_/g, ' ');
-          return (
-            <box key={r.login} style={{ height: 1, width: '100%' }}>
-              <text
-                content={`  ${icon.char} ${r.login} — ${stateLabel} (${relativeTime(r.submittedAt)})`}
-                fg={icon.fg}
-              />
-            </box>
-          );
-        })
+      {review === null ? (
+        <box style={{ height: 1, width: '100%' }}>
+          <text content="  Loading review status..." fg="#565f89" />
+        </box>
+      ) : review.reviewers.length > 0 ? (
+        <>
+          <box style={{ height: 1, width: '100%' }}>
+            <text content={` Reviews (${review.reviewers.length})`} fg="#bb9af7" />
+          </box>
+          {review.reviewers.map((r) => {
+            const icon =
+              r.state === 'APPROVED'
+                ? { char: CHECKMARK, fg: '#9ece6a' }
+                : r.state === 'CHANGES_REQUESTED'
+                  ? { char: CROSSMARK, fg: '#f7768e' }
+                  : r.state === 'DISMISSED'
+                    ? { char: EN_DASH, fg: '#565f89' }
+                    : { char: '~', fg: '#e0af68' };
+            const stateLabel = r.state.toLowerCase().replace(/_/g, ' ');
+            return (
+              <box key={r.login} style={{ height: 1, width: '100%' }}>
+                <text
+                  content={`  ${icon.char} ${r.login} — ${stateLabel} (${relativeTime(r.submittedAt)})`}
+                  fg={icon.fg}
+                />
+              </box>
+            );
+          })}
+        </>
       ) : (
         <box style={{ height: 1, width: '100%' }}>
           <text content="  No reviews yet" fg="#565f89" />
@@ -441,9 +595,73 @@ export function PrDetail({
       <box style={{ height: 1 }} />
 
       {/* Footer / Status */}
-      <box style={{ height: 1, width: '100%' }}>
-        <text content={footerText} fg={footerFg} />
-      </box>
+      {statusText ? (
+        <box style={{ height: 1, width: '100%' }}>
+          <text
+            content={` ${statusText}`}
+            fg={statusIsError ? '#f7768e' : '#9ece6a'}
+          />
+        </box>
+      ) : (
+        <FooterRows rows={footerRows} fg="#565f89" />
+      )}
+
+      {/* Check action modal */}
+      {modal && (
+        <box
+          style={{
+            position: 'absolute',
+            top: Math.floor(height / 2) - 2,
+            left: Math.floor(width / 2) - 22,
+            width: 44,
+            height: getCheckActions(modal.check).length + 4,
+          }}
+        >
+          <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
+            {/* Title bar */}
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text
+                content={` ${fit(modal.check.name, 42)}`}
+                fg="#7aa2f7"
+              />
+            </box>
+            {/* Border */}
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content={`${'─'.repeat(44)}`} fg="#292e42" />
+            </box>
+            {/* Options */}
+            {getCheckActions(modal.check).map((action, i) => {
+              const isActive = i === modal.selectedOption;
+              return (
+                <box
+                  key={action.id}
+                  style={{
+                    height: 1,
+                    width: '100%',
+                    backgroundColor: isActive ? '#292e42' : '#1a1b26',
+                  }}
+                  onMouseDown={() => {
+                    if (isActive) {
+                      executeModalAction(modal.check, action);
+                    } else {
+                      setModal({ ...modal, selectedOption: i });
+                    }
+                  }}
+                >
+                  <text
+                    content={` ${isActive ? '>' : ' '} ${action.label}`}
+                    fg={isActive ? '#c0caf5' : '#a9b1d6'}
+                  />
+                </box>
+              );
+            })}
+            {/* Hint */}
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content={` Esc to close`} fg="#565f89" />
+            </box>
+          </box>
+        </box>
+      )}
     </box>
   );
 }

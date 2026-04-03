@@ -16,7 +16,11 @@ export interface PullRequestInfo {
   draft: boolean;
 }
 
+export type PRRole = 'author' | 'assigned' | 'both';
+
 export interface UserPullRequest {
+  /** GitHub GraphQL node ID for batched enrichment queries */
+  nodeId: string;
   number: number;
   title: string;
   state: string;
@@ -31,7 +35,13 @@ export interface UserPullRequest {
   headRef: string;
   updatedAt: string;
   url: string;
+  /** GitHub login of the PR author */
+  author: string;
+  /** Whether this PR was authored by the user, assigned to them, or both */
+  role: PRRole;
 }
+
+export type MergeableStatus = 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 
 export type CIStatus = "unknown" | "pending" | "passing" | "failing" | "mixed";
 

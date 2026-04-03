@@ -16,7 +16,7 @@ function gauge(fraction: number, width: number): string {
   return GAUGE_FILLED.repeat(filled) + GAUGE_EMPTY.repeat(empty);
 }
 
-function prStatusLine(p: PRFetchProgress, barWidth: number): { text: string; bar: string | null } {
+function prStatusLine(p: PRFetchProgress): { text: string; bar: string | null } {
   switch (p.phase) {
     case "authenticating":
       return { text: "Authenticating with GitHub...", bar: null };
@@ -49,7 +49,7 @@ export function Loading({ prProgress, scanProgress, scanDone }: LoadingProps) {
   const { width } = useTerminalDimensions();
   const barWidth = Math.max(10, Math.min(40, width - 6));
 
-  const pr = prStatusLine(prProgress, barWidth);
+  const pr = prStatusLine(prProgress);
   const scan = scanStatusLine(scanProgress, scanDone, barWidth);
 
   const maxPathLen = Math.max(10, width - 6);

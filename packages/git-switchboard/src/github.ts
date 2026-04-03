@@ -1,10 +1,13 @@
 import { execSync } from 'node:child_process';
 import { Octokit } from '@octokit/rest';
-import { execute, graphql } from './graphql.js';
+import { selectRelevantCheckRuns } from './check-selection.js';
+import { execute, graphql, type ResultOf } from './graphql.js';
+import { hashKey, readCache, writeCache } from './cache.js';
 import type {
   CheckRun,
   CIInfo,
   CIStatus,
+  MergeableStatus,
   PullRequestInfo,
   ReviewInfo,
   ReviewStatus,
@@ -137,17 +140,81 @@ function describeApiError(error: unknown): string {
   return String(error);
 }
 
+const RETRYABLE_GITHUB_STATUSES = new Set([502, 503, 504]);
+const RETRYABLE_NETWORK_ERRORS = [
+  'fetch failed',
+  'gateway timeout',
+  'bad gateway',
+  'timed out',
+  'econnreset',
+  'eai_again',
+];
+
+function apiErrorStatus(error: unknown): number | null {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'status' in error &&
+    typeof (error as { status?: unknown }).status === 'number'
+  ) {
+    return (error as { status: number }).status;
+  }
+  return null;
+}
+
+function isRetryableGitHubError(error: unknown): boolean {
+  const status = apiErrorStatus(error);
+  if (status != null) {
+    return RETRYABLE_GITHUB_STATUSES.has(status);
+  }
+
+  const message = String(error).toLowerCase();
+  return RETRYABLE_NETWORK_ERRORS.some((fragment) => message.includes(fragment));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function retryGitHubRequest<T>(
+  request: () => Promise<T>,
+  maxAttempts = 3
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await request();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts || !isRetryableGitHubError(error)) {
+        throw error;
+      }
+      await sleep(250 * attempt);
+    }
+  }
+
+  throw lastError;
+}
+
 // ─── GraphQL queries (typed via gql.tada) ──────────────────────
 // Single source of truth: gql.tada provides type inference,
 // printQuery() converts to string for octokit.graphql().
 
 const SEARCH_USER_PRS = graphql(`
-  query SearchUserPRs($searchQuery: String!) {
-    search(query: $searchQuery, type: ISSUE, first: 100) {
+  query SearchUserPRs($searchQuery: String!, $cursor: String) {
+    search(query: $searchQuery, type: ISSUE, first: 25, after: $cursor) {
       issueCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
       nodes {
         __typename
         ... on PullRequest {
+          id
           number
           title
           state
@@ -155,6 +222,7 @@ const SEARCH_USER_PRS = graphql(`
           headRefName
           updatedAt
           url
+          author { login }
           repository {
             owner { login }
             name
@@ -163,46 +231,146 @@ const SEARCH_USER_PRS = graphql(`
             owner { login }
             name
           }
-          commits(last: 1) {
-            nodes {
-              commit {
-                committedDate
-                statusCheckRollup {
-                  contexts(first: 100) {
-                    nodes {
-                      __typename
-                      ... on CheckRun {
-                        databaseId
-                        name
-                        status
-                        conclusion
-                        detailsUrl
-                        startedAt
-                        completedAt
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-          reviews(last: 100) {
-            nodes {
-              author { login }
-              state
-              submittedAt
-            }
-          }
         }
       }
     }
   }
 `);
 
+type SearchNode = NonNullable<NonNullable<ResultOf<typeof SEARCH_USER_PRS>['search']['nodes']>[number]>;
+type PullRequestSearchNode = Extract<SearchNode, { __typename: 'PullRequest' }>;
+
+type SearchResult = ResultOf<typeof SEARCH_USER_PRS>;
+
+interface StatusContextNodeInput {
+  __typename?: string | null;
+  databaseId?: number | null;
+  name?: string | null;
+  status?: string | null;
+  conclusion?: string | null;
+  detailsUrl?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  checkSuite?: {
+    databaseId?: number | null;
+    createdAt?: string | null;
+    app?: {
+      slug?: string | null;
+    } | null;
+    matchingPullRequests?: {
+      nodes?: Array<{
+        number?: number | null;
+      } | null> | null;
+    } | null;
+    workflowRun?: {
+      databaseId?: number | null;
+      runNumber?: number | null;
+      createdAt?: string | null;
+      workflow?: {
+        name?: string | null;
+      } | null;
+    } | null;
+  } | null;
+}
+
+interface ReviewNodeGraphInput {
+  author?: { login?: string | null } | null;
+  state?: string | null;
+  submittedAt?: string | null;
+}
+
+interface PullRequestDetailsNodeInput {
+  mergeable?: string | null;
+  commits: {
+    nodes?: Array<{
+      commit?: {
+        committedDate?: string | null;
+        statusCheckRollup?: {
+          contexts?: {
+            nodes?: readonly (StatusContextNodeInput | null)[] | null;
+          } | null;
+        } | null;
+      } | null;
+    } | null> | null;
+  };
+  reviews?: {
+    nodes?: Array<ReviewNodeGraphInput | null> | null;
+  } | null;
+}
+
+function extractChecksFromStatusContextNodes(
+  contextNodes: readonly (StatusContextNodeInput | null)[],
+  pullNumber: number
+): CheckRun[] {
+  const candidates = contextNodes
+    .filter(
+      (node): node is StatusContextNodeInput & {
+        __typename: 'CheckRun';
+        name: string;
+        checkSuite: NonNullable<StatusContextNodeInput['checkSuite']>;
+      } =>
+        node != null &&
+        node.__typename === 'CheckRun' &&
+        node.name != null &&
+        node.checkSuite != null
+    )
+    .map((node) => ({
+      id: node.databaseId ?? 0,
+      name: node.name,
+      status: (node.status?.toLowerCase() ?? 'queued') as CheckRun['status'],
+      conclusion: node.conclusion?.toLowerCase() ?? null,
+      detailsUrl: node.detailsUrl ?? null,
+      startedAt: node.startedAt ?? null,
+      completedAt: node.completedAt ?? null,
+      appSlug: node.checkSuite.app?.slug ?? null,
+      suiteId: node.checkSuite.databaseId ?? null,
+      suiteCreatedAt: node.checkSuite.createdAt ?? null,
+      workflowRunId: node.checkSuite.workflowRun?.databaseId ?? null,
+      workflowRunNumber: node.checkSuite.workflowRun?.runNumber ?? null,
+      workflowRunCreatedAt: node.checkSuite.workflowRun?.createdAt ?? null,
+      workflowName: node.checkSuite.workflowRun?.workflow?.name ?? null,
+      matchingPullRequestNumbers: (node.checkSuite.matchingPullRequests?.nodes ?? [])
+        .map((matchingPr) => matchingPr?.number ?? null)
+        .filter((number): number is number => number != null),
+    }));
+
+  return selectRelevantCheckRuns(candidates, pullNumber);
+}
+
+/** Paginate a GitHub search query, collecting all nodes across pages. */
+async function paginateSearch(
+  octokit: Octokit,
+  searchQuery: string
+): Promise<{ nodes: SearchNode[]; totalCount: number }> {
+  const allNodes: SearchNode[] = [];
+  let cursor: string | undefined;
+  let totalCount = 0;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const page: SearchResult = await retryGitHubRequest(() =>
+      execute(octokit, SEARCH_USER_PRS, {
+        searchQuery,
+        cursor: cursor ?? null,
+      })
+    );
+    totalCount = page.search.issueCount;
+    for (const node of page.search.nodes ?? []) {
+      if (node) allNodes.push(node);
+    }
+    if (!page.search.pageInfo.hasNextPage) break;
+    cursor = page.search.pageInfo.endCursor ?? undefined;
+    if (!cursor) break;
+  }
+
+  return { nodes: allNodes, totalCount };
+}
+
 const PR_DETAIL_QUERY = graphql(`
   query PRDetail($owner: String!, $repo: String!, $number: Int!) {
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $number) {
+        mergeable
         commits(last: 1) {
           nodes {
             commit {
@@ -219,6 +387,89 @@ const PR_DETAIL_QUERY = graphql(`
                       detailsUrl
                       startedAt
                       completedAt
+                      checkSuite {
+                        databaseId
+                        createdAt
+                        app { slug }
+                        matchingPullRequests(first: 10) {
+                          nodes {
+                            ... on PullRequest {
+                              number
+                            }
+                          }
+                        }
+                        workflowRun {
+                          databaseId
+                          runNumber
+                          createdAt
+                          workflow {
+                            name
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        reviews(last: 100) {
+          nodes {
+            author { login }
+            state
+            submittedAt
+          }
+        }
+      }
+    }
+  }
+`);
+
+const BATCH_PR_DETAILS_QUERY = graphql(`
+  query BatchPRDetails($ids: [ID!]!) {
+    nodes(ids: $ids) {
+      __typename
+      ... on PullRequest {
+        id
+        number
+        mergeable
+        commits(last: 1) {
+          nodes {
+            commit {
+              committedDate
+              statusCheckRollup {
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun {
+                      databaseId
+                      name
+                      status
+                      conclusion
+                      detailsUrl
+                      startedAt
+                      completedAt
+                      checkSuite {
+                        databaseId
+                        createdAt
+                        app { slug }
+                        matchingPullRequests(first: 10) {
+                          nodes {
+                            ... on PullRequest {
+                              number
+                            }
+                          }
+                        }
+                        workflowRun {
+                          databaseId
+                          runNumber
+                          createdAt
+                          workflow {
+                            name
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -252,6 +503,47 @@ export interface FetchUserPRsResult {
   prs: UserPullRequest[];
   ciCache: Map<string, CIInfo>;
   reviewCache: Map<string, ReviewInfo>;
+  mergeableCache: Map<string, MergeableStatus>;
+}
+
+function emptyPRDetails(): {
+  ci: CIInfo;
+  review: ReviewInfo;
+  mergeable: MergeableStatus;
+} {
+  return {
+    ci: { status: 'unknown', checks: [], fetchedAt: Date.now() },
+    review: { status: 'needs-review', reviewers: [], fetchedAt: Date.now() },
+    mergeable: 'UNKNOWN',
+  };
+}
+
+function buildUserPullRequest(
+  node: PullRequestSearchNode,
+  role: UserPullRequest['role']
+): UserPullRequest {
+  const baseId = `${node.repository.owner.login}/${node.repository.name}`.toLowerCase();
+  const headRepo = node.headRepository;
+  const forkId = headRepo
+    ? `${headRepo.owner.login}/${headRepo.name}`.toLowerCase()
+    : null;
+
+  return {
+    nodeId: node.id,
+    number: node.number,
+    title: node.title,
+    state: node.state,
+    draft: node.isDraft,
+    repoOwner: node.repository.owner.login,
+    repoName: node.repository.name,
+    repoId: baseId,
+    forkRepoId: forkId !== baseId ? forkId : null,
+    headRef: node.headRefName,
+    updatedAt: node.updatedAt,
+    url: node.url,
+    author: node.author?.login ?? '',
+    role,
+  };
 }
 
 export async function fetchUserPRs(
@@ -262,6 +554,7 @@ export async function fetchUserPRs(
   const prs: UserPullRequest[] = [];
   const ciCache = new Map<string, CIInfo>();
   const reviewCache = new Map<string, ReviewInfo>();
+  const mergeableCache = new Map<string, MergeableStatus>();
 
   const progress: PRFetchProgress = {
     phase: 'authenticating',
@@ -273,105 +566,165 @@ export async function fetchUserPRs(
   onProgress?.(progress);
 
   try {
-    const { data: user } = await octokit.rest.users.getAuthenticated();
-    const username = user.login;
+    const tokenHash = hashKey(token);
+    const userCacheKey = `user-${tokenHash}`;
+    let username = await readCache<string>(userCacheKey);
+    if (!username) {
+      const { data: user } = await octokit.rest.users.getAuthenticated();
+      username = user.login;
+      writeCache(userCacheKey, username);
+    }
 
     progress.phase = 'searching';
     onProgress?.(progress);
 
-    // Two queries: authored + assigned, then deduplicate
     const [authored, assigned] = await Promise.all([
-      execute(octokit, SEARCH_USER_PRS, {
-        searchQuery: `is:pr is:open author:${username}`,
-      }),
-      execute(octokit, SEARCH_USER_PRS, {
-        searchQuery: `is:pr is:open assignee:${username}`,
-      }),
+      paginateSearch(octokit, `is:pr is:open author:${username}`),
+      paginateSearch(octokit, `is:pr is:open assignee:${username}`),
     ]);
+    progress.totalPRs = authored.totalCount + assigned.totalCount;
+    onProgress?.(progress);
 
-    // Merge and deduplicate by repo#number
+    // Merge and deduplicate by repo#number, tracking source query
+    const authoredKeys = new Set<string>();
+    const assignedKeys = new Set<string>();
+
+    // Build key sets to determine role
+    for (const node of authored.nodes) {
+      if (node.__typename !== 'PullRequest') continue;
+      const baseId = `${node.repository.owner.login}/${node.repository.name}`.toLowerCase();
+      authoredKeys.add(`${baseId}#${node.number}`);
+    }
+    for (const node of assigned.nodes) {
+      if (node.__typename !== 'PullRequest') continue;
+      const baseId = `${node.repository.owner.login}/${node.repository.name}`.toLowerCase();
+      assignedKeys.add(`${baseId}#${node.number}`);
+    }
+
     const seen = new Set<string>();
-    const allNodes = [
-      ...(authored.search.nodes ?? []),
-      ...(assigned.search.nodes ?? []),
-    ];
-
-    progress.totalPRs = authored.search.issueCount + assigned.search.issueCount;
+    const allNodes = [...authored.nodes, ...assigned.nodes];
 
     for (const node of allNodes) {
       if (!node || node.__typename !== 'PullRequest') continue;
       const baseId = `${node.repository.owner.login}/${node.repository.name}`.toLowerCase();
-      const headRepo = node.headRepository;
-      const forkId = headRepo
-        ? `${headRepo.owner.login}/${headRepo.name}`.toLowerCase()
-        : null;
       const prKey = `${baseId}#${node.number}`;
 
       if (seen.has(prKey)) continue;
       seen.add(prKey);
 
-      prs.push({
-        number: node.number,
-        title: node.title,
-        state: node.state,
-        draft: node.isDraft,
-        repoOwner: node.repository.owner.login,
-        repoName: node.repository.name,
-        repoId: baseId,
-        forkRepoId: forkId !== baseId ? forkId : null,
-        headRef: node.headRefName,
-        updatedAt: node.updatedAt,
-        url: node.url,
-      });
+      const isAuthored = authoredKeys.has(prKey);
+      const isAssigned = assignedKeys.has(prKey);
 
-      // Extract CI from commits → statusCheckRollup
-      const commitNode = (node.commits?.nodes ?? [])[0];
-      const lastCommitDate = commitNode?.commit.committedDate ?? '';
-      const contextNodes =
-        commitNode?.commit.statusCheckRollup?.contexts.nodes ?? [];
-
-      const checks: CheckRun[] = contextNodes
-        .filter(
-          (n): n is typeof n & { __typename: 'CheckRun'; name: string } =>
-            n != null && n.__typename === 'CheckRun' && n.name != null
+      prs.push(
+        buildUserPullRequest(
+          node,
+          isAuthored && isAssigned ? 'both' : isAssigned ? 'assigned' : 'author'
         )
-        .map((n) => ({
-          id: n.databaseId ?? 0,
-          name: n.name,
-          status: (n.status?.toLowerCase() ?? 'queued') as CheckRun['status'],
-          conclusion: n.conclusion?.toLowerCase() ?? null,
-          detailsUrl: n.detailsUrl ?? null,
-          startedAt: n.startedAt ?? null,
-          completedAt: n.completedAt ?? null,
-        }));
-
-      ciCache.set(prKey, {
-        status: computeCIStatus(checks),
-        checks,
-        fetchedAt: Date.now(),
-      });
-
-      // Extract reviews
-      const reviewNodes: ReviewNodeInput[] = ((node.reviews?.nodes) ?? [])
-        .filter((n): n is NonNullable<typeof n> => n != null)
-        .filter((n) => n.submittedAt != null)
-        .map((n) => ({
-          author: n.author ? { login: n.author.login } : null,
-          state: n.state,
-          submittedAt: n.submittedAt!,
-        }));
-
-      reviewCache.set(prKey, computeReviewStatus(reviewNodes, lastCommitDate));
+      );
     }
 
     progress.fetchedPRs = prs.length;
     progress.phase = 'done';
     onProgress?.(progress);
-  } catch (error) {
-    console.error(`Failed to fetch PRs: ${describeApiError(error)}`);
-  }
 
-  return { prs, ciCache, reviewCache };
+    const result = { prs, ciCache, reviewCache, mergeableCache };
+    writePRCache(token, result);
+    return result;
+  } catch (error) {
+    const message = `Failed to fetch PRs: ${describeApiError(error)}`;
+    console.error(message);
+    throw new Error(message, { cause: error });
+  }
+}
+
+/**
+ * Fetch all open PRs for a specific repo (not filtered by user).
+ */
+export async function fetchRepoPRs(
+  token: string,
+  repoFullName: string,
+  onProgress?: (progress: PRFetchProgress) => void
+): Promise<FetchUserPRsResult> {
+  const octokit = createOctokit(token);
+  const prs: UserPullRequest[] = [];
+  const ciCache = new Map<string, CIInfo>();
+  const reviewCache = new Map<string, ReviewInfo>();
+  const mergeableCache = new Map<string, MergeableStatus>();
+
+  const progress: PRFetchProgress = {
+    phase: 'searching',
+    totalPRs: 0,
+    fetchedPRs: 0,
+    currentRepo: repoFullName,
+    failedRepos: [],
+  };
+  onProgress?.(progress);
+
+  try {
+    const result = await paginateSearch(octokit, `is:pr is:open repo:${repoFullName}`);
+    progress.totalPRs = result.totalCount;
+    onProgress?.(progress);
+
+    for (const node of result.nodes) {
+      if (node.__typename !== 'PullRequest') continue;
+      prs.push(buildUserPullRequest(node, 'author'));
+    }
+
+    progress.fetchedPRs = prs.length;
+    progress.phase = 'done';
+    onProgress?.(progress);
+
+    const refreshed = { prs, ciCache, reviewCache, mergeableCache };
+    writePRCache(token, refreshed, repoFullName);
+    return refreshed;
+  } catch (error) {
+    const message = `Failed to fetch PRs for ${repoFullName}: ${describeApiError(error)}`;
+    console.error(message);
+    throw new Error(message, { cause: error });
+  }
+}
+
+interface CachedPRsPayload {
+  prs: UserPullRequest[];
+  ciCache: Record<string, CIInfo>;
+  reviewCache: Record<string, ReviewInfo>;
+  mergeableCache: Record<string, MergeableStatus>;
+}
+
+const PR_CACHE_MAX_AGE = 60 * 60 * 1000; // 1 hour — stale data shown instantly, background refresh updates it
+
+function prCacheKey(token: string, repoFullName?: string): string {
+  const tokenHash = hashKey(token);
+  return repoFullName ? `prs-repo-${hashKey(repoFullName)}-${tokenHash}` : `prs-${tokenHash}`;
+}
+
+function writePRCache(token: string, result: FetchUserPRsResult, repoFullName?: string): void {
+  writeCache(prCacheKey(token, repoFullName), {
+    prs: result.prs,
+    ciCache: Object.fromEntries(result.ciCache),
+    reviewCache: Object.fromEntries(result.reviewCache),
+    mergeableCache: Object.fromEntries(result.mergeableCache),
+  } satisfies CachedPRsPayload);
+}
+
+/**
+ * Read cached PR results from disk. Returns null if missing or older than 5 minutes.
+ */
+export async function readCachedPRs(
+  token: string,
+  repoFullName?: string
+): Promise<FetchUserPRsResult | null> {
+  const cached = await readCache<CachedPRsPayload>(
+    prCacheKey(token, repoFullName),
+    PR_CACHE_MAX_AGE
+  );
+  if (!cached) return null;
+  return {
+    prs: cached.prs,
+    ciCache: new Map(Object.entries(cached.ciCache)),
+    reviewCache: new Map(Object.entries(cached.reviewCache)),
+    mergeableCache: new Map(Object.entries(cached.mergeableCache)),
+  };
 }
 
 // ─── fetchPRDetails (GraphQL) — CI + Reviews in one call ────────
@@ -475,6 +828,92 @@ function computeReviewStatus(
   return { status: 'needs-review', reviewers, fetchedAt: Date.now() };
 }
 
+function buildPRDetailsFromNode(
+  pr: PullRequestDetailsNodeInput,
+  pullNumber: number
+): { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus } {
+  const commitNode = (pr.commits.nodes ?? [])[0];
+  const lastCommitDate = commitNode?.commit?.committedDate ?? '';
+  const contextNodes =
+    commitNode?.commit?.statusCheckRollup?.contexts?.nodes ?? [];
+
+  const checks = extractChecksFromStatusContextNodes(
+    contextNodes,
+    pullNumber
+  );
+
+  const ci: CIInfo = {
+    status: computeCIStatus(checks),
+    checks,
+    fetchedAt: Date.now(),
+  };
+
+  const reviewNodes: ReviewNodeInput[] = ((pr.reviews?.nodes) ?? [])
+    .filter((n): n is NonNullable<typeof n> => n != null)
+    .filter((n) => n.submittedAt != null && n.state != null)
+    .map((n) => ({
+      author: n.author?.login ? { login: n.author.login } : null,
+      state: n.state!,
+      submittedAt: n.submittedAt!,
+    }));
+  const review = computeReviewStatus(reviewNodes, lastCommitDate);
+  const mergeable = (pr.mergeable ?? 'UNKNOWN') as MergeableStatus;
+
+  return { ci, review, mergeable };
+}
+
+async function fetchPRDetailsWithOctokit(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  pullNumber: number
+): Promise<{ ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus }> {
+  const result = await retryGitHubRequest(() =>
+    execute(octokit, PR_DETAIL_QUERY, {
+      owner,
+      repo,
+      number: pullNumber,
+    })
+  );
+
+  const pr = result.repository?.pullRequest;
+  if (!pr) throw new Error('PR not found');
+
+  return buildPRDetailsFromNode(pr, pullNumber);
+}
+
+export async function fetchPRDetailsBatch(
+  token: string,
+  prs: readonly UserPullRequest[]
+): Promise<Map<string, { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus }>> {
+  const octokit = createOctokit(token);
+  const uniquePRs = [...new Map(prs.map((pr) => [pr.nodeId, pr])).values()];
+  if (uniquePRs.length === 0) return new Map();
+
+  const ids = uniquePRs.map((pr) => pr.nodeId);
+  const result = await retryGitHubRequest(() =>
+    execute(octokit, BATCH_PR_DETAILS_QUERY, { ids })
+  );
+
+  const prsByNodeId = new Map(uniquePRs.map((pr) => [pr.nodeId, pr]));
+  const detailsByKey = new Map<
+    string,
+    { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus }
+  >();
+
+  for (const node of result.nodes ?? []) {
+    if (!node || node.__typename !== 'PullRequest') continue;
+    const pr = prsByNodeId.get(node.id);
+    if (!pr) continue;
+    detailsByKey.set(
+      `${pr.repoId}#${pr.number}`,
+      buildPRDetailsFromNode(node, pr.number)
+    );
+  }
+
+  return detailsByKey;
+}
+
 /**
  * Fetch CI checks + review status for a PR in a single GraphQL call.
  */
@@ -483,61 +922,18 @@ export async function fetchPRDetails(
   owner: string,
   repo: string,
   pullNumber: number
-): Promise<{ ci: CIInfo; review: ReviewInfo }> {
+): Promise<{ ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus }> {
   const octokit = createOctokit(token);
 
   try {
-    const result = await execute(octokit, PR_DETAIL_QUERY, {
+    return await fetchPRDetailsWithOctokit(
+      octokit,
       owner,
       repo,
-      number: pullNumber,
-    });
-
-    const pr = result.repository?.pullRequest;
-    if (!pr) throw new Error('PR not found');
-
-    const commitNode = (pr.commits.nodes ?? [])[0];
-    const lastCommitDate = commitNode?.commit.committedDate ?? '';
-    const contextNodes =
-      commitNode?.commit.statusCheckRollup?.contexts.nodes ?? [];
-
-    // Extract check runs (filter out StatusContext nodes)
-    const checks: CheckRun[] = contextNodes
-      .filter((n): n is typeof n & { __typename: 'CheckRun'; name: string } =>
-        n != null && n.__typename === 'CheckRun' && n.name != null
-      )
-      .map((n) => ({
-        id: n.databaseId ?? 0,
-        name: n.name,
-        status: (n.status?.toLowerCase() ?? 'queued') as CheckRun['status'],
-        conclusion: n.conclusion?.toLowerCase() ?? null,
-        detailsUrl: n.detailsUrl ?? null,
-        startedAt: n.startedAt ?? null,
-        completedAt: n.completedAt ?? null,
-      }));
-
-    const ci: CIInfo = {
-      status: computeCIStatus(checks),
-      checks,
-      fetchedAt: Date.now(),
-    };
-
-    const reviewNodes: ReviewNodeInput[] = ((pr.reviews?.nodes) ?? [])
-      .filter((n): n is NonNullable<typeof n> => n != null)
-      .filter((n) => n.submittedAt != null)
-      .map((n) => ({
-        author: n.author ? { login: n.author.login } : null,
-        state: n.state,
-        submittedAt: n.submittedAt!,
-      }));
-    const review = computeReviewStatus(reviewNodes, lastCommitDate);
-
-    return { ci, review };
+      pullNumber
+    );
   } catch {
-    return {
-      ci: { status: 'unknown', checks: [], fetchedAt: Date.now() },
-      review: { status: 'needs-review', reviewers: [], fetchedAt: Date.now() },
-    };
+    return emptyPRDetails();
   }
 }
 
@@ -603,6 +999,10 @@ export async function fetchCheckLogs(
   repo: string,
   jobId: number
 ): Promise<string | null> {
+  const cacheKey = `logs-${owner}-${repo}-${jobId}`;
+  const cached = await readCache<string>(cacheKey);
+  if (cached) return cached;
+
   const octokit = createOctokit(token);
   try {
     const response =
@@ -611,10 +1011,12 @@ export async function fetchCheckLogs(
         repo,
         job_id: jobId,
       });
-    if (typeof response.data === 'string') {
-      return response.data;
-    }
-    return String(response.data);
+    const logs =
+      typeof response.data === 'string'
+        ? response.data
+        : String(response.data);
+    writeCache(cacheKey, logs);
+    return logs;
   } catch {
     return null;
   }
