@@ -45,8 +45,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Version and changelog
         run: |
-          npx nx release version ${{ inputs.specifier && format('--specifier {0}', inputs.specifier) || '' }} --yes
-          npx nx release changelog --yes
+          npx nx release version ${{ inputs.specifier && format('--specifier {0}', inputs.specifier) || '' }}
+          npx nx release changelog
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
