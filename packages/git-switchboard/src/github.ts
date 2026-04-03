@@ -2,7 +2,7 @@ import { execSync } from 'node:child_process';
 import { Octokit } from '@octokit/rest';
 import { selectRelevantCheckRuns } from './check-selection.js';
 import { execute, graphql, type ResultOf } from './graphql.js';
-import { hashKey, readCache, writeCache } from './cache.js';
+import { hashKey, readCache, readCacheEntry, writeCache } from './cache.js';
 import type {
   CheckRun,
   CIInfo,
@@ -627,7 +627,10 @@ export async function fetchUserPRs(
     progress.phase = 'done';
     onProgress?.(progress);
 
-    const result = { prs, ciCache, reviewCache, mergeableCache };
+    const result = await mergeWithExistingPRCache(
+      token,
+      { prs, ciCache, reviewCache, mergeableCache }
+    );
     writePRCache(token, result);
     return result;
   } catch (error) {
@@ -674,7 +677,11 @@ export async function fetchRepoPRs(
     progress.phase = 'done';
     onProgress?.(progress);
 
-    const refreshed = { prs, ciCache, reviewCache, mergeableCache };
+    const refreshed = await mergeWithExistingPRCache(
+      token,
+      { prs, ciCache, reviewCache, mergeableCache },
+      repoFullName
+    );
     writePRCache(token, refreshed, repoFullName);
     return refreshed;
   } catch (error) {
@@ -691,7 +698,13 @@ interface CachedPRsPayload {
   mergeableCache: Record<string, MergeableStatus>;
 }
 
-const PR_CACHE_MAX_AGE = 60 * 60 * 1000; // 1 hour — stale data shown instantly, background refresh updates it
+export interface CachedPRsSnapshot {
+  result: FetchUserPRsResult;
+  ageMs: number;
+  isStale: boolean;
+}
+
+const PR_CACHE_MAX_AGE = 60 * 60 * 1000; // 1 hour threshold for marking cached PR data as stale
 
 function prCacheKey(token: string, repoFullName?: string): string {
   const tokenHash = hashKey(token);
@@ -707,24 +720,90 @@ function writePRCache(token: string, result: FetchUserPRsResult, repoFullName?: 
   } satisfies CachedPRsPayload);
 }
 
-/**
- * Read cached PR results from disk. Returns null if missing or older than 5 minutes.
- */
-export async function readCachedPRs(
+function retainMapEntries<T>(
+  map: ReadonlyMap<string, T>,
+  keys: ReadonlySet<string>
+): Map<string, T> {
+  return new Map([...map.entries()].filter(([key]) => keys.has(key)));
+}
+
+export function mergeCachedPRData(
+  incoming: FetchUserPRsResult,
+  existing: FetchUserPRsResult | null
+): FetchUserPRsResult {
+  if (!existing) return incoming;
+
+  const nextKeys = new Set(incoming.prs.map((pr) => `${pr.repoId}#${pr.number}`));
+  return {
+    prs: incoming.prs,
+    ciCache: new Map([
+      ...retainMapEntries(existing.ciCache, nextKeys),
+      ...incoming.ciCache,
+    ]),
+    reviewCache: new Map([
+      ...retainMapEntries(existing.reviewCache, nextKeys),
+      ...incoming.reviewCache,
+    ]),
+    mergeableCache: new Map([
+      ...retainMapEntries(existing.mergeableCache, nextKeys),
+      ...incoming.mergeableCache,
+    ]),
+  };
+}
+
+async function mergeWithExistingPRCache(
   token: string,
+  incoming: FetchUserPRsResult,
   repoFullName?: string
-): Promise<FetchUserPRsResult | null> {
-  const cached = await readCache<CachedPRsPayload>(
-    prCacheKey(token, repoFullName),
-    PR_CACHE_MAX_AGE
-  );
-  if (!cached) return null;
+): Promise<FetchUserPRsResult> {
+  const cachedSnapshot = await readCachedPRsSnapshot(token, repoFullName);
+  return mergeCachedPRData(incoming, cachedSnapshot?.result ?? null);
+}
+
+export function persistPRCache(
+  token: string,
+  result: FetchUserPRsResult,
+  repoFullName?: string
+): void {
+  writePRCache(token, result, repoFullName);
+}
+
+function fromCachedPRPayload(cached: CachedPRsPayload): FetchUserPRsResult {
   return {
     prs: cached.prs,
     ciCache: new Map(Object.entries(cached.ciCache)),
     reviewCache: new Map(Object.entries(cached.reviewCache)),
     mergeableCache: new Map(Object.entries(cached.mergeableCache)),
   };
+}
+
+export async function readCachedPRsSnapshot(
+  token: string,
+  repoFullName?: string
+): Promise<CachedPRsSnapshot | null> {
+  const cached = await readCacheEntry<CachedPRsPayload>(
+    prCacheKey(token, repoFullName)
+  );
+  if (!cached) return null;
+
+  const ageMs = Date.now() - cached.ts;
+  return {
+    result: fromCachedPRPayload(cached.data),
+    ageMs,
+    isStale: ageMs > PR_CACHE_MAX_AGE,
+  };
+}
+
+/**
+ * Read fresh cached PR results from disk. Returns null if missing or stale.
+ */
+export async function readCachedPRs(
+  token: string,
+  repoFullName?: string
+): Promise<FetchUserPRsResult | null> {
+  const snapshot = await readCachedPRsSnapshot(token, repoFullName);
+  if (!snapshot || snapshot.isStale) return null;
+  return snapshot.result;
 }
 
 // ─── fetchPRDetails (GraphQL) — CI + Reviews in one call ────────

@@ -9,6 +9,11 @@ const CACHE_DIR = join(
 
 let dirReady = false;
 
+interface CacheEntry<T> {
+  ts: number;
+  data: T;
+}
+
 async function ensureDir(): Promise<void> {
   if (dirReady) return;
   await mkdir(CACHE_DIR, { recursive: true });
@@ -24,14 +29,30 @@ export function hashKey(input: string): string {
  * Read a cached JSON value. Returns null if missing, expired, or corrupt.
  * Pass `maxAgeMs` to enforce a TTL; omit for no expiry.
  */
+export async function readCacheEntry<T>(key: string): Promise<CacheEntry<T> | null> {
+  try {
+    const filePath = join(CACHE_DIR, `${key}.json`);
+    const raw = await readFile(filePath, 'utf-8');
+    const entry: CacheEntry<T> = JSON.parse(raw);
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read a cached JSON value. Returns null if missing, expired, or corrupt.
+ * Pass `maxAgeMs` to enforce a TTL; omit for no expiry.
+ */
 export async function readCache<T>(
   key: string,
   maxAgeMs?: number
 ): Promise<T | null> {
+  const entry = await readCacheEntry<T>(key);
+  if (!entry) {
+    return null;
+  }
   try {
-    const filePath = join(CACHE_DIR, `${key}.json`);
-    const raw = await readFile(filePath, 'utf-8');
-    const entry: { ts: number; data: T } = JSON.parse(raw);
     if (maxAgeMs !== undefined && Date.now() - entry.ts > maxAgeMs) {
       return null;
     }
