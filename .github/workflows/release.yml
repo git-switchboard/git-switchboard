@@ -7,6 +7,11 @@ on:
         description: "Version bump (major, minor, patch, or explicit like 1.2.3)"
         required: false
         type: string
+      dry-run:
+        description: "Dry run (skip publish, pass --dry-run to nx commands)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -45,9 +50,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Version and changelog
         run: |
-          npx nx release version ${{ github.event.inputs.specifier || '' }}
+          DRY_RUN=${{ github.event.inputs.dry-run == 'true' && '--dry-run' || '' }}
+          npx nx release version ${{ github.event.inputs.specifier || '' }} $DRY_RUN
           VERSION=$(node -p "require('./packages/git-switchboard/package.json').version")
-          npx nx release changelog "$VERSION"
+          npx nx release changelog "$VERSION" $DRY_RUN
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -111,6 +117,7 @@ jobs:
 
   # Phase 3: Publish (after all native builds complete)
   publish:
+    if: github.event.inputs.dry-run != 'true'
     needs: [version, build-native]
     runs-on: ubuntu-latest
     steps:
