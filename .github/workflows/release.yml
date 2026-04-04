@@ -101,7 +101,11 @@ jobs:
       - name: Upgrade npm for OIDC support
         # Two-step upgrade workaround for npm/cli#9151
         run: npm install -g npm@11.11.0 && npm install -g npm@latest
-      - run: pnpm install --frozen-lockfile
+      - name: Install dependencies for all platforms
+        run: |
+          echo 'supportedArchitectures.cpu="current","x64","arm64"' >> .npmrc
+          echo 'supportedArchitectures.os="current","darwin","linux","win32"' >> .npmrc
+          pnpm install --frozen-lockfile
       - name: Build native binary
         run: npx nx run git-switchboard:build:native -- ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
