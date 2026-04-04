@@ -45,7 +45,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Version and changelog
         run: |
-          npx nx release version ${{ inputs.specifier && format('--specifier {0}', inputs.specifier) || '' }}
+          npx nx release version ${{ inputs.specifier || '' }}
           VERSION=$(node -p "require('./packages/git-switchboard/package.json').version")
           npx nx release changelog "$VERSION"
         env:
