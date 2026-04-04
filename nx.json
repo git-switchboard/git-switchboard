@@ -31,15 +31,22 @@
     "projectsRelationship": "independent",
     "version": {
       "preVersionCommand": "npx nx run-many -t build -p packages/*",
-      "conventionalCommits": true
+      "conventionalCommits": true,
+      "git": {
+        "commitMessage": "chore(release): release {version} [skip ci]",
+        "commit": true,
+        "tag": true
+      }
     },
     "changelog": {
       "projectChangelogs": {
         "createRelease": "github"
+      },
+      "git": {
+        "commitMessage": "chore(release): release {version} [skip ci]",
+        "commit": true,
+        "tag": true
       }
-    },
-    "git": {
-      "commitMessage": "chore(release): release {version} [skip ci]"
     }
   },
   "plugins": [
