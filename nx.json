@@ -30,21 +30,14 @@
     ],
     "version": {
       "preVersionCommand": "npx nx run-many -t build -p packages/*",
-      "conventionalCommits": true,
-      "git": {
-        "commitMessage": "chore(release): release {version} [skip ci]",
-        "commit": true,
-        "tag": true
-      }
+      "conventionalCommits": true
     },
     "changelog": {
       "projectChangelogs": {
         "createRelease": "github"
       },
       "git": {
-        "commitMessage": "chore(release): release {version} [skip ci]",
-        "commit": true,
-        "tag": true
+        "commitMessage": "chore(release): release {version} [skip ci]"
       }
     }
   },
