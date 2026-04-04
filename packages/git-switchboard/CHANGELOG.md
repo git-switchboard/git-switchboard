@@ -1,3 +1,7 @@
+## 0.1.2-beta.0 (2026-04-04)
+
+This was a version bump only for git-switchboard to align it with other projects, there were no code changes.
+
 ## 0.1.1 (2026-04-04)
 
 ### 🩹 Fixes

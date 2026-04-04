@@ -1,3 +1,13 @@
+## 0.1.2-beta.0 (2026-04-04)
+
+### 🩹 Fixes
+
+- install all platform optional deps in build-native job ([68494c9](https://github.com/git-switchboard/git-switchboard/commit/68494c9))
+
+### ❤️ Thank You
+
+- Claude
+
 ## 0.1.1 (2026-04-04)
 
 ### 🩹 Fixes
