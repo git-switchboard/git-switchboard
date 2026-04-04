@@ -45,9 +45,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Version and changelog
         run: |
-          npx nx release version ${{ github.event.inputs.specifier || '' }} --git-commit false --git-tag false --stage-changes
+          npx nx release version ${{ github.event.inputs.specifier || '' }}
           VERSION=$(node -p "require('./packages/git-switchboard/package.json').version")
-          npx nx release changelog "$VERSION" --git-push
+          npx nx release changelog "$VERSION"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
