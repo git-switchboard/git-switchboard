@@ -37,6 +37,12 @@ const gitSwitchboard = cli('git-switchboard', {
         description: 'Skip PR enrichment even if a token is available',
         default: false,
       })
+      .option('ui', {
+        type: 'boolean',
+        description:
+          'Open in a native desktop window (via Electrobun) instead of the terminal TUI',
+        default: false,
+      })
       .command('pr', {
         description: 'Browse your open PRs, checkout and open in editor',
         builder: (c) =>
@@ -66,6 +72,12 @@ const gitSwitchboard = cli('git-switchboard', {
               type: 'string',
               description:
                 'Show all PRs for a specific repo (owner/name) instead of user PRs',
+            })
+            .option('ui', {
+              type: 'boolean',
+              description:
+                'Open in a native desktop window (via Electrobun) instead of the terminal TUI',
+              default: false,
             }),
         handler: async (args) => {
           // Dynamic imports
@@ -99,6 +111,79 @@ const gitSwitchboard = cli('git-switchboard', {
             );
             process.exit(1);
           }
+
+          // ── Electrobun UI path ──────────────────────────────
+          if (args.ui) {
+            const repoMode = args.repo ?? null;
+            const cachedPRs = await readCachedPRsSnapshot(token, repoMode ?? undefined);
+            console.log('Fetching PRs...');
+            const prResult = cachedPRs
+              ? cachedPRs.result
+              : await (repoMode
+                  ? fetchRepoPRs(token, repoMode)
+                  : fetchUserPRs(token));
+            const { prs } = prResult;
+            if (prs.length === 0) {
+              console.log('No open PRs found.');
+              process.exit(0);
+            }
+
+            const ciCacheObj: Record<string, import('./types.js').CIInfo> = {};
+            for (const [k, v] of prResult.ciCache) ciCacheObj[k] = v;
+            const reviewCacheObj: Record<string, import('./types.js').ReviewInfo> = {};
+            for (const [k, v] of prResult.reviewCache) reviewCacheObj[k] = v;
+            const mergeableCacheObj: Record<string, import('./types.js').MergeableStatus> = {};
+            for (const [k, v] of prResult.mergeableCache) mergeableCacheObj[k] = v;
+
+            const { buildPRDashboardHTML } = await import('./ui-html.js');
+            const { openPRDashboardWindow } = await import('./ui-window.js');
+
+            const html = buildPRDashboardHTML({
+              prs,
+              ciCache: ciCacheObj,
+              reviewCache: reviewCacheObj,
+              mergeableCache: mergeableCacheObj,
+              repoMode,
+            });
+
+            const result = await openPRDashboardWindow(html);
+            if (!result.selectedPR) process.exit(0);
+
+            // Attempt to checkout the selected PR's branch in a matching local repo
+            const localRepos = await scanForRepos(
+              args['search-root'],
+              args['search-depth']
+            );
+            const pr = result.selectedPR;
+            const matchingRepo = localRepos.find(
+              (r) =>
+                r.repoId === pr.repoId ||
+                (pr.forkRepoId != null && r.repoId === pr.forkRepoId)
+            );
+            if (matchingRepo) {
+              try {
+                execSync(`git fetch origin ${pr.headRef}`, {
+                  cwd: matchingRepo.path,
+                  stdio: 'pipe',
+                });
+                execSync(`git checkout ${pr.headRef}`, {
+                  cwd: matchingRepo.path,
+                  stdio: 'inherit',
+                });
+                console.log(`Checked out ${pr.headRef} in ${matchingRepo.path}`);
+              } catch {
+                console.error(`Failed to checkout ${pr.headRef}`);
+                process.exit(1);
+              }
+            } else {
+              console.log(
+                `No local clone found for ${pr.repoId}. PR: ${pr.url}`
+              );
+            }
+            return;
+          }
+
+          // ── Terminal TUI path ────────────────────────────────
 
           // Handle Ctrl+C cleanly — bypass React unmount to avoid yoga WASM crash
           const sigintHandler = () => {
@@ -362,15 +447,6 @@ const gitSwitchboard = cli('git-switchboard', {
       }
     }
 
-    // Handle Ctrl+C cleanly — bypass React unmount to avoid yoga WASM crash
-    process.on('SIGINT', () => process.exit(0));
-
-    // Launch TUI
-    const renderer = await createCliRenderer({ exitOnCtrlC: false, useMouse: true });
-
-    let selectedBranch: string | undefined;
-    const { promise, resolve } = Promise.withResolvers<void>();
-
     const fetchBranchesWithPRs = (
       includeRemote: boolean
     ): import('./types.js').BranchWithPR[] => {
@@ -379,6 +455,43 @@ const gitSwitchboard = cli('git-switchboard', {
         return { ...b, pr: existing?.pr };
       });
     };
+
+    // ── Electrobun UI path ──────────────────────────────────
+    if (args.ui) {
+      const { buildBranchPickerHTML } = await import('./ui-html.js');
+      const { openBranchPickerWindow } = await import('./ui-window.js');
+
+      const html = buildBranchPickerHTML({
+        branches,
+        currentUser,
+        showRemote: args.remote,
+      });
+
+      const result = await openBranchPickerWindow(html, fetchBranchesWithPRs);
+
+      if (result.selectedBranch) {
+        console.log(`Switching to branch: ${result.selectedBranch}`);
+        try {
+          execSync(`git checkout ${result.selectedBranch}`, {
+            stdio: 'inherit',
+          });
+        } catch {
+          process.exit(1);
+        }
+      }
+      return;
+    }
+
+    // ── Terminal TUI path ───────────────────────────────────
+
+    // Handle Ctrl+C cleanly — bypass React unmount to avoid yoga WASM crash
+    process.on('SIGINT', () => process.exit(0));
+
+    // Launch TUI
+    const renderer = await createCliRenderer({ exitOnCtrlC: false, useMouse: true });
+
+    let selectedBranch: string | undefined;
+    const { promise, resolve } = Promise.withResolvers<void>();
 
     const element = createElement(App, {
       branches,

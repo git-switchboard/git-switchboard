@@ -37,6 +37,7 @@
     "@types/react": "^19.0.0",
     "cli-forge": "^1.7.2",
     "clipboardy": "^5.3.1",
+    "electrobun": "^1.16.0",
     "gql.tada": "^1.9.2",
     "graphql": "^16.13.2",
     "react": "^19.0.0",
