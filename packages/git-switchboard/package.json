@@ -1,6 +1,6 @@
 {
   "name": "git-switchboard",
-  "version": "0.1.2-beta.0",
+  "version": "0.1.2-beta.2",
   "description": "Interactive TUI for browsing and checking out git branches",
   "author": {
     "name": "Craigory Coppola",

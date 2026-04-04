@@ -1,3 +1,17 @@
+## 0.1.2-beta.2 (2026-04-04)
+
+### 🚀 Features
+
+- add dry-run input to release workflow ([e9d01dc](https://github.com/git-switchboard/git-switchboard/commit/e9d01dc))
+
+### 🩹 Fixes
+
+- use windows-11-arm runner for windows-arm64 builds ([323da22](https://github.com/git-switchboard/git-switchboard/commit/323da22))
+
+### ❤️ Thank You
+
+- Claude
+
 ## 0.1.2-beta.0 (2026-04-04)
 
 ### 🩹 Fixes
