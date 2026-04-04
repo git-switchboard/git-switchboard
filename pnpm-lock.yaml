@@ -154,6 +154,15 @@ importers:
         specifier: ^5.0.8
         version: 5.0.12(@types/react@19.2.14)(react@19.2.4)
 
+  packages/ui:
+    devDependencies:
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.2
+      vite:
+        specifier: ^7.3.1
+        version: 7.3.1(@types/node@22.18.1)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3)
+
 packages:
 
   '@0no-co/graphql.web@1.2.0':

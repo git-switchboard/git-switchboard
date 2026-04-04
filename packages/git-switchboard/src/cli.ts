@@ -128,25 +128,15 @@ const gitSwitchboard = cli('git-switchboard', {
               process.exit(0);
             }
 
-            const ciCacheObj: Record<string, import('./types.js').CIInfo> = {};
-            for (const [k, v] of prResult.ciCache) ciCacheObj[k] = v;
-            const reviewCacheObj: Record<string, import('./types.js').ReviewInfo> = {};
-            for (const [k, v] of prResult.reviewCache) reviewCacheObj[k] = v;
-            const mergeableCacheObj: Record<string, import('./types.js').MergeableStatus> = {};
-            for (const [k, v] of prResult.mergeableCache) mergeableCacheObj[k] = v;
-
-            const { buildPRDashboardHTML } = await import('./ui-html.js');
             const { openPRDashboardWindow } = await import('./ui-window.js');
 
-            const html = buildPRDashboardHTML({
+            const result = await openPRDashboardWindow(
               prs,
-              ciCache: ciCacheObj,
-              reviewCache: reviewCacheObj,
-              mergeableCache: mergeableCacheObj,
+              new Map(prResult.ciCache),
+              new Map(prResult.reviewCache),
+              new Map(prResult.mergeableCache),
               repoMode,
-            });
-
-            const result = await openPRDashboardWindow(html);
+            );
             if (!result.selectedPR) process.exit(0);
 
             // Attempt to checkout the selected PR's branch in a matching local repo
@@ -458,16 +448,14 @@ const gitSwitchboard = cli('git-switchboard', {
 
     // ── Electrobun UI path ──────────────────────────────────
     if (args.ui) {
-      const { buildBranchPickerHTML } = await import('./ui-html.js');
       const { openBranchPickerWindow } = await import('./ui-window.js');
 
-      const html = buildBranchPickerHTML({
+      const result = await openBranchPickerWindow(
         branches,
         currentUser,
-        showRemote: args.remote,
-      });
-
-      const result = await openBranchPickerWindow(html, fetchBranchesWithPRs);
+        args.remote,
+        fetchBranchesWithPRs
+      );
 
       if (result.selectedBranch) {
         console.log(`Switching to branch: ${result.selectedBranch}`);

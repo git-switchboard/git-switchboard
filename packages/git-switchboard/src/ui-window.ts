@@ -1,34 +1,92 @@
 /**
  * Electrobun window integration.
  *
- * Opens a native desktop window (via Electrobun's BrowserWindow) instead of the
- * terminal TUI.  Communication from the webview back to the bun process uses a
- * custom `gsb://` URL scheme intercepted through the `will-navigate` event.
+ * Loads the built @git-switchboard/ui app and communicates via the
+ * bridge abstraction (gsb:// URL interception for outgoing messages,
+ * executeJavascript for incoming messages).
  */
 
-import type { BranchWithPR, UserPullRequest } from './types.js';
+import { resolve, dirname } from 'node:path';
+import { readFileSync } from 'node:fs';
+import type { BranchWithPR, UserPullRequest, CIInfo, ReviewInfo, MergeableStatus, CIStatus, ReviewStatus } from './types.js';
+
+// ─── Load the built UI HTML ──────────────────────────────────
+
+function loadUIHTML(): string {
+  // Resolve relative to this file's location in the source tree
+  const uiDistDir = resolve(dirname(import.meta.dir), '..', 'ui', 'dist');
+  return readFileSync(resolve(uiDistDir, 'index.html'), 'utf-8');
+}
 
 // ─── Signal parsing ──────────────────────────────────────────
 
-interface Signal {
-  action: string;
-  data: unknown;
+interface OutgoingMessage {
+  type: string;
+  data?: unknown;
 }
 
-function parseSignalURL(url: string): Signal | null {
+function parseSignalURL(url: string): OutgoingMessage | null {
   if (!url.startsWith('gsb://')) return null;
   try {
     const withoutScheme = url.slice('gsb://'.length);
     const qIndex = withoutScheme.indexOf('?d=');
-    const action = qIndex === -1 ? withoutScheme : withoutScheme.slice(0, qIndex);
-    const data =
-      qIndex === -1
-        ? {}
-        : JSON.parse(decodeURIComponent(withoutScheme.slice(qIndex + 3)));
-    return { action, data };
+    if (qIndex === -1) return null;
+    const payload = JSON.parse(decodeURIComponent(withoutScheme.slice(qIndex + 3)));
+    return payload as OutgoingMessage;
   } catch {
     return null;
   }
+}
+
+// ─── Pre-compute display data (matches ui package types) ─────
+
+const THEME_COLORS = {
+  textMuted: '#565f89',
+  green: '#9ece6a',
+  red: '#f7768e',
+  orange: '#ff9e64',
+  yellow: '#e0af68',
+};
+
+function ciStatusColor(status: CIStatus): string {
+  switch (status) {
+    case 'passing': return THEME_COLORS.green;
+    case 'failing': return THEME_COLORS.red;
+    case 'mixed': return THEME_COLORS.orange;
+    case 'pending': return THEME_COLORS.yellow;
+    default: return THEME_COLORS.textMuted;
+  }
+}
+
+function reviewStatusColor(status: ReviewStatus): string {
+  switch (status) {
+    case 'approved': return THEME_COLORS.green;
+    case 'changes-requested': return THEME_COLORS.red;
+    case 're-review-needed': return THEME_COLORS.yellow;
+    default: return THEME_COLORS.textMuted;
+  }
+}
+
+function reviewStatusLabel(status: ReviewStatus | undefined): string {
+  if (!status) return '\u2026';
+  switch (status) {
+    case 'approved': return '\u2713 Approved';
+    case 'changes-requested': return '\u2717 Changes req';
+    case 're-review-needed': return '~ Re-review';
+    default: return 'Needs review';
+  }
+}
+
+function ciStatusLabel(ci: CIInfo | undefined): string {
+  if (!ci || ci.checks.length === 0) return '?';
+  const pass = ci.checks.filter(c => c.status === 'completed' && ['success', 'skipped', 'neutral'].includes(c.conclusion ?? '')).length;
+  const fail = ci.checks.filter(c => c.status === 'completed' && c.conclusion === 'failure').length;
+  const pending = ci.checks.filter(c => c.status !== 'completed').length;
+  const parts: string[] = [];
+  if (pass > 0) parts.push(pass + '\u2713');
+  if (fail > 0) parts.push(fail + '\u2717');
+  if (pending > 0) parts.push(pending + '\u231B');
+  return parts.join(' ');
 }
 
 // ─── Branch picker window ────────────────────────────────────
@@ -38,12 +96,15 @@ export interface BranchPickerWindowResult {
 }
 
 export async function openBranchPickerWindow(
-  html: string,
+  branches: BranchWithPR[],
+  currentUser: string,
+  showRemote: boolean,
   fetchBranches: (includeRemote: boolean) => BranchWithPR[]
 ): Promise<BranchPickerWindowResult> {
   const { BrowserWindow } = await import('electrobun/bun');
+  const html = loadUIHTML();
 
-  const { promise, resolve } =
+  const { promise, resolve: done } =
     Promise.withResolvers<BranchPickerWindowResult>();
 
   const win = new BrowserWindow({
@@ -53,38 +114,53 @@ export async function openBranchPickerWindow(
     html,
   });
 
+  // Once the DOM is ready, push init data
+  win.webview.on('dom-ready', () => {
+    const initData = JSON.stringify({
+      view: 'branch-picker',
+      branches,
+      currentUser,
+      showRemote,
+    });
+    win.webview.executeJavascript(`window.__gsb_receive({ type: 'init', data: ${initData} })`);
+  });
+
+  // Mark the window as electrobun mode before scripts run
+  win.webview.executeJavascript(`window.__electrobun_mode = true`);
+
   win.webview.on('will-navigate', (event: unknown) => {
     const { url } = event as { url: string };
-    const sig = parseSignalURL(url);
-    if (!sig) return;
+    const msg = parseSignalURL(url);
+    if (!msg) return;
 
-    switch (sig.action) {
+    switch (msg.type) {
       case 'select-branch': {
-        const branch = sig.data as BranchWithPR;
+        const branch = msg.data as BranchWithPR;
         const name = branch.isRemote
           ? branch.name.replace(/^origin\//, '')
           : branch.name;
         win.close();
-        resolve({ selectedBranch: name });
+        done({ selectedBranch: name });
         break;
       }
       case 'toggle-remote': {
-        const { showRemote } = sig.data as { showRemote: boolean };
-        const updated = fetchBranches(showRemote);
+        const { showRemote: newRemote } = msg.data as { showRemote: boolean };
+        const updated = fetchBranches(newRemote);
         const json = JSON.stringify(updated);
-        win.webview.executeJavascript(`window.__updateBranches(${json})`);
+        win.webview.executeJavascript(
+          `window.__gsb_receive({ type: 'update-branches', data: ${json} })`
+        );
         break;
       }
       case 'exit':
         win.close();
-        resolve({ selectedBranch: null });
+        done({ selectedBranch: null });
         break;
     }
   });
 
   win.on('close', () => {
-    // Resolve if the user closes the window via the OS chrome
-    resolve({ selectedBranch: null });
+    done({ selectedBranch: null });
   });
 
   return promise;
@@ -97,12 +173,34 @@ export interface PRDashboardWindowResult {
 }
 
 export async function openPRDashboardWindow(
-  html: string
+  prs: UserPullRequest[],
+  ciCache: Map<string, CIInfo>,
+  reviewCache: Map<string, ReviewInfo>,
+  mergeableCache: Map<string, MergeableStatus>,
+  repoMode: string | null
 ): Promise<PRDashboardWindowResult> {
   const { BrowserWindow } = await import('electrobun/bun');
+  const html = loadUIHTML();
 
-  const { promise, resolve } =
+  const { promise, resolve: done } =
     Promise.withResolvers<PRDashboardWindowResult>();
+
+  // Pre-compute display data for the UI
+  const prDisplayData = prs.map(pr => {
+    const key = `${pr.repoId}#${pr.number}`;
+    const ci = ciCache.get(key);
+    const review = reviewCache.get(key);
+    const merge = mergeableCache.get(key);
+    return {
+      ...pr,
+      ciLabel: ciStatusLabel(ci),
+      ciColor: ci ? ciStatusColor(ci.status) : THEME_COLORS.textMuted,
+      reviewLabel: reviewStatusLabel(review?.status),
+      reviewColor: review ? reviewStatusColor(review.status) : THEME_COLORS.textMuted,
+      mergeLabel: merge === 'CONFLICTING' ? '\u2717 Conflict' : '',
+      mergeColor: merge === 'CONFLICTING' ? THEME_COLORS.red : THEME_COLORS.textMuted,
+    };
+  });
 
   const win = new BrowserWindow({
     title: 'git-switchboard pr',
@@ -111,27 +209,38 @@ export async function openPRDashboardWindow(
     html,
   });
 
+  win.webview.on('dom-ready', () => {
+    const initData = JSON.stringify({
+      view: 'pr-dashboard',
+      prs: prDisplayData,
+      repoMode,
+    });
+    win.webview.executeJavascript(`window.__gsb_receive({ type: 'init', data: ${initData} })`);
+  });
+
+  win.webview.executeJavascript(`window.__electrobun_mode = true`);
+
   win.webview.on('will-navigate', (event: unknown) => {
     const { url } = event as { url: string };
-    const sig = parseSignalURL(url);
-    if (!sig) return;
+    const msg = parseSignalURL(url);
+    if (!msg) return;
 
-    switch (sig.action) {
+    switch (msg.type) {
       case 'select-pr': {
-        const pr = sig.data as UserPullRequest;
+        const pr = msg.data as UserPullRequest;
         win.close();
-        resolve({ selectedPR: pr });
+        done({ selectedPR: pr });
         break;
       }
       case 'exit':
         win.close();
-        resolve({ selectedPR: null });
+        done({ selectedPR: null });
         break;
     }
   });
 
   win.on('close', () => {
-    resolve({ selectedPR: null });
+    done({ selectedPR: null });
   });
 
   return promise;

@@ -7,6 +7,7 @@ const GITHUB_URL = 'https://github.com/git-switchboard/git-switchboard';
 
 const NAV_LINKS = [
   { label: 'Docs', href: '/docs' },
+  { label: 'Demo', href: '/demo' },
   { label: 'GitHub', href: GITHUB_URL, external: true },
 ];
 
