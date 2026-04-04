@@ -112,11 +112,11 @@ importers:
         specifier: ^22.0.0
         version: 22.0.1
       '@opentui/core':
-        specifier: ^0.1.95
-        version: 0.1.95(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)
+        specifier: ^0.1.96
+        version: 0.1.96(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)
       '@opentui/react':
-        specifier: ^0.1.95
-        version: 0.1.95(react-devtools-core@7.0.1)(react@19.2.4)(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)(ws@8.20.0)
+        specifier: ^0.1.96
+        version: 0.1.96(react-devtools-core@7.0.1)(react@19.2.4)(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)(ws@8.20.0)
       '@types/node':
         specifier: 22.18.1
         version: 22.18.1
@@ -1191,43 +1191,43 @@ packages:
   '@octokit/types@16.0.0':
     resolution: {integrity: sha512-sKq+9r1Mm4efXW1FCk7hFSeJo4QKreL/tTbR0rz/qx/r1Oa2VV83LTA/H/MuCOX7uCIJmQVRKBcbmWoySjAnSg==}
 
-  '@opentui/core-darwin-arm64@0.1.95':
-    resolution: {integrity: sha512-92joqr0ucGaIBCl9uYhe5DwAPbgGMTaCsCeY8Yf3VQ72wjGbOTwnC1TvU5wC6bUmiyqfijCqMyuUnj83teIVVQ==}
+  '@opentui/core-darwin-arm64@0.1.96':
+    resolution: {integrity: sha512-909i75uhLmlUFCK3LK4iICaymiA7QaB45X9IDX94KaDyHL3Y1PgYTzoRZLJlqeOfOBjVfEjMAh/zA5XexWDMpA==}
     cpu: [arm64]
     os: [darwin]
 
-  '@opentui/core-darwin-x64@0.1.95':
-    resolution: {integrity: sha512-+TLL3Kp3x7DTWEAkCAYe+RjRhl58QndoeXMstZNS8GQyrjSpUuivzwidzAz0HZK9SbZJfvaxZmXsToAIdI2fag==}
+  '@opentui/core-darwin-x64@0.1.96':
+    resolution: {integrity: sha512-qukQjjScKldZAfgY9qVMPv4ZA6Ko7oXjNBUcSMGDgUiOitH6INT1cJQVUnAIu14DY15yEl08MEQ8soLDaSAHcg==}
     cpu: [x64]
     os: [darwin]
 
-  '@opentui/core-linux-arm64@0.1.95':
-    resolution: {integrity: sha512-dAYeRqh7P8o0xFZleDDR1Abt4gSvCISqw6syOrbH3dl7pMbVdGgzA5stM9jqMgdPUVE7Ngumo17C23ehkGv93A==}
+  '@opentui/core-linux-arm64@0.1.96':
+    resolution: {integrity: sha512-9ktmyS24nfSmlFPX0GMWEaEYSjtEPbRn59y4KBhHVhzPsl+YKlzstyHomTBu51IAPu6oL3+t3Lu4gU+k1gFOQQ==}
     cpu: [arm64]
     os: [linux]
 
-  '@opentui/core-linux-x64@0.1.95':
-    resolution: {integrity: sha512-O54TCgK8E7j2NKrDXUOTZqO4sb8JjeAfnhrStxAMMEw4RFCGWx3p3wLesqR16uKfFFJFDyoh2OWZ698tO88EAA==}
+  '@opentui/core-linux-x64@0.1.96':
+    resolution: {integrity: sha512-m2pVhIdtqFYO+QSMc2VZgSSCNxRGPL+U+aKYYbvJjPzqCnIkHB9eO0ePU4b3t+V7GaWCcCP3vDCy3g1J5/FreA==}
     cpu: [x64]
     os: [linux]
 
-  '@opentui/core-win32-arm64@0.1.95':
-    resolution: {integrity: sha512-T1RlZ6U/95eYDN6rUm4SLOVA5LBR7iL3TcBroQhV/883bVczXIBPhriEXQayup5FsAemnQba1BzMNvy6128SUw==}
+  '@opentui/core-win32-arm64@0.1.96':
+    resolution: {integrity: sha512-OybZ4jvX6H6RKYyGpZqzy3ZrwKaxaXKWwFsmG6pC2J+GRhf5oCIIEy3Y5573h7zy1cq3T9cb225KzBANq9j5BA==}
     cpu: [arm64]
     os: [win32]
 
-  '@opentui/core-win32-x64@0.1.95':
-    resolution: {integrity: sha512-lH2FHO0HSP2xWT+ccoz0BkLYFsMm7e6OYOh63BUHHh5b7ispnzP4aTyxiaLWrfJwdL0M9rp5cLIY32bhBKF2oA==}
+  '@opentui/core-win32-x64@0.1.96':
+    resolution: {integrity: sha512-3YKjg90j14I7dJ94yN0pAYcTf4ogCoohv6ptRdG96XUyzrYhQiDMP398vCIOMjaLBjtMtFmTxSf+W46zm96BCQ==}
     cpu: [x64]
     os: [win32]
 
-  '@opentui/core@0.1.95':
-    resolution: {integrity: sha512-Ha73I+PPSy6Jk8CTZgdGRHU+nnmrPAs7m6w0k6ge1/kWbcNcZB0lY67sWQMdoa6bSINQMNWg7SjbNCC9B/0exg==}
+  '@opentui/core@0.1.96':
+    resolution: {integrity: sha512-VBO5zRiGM6fhibG3AwTMpf0JgbYWG0sXP5AsSJAYw8tQ18OCPj+EDLXGZ1DFmMnJWEi+glKYjmqnIp4yRCqi+Q==}
     peerDependencies:
       web-tree-sitter: 0.25.10
 
-  '@opentui/react@0.1.95':
-    resolution: {integrity: sha512-12qhyhFD+2SJxfilqBsn6UctglAosX0AXhAXXsqyyubzTqmWObuZm+ic2qt9Palib+3LYnYhaa2jVNg5FnmK1A==}
+  '@opentui/react@0.1.96':
+    resolution: {integrity: sha512-hl5MHFoT9aNcNQEp287mujYgIBR9PEE/LYCMzSWWqdCojteJSAZ+Wb6jzvcLOvybGCJjHobTshNV3zAM4R2P2w==}
     peerDependencies:
       react: '>=19.0.0'
       react-devtools-core: ^7.0.1
@@ -4641,25 +4641,25 @@ snapshots:
     dependencies:
       '@octokit/openapi-types': 27.0.0
 
-  '@opentui/core-darwin-arm64@0.1.95':
+  '@opentui/core-darwin-arm64@0.1.96':
     optional: true
 
-  '@opentui/core-darwin-x64@0.1.95':
+  '@opentui/core-darwin-x64@0.1.96':
     optional: true
 
-  '@opentui/core-linux-arm64@0.1.95':
+  '@opentui/core-linux-arm64@0.1.96':
     optional: true
 
-  '@opentui/core-linux-x64@0.1.95':
+  '@opentui/core-linux-x64@0.1.96':
     optional: true
 
-  '@opentui/core-win32-arm64@0.1.95':
+  '@opentui/core-win32-arm64@0.1.96':
     optional: true
 
-  '@opentui/core-win32-x64@0.1.95':
+  '@opentui/core-win32-x64@0.1.96':
     optional: true
 
-  '@opentui/core@0.1.95(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)':
+  '@opentui/core@0.1.96(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)':
     dependencies:
       bun-ffi-structs: 0.1.2(typescript@5.9.2)
       diff: 8.0.2
@@ -4669,12 +4669,12 @@ snapshots:
       yoga-layout: 3.2.1
     optionalDependencies:
       '@dimforge/rapier2d-simd-compat': 0.17.3
-      '@opentui/core-darwin-arm64': 0.1.95
-      '@opentui/core-darwin-x64': 0.1.95
-      '@opentui/core-linux-arm64': 0.1.95
-      '@opentui/core-linux-x64': 0.1.95
-      '@opentui/core-win32-arm64': 0.1.95
-      '@opentui/core-win32-x64': 0.1.95
+      '@opentui/core-darwin-arm64': 0.1.96
+      '@opentui/core-darwin-x64': 0.1.96
+      '@opentui/core-linux-arm64': 0.1.96
+      '@opentui/core-linux-x64': 0.1.96
+      '@opentui/core-win32-arm64': 0.1.96
+      '@opentui/core-win32-x64': 0.1.96
       bun-webgpu: 0.1.5
       planck: 1.4.3(stage-js@1.0.1)
       three: 0.177.0
@@ -4682,9 +4682,9 @@ snapshots:
       - stage-js
       - typescript
 
-  '@opentui/react@0.1.95(react-devtools-core@7.0.1)(react@19.2.4)(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)(ws@8.20.0)':
+  '@opentui/react@0.1.96(react-devtools-core@7.0.1)(react@19.2.4)(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)(ws@8.20.0)':
     dependencies:
-      '@opentui/core': 0.1.95(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)
+      '@opentui/core': 0.1.96(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)
       react: 19.2.4
       react-devtools-core: 7.0.1
       react-reconciler: 0.32.0(react@19.2.4)
