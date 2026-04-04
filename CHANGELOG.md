@@ -1,3 +1,16 @@
+## 0.1.1 (2026-04-04)
+
+### 🩹 Fixes
+
+- replace unsupported macos-13 runner with macos-15 ([217ce84](https://github.com/git-switchboard/git-switchboard/commit/217ce84))
+- drop windows-arm64 build target ([4176dde](https://github.com/git-switchboard/git-switchboard/commit/4176dde))
+- restore windows-arm64 target, update @opentui to 0.1.96 ([e80dddc](https://github.com/git-switchboard/git-switchboard/commit/e80dddc))
+- use macos-15-intel runner for darwin-x64 builds ([b751b78](https://github.com/git-switchboard/git-switchboard/commit/b751b78))
+
+### ❤️ Thank You
+
+- Claude
+
 ## 0.0.1-beta.3 (2026-04-04)
 
 ### 🩹 Fixes
