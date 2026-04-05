@@ -1,3 +1,17 @@
+## 0.0.0-beta.12 (2026-04-05)
+
+### 🚀 Features
+
+- validate release inputs and pass npm dist-tag for prereleases ([396cf3f](https://github.com/git-switchboard/git-switchboard/commit/396cf3f))
+
+### 🩹 Fixes
+
+- pin nuget.exe to v6.12.2 for Mono compatibility ([2ad06a6](https://github.com/git-switchboard/git-switchboard/commit/2ad06a6))
+
+### ❤️ Thank You
+
+- Claude
+
 ## 0.0.0-beta.8 (2026-04-05)
 
 This was a version bump only, there were no code changes.

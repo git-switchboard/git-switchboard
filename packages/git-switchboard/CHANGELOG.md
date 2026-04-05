@@ -1,3 +1,7 @@
+## 0.0.0-beta.12 (2026-04-05)
+
+This was a version bump only for git-switchboard to align it with other projects, there were no code changes.
+
 ## 0.0.0-beta.8 (2026-04-05)
 
 This was a version bump only for git-switchboard to align it with other projects, there were no code changes.
