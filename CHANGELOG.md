@@ -1,3 +1,22 @@
+## 0.0.0-beta.7 (2026-04-05)
+
+### 🚀 Features
+
+- validate release inputs and pass npm dist-tag for prereleases ([396cf3f](https://github.com/git-switchboard/git-switchboard/commit/396cf3f))
+
+### 🩹 Fixes
+
+- pin nuget.exe to v6.12.2 for Mono compatibility ([2ad06a6](https://github.com/git-switchboard/git-switchboard/commit/2ad06a6))
+- move all git config to CLI flags, remove from nx.json ([3df870a](https://github.com/git-switchboard/git-switchboard/commit/3df870a))
+- restore git config under version/changelog in nx.json ([2f6ffd1](https://github.com/git-switchboard/git-switchboard/commit/2f6ffd1))
+- replace Mono + nuget.exe with nuget/setup-nuget for Chocolatey ([ad006c7](https://github.com/git-switchboard/git-switchboard/commit/ad006c7))
+- build .nupkg as zip instead of using nuget.exe ([9100b7e](https://github.com/git-switchboard/git-switchboard/commit/9100b7e))
+- use dotnet pack + dotnet nuget push for Chocolatey ([6d7101e](https://github.com/git-switchboard/git-switchboard/commit/6d7101e))
+
+### ❤️ Thank You
+
+- Claude
+
 ## 0.0.1-prev.2 (2026-04-05)
 
 ### 🚀 Features
