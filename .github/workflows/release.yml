@@ -86,9 +86,9 @@ jobs:
       - name: Version and changelog
         run: |
           DRY_RUN=${{ github.event.inputs.dry-run == 'true' && '--dry-run' || '' }}
-          npx nx release version ${{ github.event.inputs.specifier || '' }} $DRY_RUN
+          npx nx release version ${{ github.event.inputs.specifier || '' }} $DRY_RUN --git-commit false --git-tag false --stage-changes
           VERSION=$(node -p "require('./packages/git-switchboard/package.json').version")
-          npx nx release changelog "$VERSION" $DRY_RUN
+          npx nx release changelog "$VERSION" $DRY_RUN --git-commit --git-tag --git-push --git-commit-message "chore(release): release {version} [skip ci]"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
