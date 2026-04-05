@@ -220,6 +220,8 @@ jobs:
           client-payload: '{"version": "${{ needs.version.outputs.version }}", "tag": "${{ needs.version.outputs.tag }}"}'
 
       # Publish Chocolatey package
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
       - name: Publish to Chocolatey
         run: |
           VERSION="${{ needs.version.outputs.version }}"
@@ -229,13 +231,8 @@ jobs:
           mkdir -p /tmp/choco-staging/tools
           sed "s/{{VERSION}}/$VERSION/g" packaging/choco/git-switchboard.nuspec > /tmp/choco-staging/git-switchboard.nuspec
           sed -e "s|{{URL}}|$WINDOWS_URL|g" -e "s/{{CHECKSUM}}/$CHECKSUM/g" packaging/choco/tools/chocolateyinstall.ps1 > /tmp/choco-staging/tools/chocolateyinstall.ps1
-          # Install choco on ubuntu via mono
-          sudo apt-get install -y mono-complete
-          wget -q https://dist.nuget.org/win-x86-commandline/v6.12.2/nuget.exe -O /tmp/nuget.exe
           cd /tmp/choco-staging
-          mono /tmp/nuget.exe pack git-switchboard.nuspec
-          # Push via Chocolatey API using curl
-          curl -X PUT \
-            -H "X-NuGet-ApiKey: ${{ secrets.CHOCO_API_KEY }}" \
-            -F "package=@git-switchboard.$VERSION.nupkg" \
-            https://push.chocolatey.org/api/v2/package
+          nuget pack git-switchboard.nuspec
+          dotnet nuget push git-switchboard.$VERSION.nupkg \
+            --api-key ${{ secrets.CHOCO_API_KEY }} \
+            --source https://push.chocolatey.org/api/v2/package
