@@ -18,13 +18,48 @@ permissions:
   id-token: write
 
 jobs:
+  # Phase 0: Validate inputs
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate specifier
+        if: github.event.inputs.specifier != ''
+        run: |
+          SPECIFIER="${{ github.event.inputs.specifier }}"
+
+          # Allow semver keywords
+          if [[ "$SPECIFIER" =~ ^(major|minor|patch|premajor|preminor|prepatch|prerelease)$ ]]; then
+            echo "Valid semver keyword: $SPECIFIER"
+            exit 0
+          fi
+
+          # Validate explicit semver: 1.2.3 or 1.2.3-tag.0
+          if ! [[ "$SPECIFIER" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$ ]]; then
+            echo "::error::Invalid specifier '$SPECIFIER'. Must be a semver keyword (major, minor, patch, premajor, preminor, prepatch, prerelease) or an explicit version (e.g. 1.2.3, 1.2.3-beta.0)."
+            exit 1
+          fi
+
+          # Check that the tag doesn't already exist
+          TAG="v$SPECIFIER"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag '$TAG' already exists. Choose a different version."
+            exit 1
+          fi
+
+          echo "Valid specifier: $SPECIFIER"
+
   # Phase 1: Version + Changelog
   version:
+    needs: validate
     runs-on: ubuntu-latest
     outputs:
       commit_sha: ${{ steps.release-commit.outputs.sha }}
       version: ${{ steps.release-version.outputs.version }}
       tag: ${{ steps.release-version.outputs.tag }}
+      npm_tag: ${{ steps.release-version.outputs.npm_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -63,6 +98,12 @@ jobs:
           VERSION=$(node -p "require('./packages/git-switchboard/package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          # Extract npm dist-tag from prerelease identifier (e.g. 1.2.3-beta.0 -> beta)
+          if [[ "$VERSION" =~ -([a-zA-Z]+) ]]; then
+            echo "npm_tag=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
+          fi
       - name: Capture release commit SHA
         id: release-commit
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -167,7 +208,7 @@ jobs:
 
       # Publish to npm
       - name: Publish to npm
-        run: npx nx release publish
+        run: npx nx release publish --tag ${{ needs.version.outputs.npm_tag }}
 
       # Update Homebrew tap
       - name: Update Homebrew tap
