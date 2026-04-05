@@ -219,7 +219,23 @@ jobs:
           event-type: release
           client-payload: '{"version": "${{ needs.version.outputs.version }}", "tag": "${{ needs.version.outputs.tag }}"}'
 
-      # Publish Chocolatey package
+  # Phase 4: Publish to Chocolatey (separate job for independent retry)
+  publish-choco:
+    if: github.event.inputs.dry-run != 'true'
+    needs: [version, publish]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.commit_sha }}
+
+      # Download native binaries (need windows exe for checksum)
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages/git-switchboard/native-builds
+          merge-multiple: true
+
       - name: Publish to Chocolatey
         run: |
           VERSION="${{ needs.version.outputs.version }}"
