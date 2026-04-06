@@ -6,6 +6,15 @@
   "scripts": {
     "e2e": "vitest run --config vitest.config.ts"
   },
+  "nx": {
+    "implicitDependencies": ["git-switchboard"],
+    "targets": {
+      "e2e": {
+        "dependsOn": ["^build"],
+        "cache": false
+      }
+    }
+  },
   "devDependencies": {
     "node-pty": "1.2.0-beta.12",
     "verdaccio": "^6.4.0",

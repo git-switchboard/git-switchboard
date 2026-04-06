@@ -25,7 +25,7 @@ jobs:
         run: npm install -g npm@11.11.0 && npm install -g npm@latest
 
       - run: pnpm install --frozen-lockfile
-      - run: npx nx run-many -t typecheck,build,validate-readme
+      - run: npx nx run-many -t typecheck,build,validate-readme,e2e
 
   build-native-smoke:
     runs-on: ubuntu-latest
@@ -42,28 +42,9 @@ jobs:
       - name: Upgrade npm for OIDC support
         # Two-step upgrade: npm 10.9.7 (bundled with Node 22.22.2) crashes
         # self-upgrading directly to npm@latest due to npm/cli#9151.
-        # First upgrade to 11.11.0 (which still bundles promise-retry),
-        # then to latest.
+        # First upgrade to 11.11.0 && npm install -g npm@latest
         run: npm install -g npm@11.11.0 && npm install -g npm@latest
 
       - run: pnpm install --frozen-lockfile
       - run: npx nx run git-switchboard:build:native -- bun-linux-x64
       - run: ls -lh packages/git-switchboard/native-builds/
-
-  e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - uses: pnpm/action-setup@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org/
-
-      - name: Upgrade npm for OIDC support
-        run: npm install -g npm@11.11.0 && npm install -g npm@latest
-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @git-switchboard/e2e-git-switchboard e2e

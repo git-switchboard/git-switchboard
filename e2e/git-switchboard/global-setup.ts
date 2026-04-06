@@ -1,7 +1,9 @@
 /**
  * Vitest globalSetup for e2e tests.
  *
- * - Builds git-switchboard
+ * Assumes `nx e2e` has already built git-switchboard via the
+ * `dependsOn: ["^build"]` target configuration.
+ *
  * - Starts an ephemeral verdaccio registry
  * - Publishes the built package to it
  * - Exposes the registry URL so tests can `bunx git-switchboard`
@@ -48,11 +50,8 @@ export async function setup() {
   const port = pickPort();
   const registryUrl = `http://localhost:${port}`;
 
-  // 1. Build
-  console.log("[e2e] Building git-switchboard...");
-  execSync("bun run build", { cwd: PKG_DIR, stdio: "inherit" });
-
-  // 2. Start verdaccio with ephemeral storage
+  // 1. Start verdaccio with ephemeral storage
+  //    (build is already done by nx via dependsOn: ["^build"])
   verdaccioDir = join(tmpdir(), `git-switchboard-verdaccio-${port}`);
   mkdirSync(verdaccioDir, { recursive: true });
   copyFileSync(
@@ -77,7 +76,7 @@ export async function setup() {
   await waitForHttp(`${registryUrl}/-/ping`);
   console.log(`[e2e] Verdaccio ready at ${registryUrl}`);
 
-  // 3. Create user + get auth token
+  // 2. Create user + get auth token
   const resp = await fetch(
     `${registryUrl}/-/user/org.couchdb.user:e2e`,
     {
@@ -93,7 +92,7 @@ export async function setup() {
     );
   }
 
-  // 4. Publish to verdaccio
+  // 3. Publish to verdaccio
   console.log("[e2e] Publishing to local registry...");
   const npmrc = join(verdaccioDir, ".npmrc");
   writeFileSync(
