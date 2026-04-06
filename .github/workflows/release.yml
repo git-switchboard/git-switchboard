@@ -222,7 +222,7 @@ jobs:
   # Phase 4: Publish to Chocolatey (separate job for independent retry)
   publish-choco:
     if: github.event.inputs.dry-run != 'true'
-    needs: [version, publish]
+    needs: [version, build-native]
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
