@@ -21,7 +21,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PKG_DIR = resolve(__dirname, "..");
+const PKG_DIR = resolve(__dirname, "../../packages/git-switchboard");
 
 let verdaccioProc: ChildProcess | undefined;
 let verdaccioDir: string | undefined;

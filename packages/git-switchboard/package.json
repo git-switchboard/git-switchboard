@@ -26,8 +26,7 @@
   "scripts": {
     "dev": "bun run src/cli.ts",
     "build": "bun build src/cli.ts --target=bun --outdir=dist --entry-naming='git-switchboard.js' --banner='#!/usr/bin/env bun'",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "e2e": "vitest run --config vitest.e2e.config.ts"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@octokit/graphql-schema": "^15.26.1",
@@ -40,13 +39,10 @@
     "clipboardy": "^5.3.1",
     "gql.tada": "^1.9.2",
     "graphql": "^16.13.2",
-    "node-pty": "1.2.0-beta.12",
     "react": "^19.0.0",
     "tslib": "^2.5.0",
     "tsx": "^4.21.0",
     "typescript": "5.9.2",
-    "verdaccio": "^6.4.0",
-    "vitest": "^4.1.2",
     "zustand": "^5.0.8"
   },
   "files": [

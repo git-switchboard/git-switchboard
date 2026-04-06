@@ -4,7 +4,9 @@
   "private": true,
   "license": "MIT",
   "packageManager": "pnpm@10.24.0",
-  "scripts": {},
+  "scripts": {
+    "e2e": "vitest run --config vitest.e2e.config.ts"
+  },
   "nx": {
     "targets": {
       "validate-readme": {
@@ -17,9 +19,12 @@
     "@nx/js": "^22.5.0",
     "cli-forge": "^1.7.2",
     "ejs": "^5.0.1",
+    "node-pty": "1.2.0-beta.12",
     "nx": "^22.5.0",
     "nx-github-pages": "^1.2.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "verdaccio": "^6.4.0",
+    "vitest": "^4.1.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
