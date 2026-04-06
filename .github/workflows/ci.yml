@@ -49,3 +49,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: npx nx run git-switchboard:build:native -- bun-linux-x64
       - run: ls -lh packages/git-switchboard/native-builds/
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org/
+
+      - name: Upgrade npm for OIDC support
+        run: npm install -g npm@11.11.0 && npm install -g npm@latest
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter git-switchboard e2e
