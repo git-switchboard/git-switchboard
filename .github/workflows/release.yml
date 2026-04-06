@@ -7,19 +7,59 @@ on:
         description: "Version bump (major, minor, patch, or explicit like 1.2.3)"
         required: false
         type: string
-  push:
-    tags:
-      - "git-switchboard@*"
+      dry-run:
+        description: "Dry run (skip publish, pass --dry-run to nx commands)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
   id-token: write
 
 jobs:
-  # Phase 1: Version + Changelog (manual dispatch only)
-  version:
-    if: github.event_name == 'workflow_dispatch'
+  # Phase 0: Validate inputs
+  validate:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate specifier
+        if: github.event.inputs.specifier != ''
+        run: |
+          SPECIFIER="${{ github.event.inputs.specifier }}"
+
+          # Allow semver keywords
+          if [[ "$SPECIFIER" =~ ^(major|minor|patch|premajor|preminor|prepatch|prerelease)$ ]]; then
+            echo "Valid semver keyword: $SPECIFIER"
+            exit 0
+          fi
+
+          # Validate explicit semver: 1.2.3 or 1.2.3-tag.0
+          if ! [[ "$SPECIFIER" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$ ]]; then
+            echo "::error::Invalid specifier '$SPECIFIER'. Must be a semver keyword (major, minor, patch, premajor, preminor, prepatch, prerelease) or an explicit version (e.g. 1.2.3, 1.2.3-beta.0)."
+            exit 1
+          fi
+
+          # Check that the tag doesn't already exist
+          TAG="v$SPECIFIER"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag '$TAG' already exists. Choose a different version."
+            exit 1
+          fi
+
+          echo "Valid specifier: $SPECIFIER"
+
+  # Phase 1: Version + Changelog
+  version:
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.release-commit.outputs.sha }}
+      version: ${{ steps.release-version.outputs.version }}
+      tag: ${{ steps.release-version.outputs.tag }}
+      npm_tag: ${{ steps.release-version.outputs.npm_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,17 +85,32 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Version and changelog
         run: |
-          npx nx release version ${{ inputs.specifier && format('--specifier {0}', inputs.specifier) || '' }}
-          npx nx release changelog
+          DRY_RUN=${{ github.event.inputs.dry-run == 'true' && '--dry-run' || '' }}
+          npx nx release version ${{ github.event.inputs.specifier || '' }} $DRY_RUN
+          VERSION=$(node -p "require('./packages/git-switchboard/package.json').version")
+          npx nx release changelog "$VERSION" $DRY_RUN
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Push version commit and tags
-        run: git push --follow-tags
+      - name: Capture release outputs
+        id: release-version
+        run: |
+          VERSION=$(node -p "require('./packages/git-switchboard/package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          # Extract npm dist-tag from prerelease identifier (e.g. 1.2.3-beta.0 -> beta)
+          if [[ "$VERSION" =~ -([a-zA-Z]+) ]]; then
+            echo "npm_tag=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Capture release commit SHA
+        id: release-commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   # Phase 2: Build native binaries on matching platforms
   build-native:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/git-switchboard@')
+    needs: version
     strategy:
       matrix:
         include:
@@ -64,7 +119,7 @@ jobs:
             os: macos-latest
           - target: bun-darwin-x64
             output: git-switchboard-darwin-x64
-            os: macos-13
+            os: macos-15-intel
           - target: bun-linux-x64
             output: git-switchboard-linux-x64
             os: ubuntu-latest
@@ -76,10 +131,12 @@ jobs:
             os: windows-latest
           - target: bun-windows-arm64
             output: git-switchboard-windows-arm64.exe
-            os: windows-latest
+            os: windows-11-arm
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.commit_sha }}
       - uses: oven-sh/setup-bun@v2
       - uses: pnpm/action-setup@v4
       - name: Set up Node.js
@@ -101,12 +158,13 @@ jobs:
 
   # Phase 3: Publish (after all native builds complete)
   publish:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/git-switchboard@')
-    needs: build-native
+    if: github.event.inputs.dry-run != 'true'
+    needs: [version, build-native]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.version.outputs.commit_sha }}
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - uses: pnpm/action-setup@v4
@@ -123,11 +181,6 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Extract version from tag (git-switchboard@1.2.3 -> 1.2.3)
-      - name: Extract version
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#git-switchboard@}" >> "$GITHUB_OUTPUT"
-
       # Build JS bundle
       - name: Build JS bundle
         run: npx nx run git-switchboard:build
@@ -142,7 +195,7 @@ jobs:
       - name: Upload to GitHub Release
         run: |
           cd packages/git-switchboard
-          gh release upload "${{ github.ref_name }}" \
+          gh release upload "${{ needs.version.outputs.tag }}" \
             native-builds/git-switchboard-darwin-arm64 \
             native-builds/git-switchboard-darwin-x64 \
             native-builds/git-switchboard-linux-x64 \
@@ -155,7 +208,7 @@ jobs:
 
       # Publish to npm
       - name: Publish to npm
-        run: npx nx release publish
+        run: npx nx release publish --tag ${{ needs.version.outputs.npm_tag }}
 
       # Update Homebrew tap
       - name: Update Homebrew tap
@@ -164,25 +217,40 @@ jobs:
           token: ${{ secrets.TAP_GITHUB_TOKEN }}
           repository: git-switchboard/homebrew-tap
           event-type: release
-          client-payload: '{"version": "${{ steps.version.outputs.version }}", "tag": "${{ github.ref_name }}"}'
+          client-payload: '{"version": "${{ needs.version.outputs.version }}", "tag": "${{ needs.version.outputs.tag }}"}'
 
-      # Publish Chocolatey package
+  # Phase 4: Publish to Chocolatey (separate job for independent retry)
+  publish-choco:
+    if: github.event.inputs.dry-run != 'true'
+    needs: [version, build-native]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.commit_sha }}
+
+      # Download native binaries (need windows exe for checksum)
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages/git-switchboard/native-builds
+          merge-multiple: true
+
       - name: Publish to Chocolatey
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          WINDOWS_URL="https://github.com/git-switchboard/git-switchboard/releases/download/${{ github.ref_name }}/git-switchboard-windows-x64.exe"
+          VERSION="${{ needs.version.outputs.version }}"
+          # Chocolatey doesn't support semver v2 (dots in prerelease).
+          # Convert e.g. 1.0.0-beta.7 -> 1.0.0-beta-7
+          CHOCO_VERSION=$(echo "$VERSION" | sed 's/\(-[a-zA-Z]*\)\.\([0-9]\)/\1-\2/')
+          WINDOWS_URL="https://github.com/git-switchboard/git-switchboard/releases/download/${{ needs.version.outputs.tag }}/git-switchboard-windows-x64.exe"
           CHECKSUM=$(sha256sum packages/git-switchboard/native-builds/git-switchboard-windows-x64.exe | awk '{print $1}')
           # Render nuspec and install script into a staging directory
-          mkdir -p /tmp/choco-staging/tools
-          sed "s/{{VERSION}}/$VERSION/g" packaging/choco/git-switchboard.nuspec > /tmp/choco-staging/git-switchboard.nuspec
-          sed -e "s|{{URL}}|$WINDOWS_URL|g" -e "s/{{CHECKSUM}}/$CHECKSUM/g" packaging/choco/tools/chocolateyinstall.ps1 > /tmp/choco-staging/tools/chocolateyinstall.ps1
-          # Install choco on ubuntu via mono
-          sudo apt-get install -y mono-complete
-          wget -q https://dist.nuget.org/win-x86-commandline/latest/nuget.exe -O /tmp/nuget.exe
-          cd /tmp/choco-staging
-          mono /tmp/nuget.exe pack git-switchboard.nuspec
-          # Push via Chocolatey API using curl
-          curl -X PUT \
-            -H "X-NuGet-ApiKey: ${{ secrets.CHOCO_API_KEY }}" \
-            -F "package=@git-switchboard.$VERSION.nupkg" \
-            https://push.chocolatey.org/api/v2/package
+          STAGING=/tmp/choco-staging
+          mkdir -p "$STAGING/tools"
+          sed "s/{{VERSION}}/$CHOCO_VERSION/g" packaging/choco/git-switchboard.nuspec > "$STAGING/git-switchboard.nuspec"
+          sed -e "s|{{URL}}|$WINDOWS_URL|g" -e "s/{{CHECKSUM}}/$CHECKSUM/g" packaging/choco/tools/chocolateyinstall.ps1 > "$STAGING/tools/chocolateyinstall.ps1"
+          cp packaging/choco/choco.csproj "$STAGING/choco.csproj"
+          dotnet pack "$STAGING/choco.csproj" -o "$STAGING/out" -p:NuspecFile="$STAGING/git-switchboard.nuspec" -p:NuspecBasePath="$STAGING"
+          dotnet nuget push "$STAGING/out/git-switchboard.$CHOCO_VERSION.nupkg" \
+            --api-key ${{ secrets.CHOCO_API_KEY }} \
+            --source https://push.chocolatey.org/api/v2/package

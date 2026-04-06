@@ -1,6 +1,6 @@
 {
   "name": "git-switchboard",
-  "version": "0.0.1",
+  "version": "0.0.1-alpha.3",
   "description": "Interactive TUI for browsing and checking out git branches",
   "author": {
     "name": "Craigory Coppola",
@@ -31,8 +31,8 @@
   "devDependencies": {
     "@octokit/graphql-schema": "^15.26.1",
     "@octokit/rest": "^22.0.0",
-    "@opentui/core": "^0.1.95",
-    "@opentui/react": "^0.1.95",
+    "@opentui/core": "^0.1.96",
+    "@opentui/react": "^0.1.96",
     "@types/node": "22.18.1",
     "@types/react": "^19.0.0",
     "cli-forge": "^1.7.2",
