@@ -239,15 +239,18 @@ jobs:
       - name: Publish to Chocolatey
         run: |
           VERSION="${{ needs.version.outputs.version }}"
+          # Chocolatey doesn't support semver v2 (dots in prerelease).
+          # Convert e.g. 1.0.0-beta.1 -> 1.0.0-beta1
+          CHOCO_VERSION=$(echo "$VERSION" | sed 's/\(-[a-zA-Z]*\)\./\1/')
           WINDOWS_URL="https://github.com/git-switchboard/git-switchboard/releases/download/${{ needs.version.outputs.tag }}/git-switchboard-windows-x64.exe"
           CHECKSUM=$(sha256sum packages/git-switchboard/native-builds/git-switchboard-windows-x64.exe | awk '{print $1}')
           # Render nuspec and install script into a staging directory
           STAGING=/tmp/choco-staging
           mkdir -p "$STAGING/tools"
-          sed "s/{{VERSION}}/$VERSION/g" packaging/choco/git-switchboard.nuspec > "$STAGING/git-switchboard.nuspec"
+          sed "s/{{VERSION}}/$CHOCO_VERSION/g" packaging/choco/git-switchboard.nuspec > "$STAGING/git-switchboard.nuspec"
           sed -e "s|{{URL}}|$WINDOWS_URL|g" -e "s/{{CHECKSUM}}/$CHECKSUM/g" packaging/choco/tools/chocolateyinstall.ps1 > "$STAGING/tools/chocolateyinstall.ps1"
           cp packaging/choco/choco.csproj "$STAGING/choco.csproj"
           dotnet pack "$STAGING/choco.csproj" -o "$STAGING/out" -p:NuspecFile="$STAGING/git-switchboard.nuspec" -p:NuspecBasePath="$STAGING"
-          dotnet nuget push "$STAGING/out/git-switchboard.$VERSION.nupkg" \
+          dotnet nuget push "$STAGING/out/git-switchboard.$CHOCO_VERSION.nupkg" \
             --api-key ${{ secrets.CHOCO_API_KEY }} \
             --source https://push.chocolatey.org/api/v2/package
