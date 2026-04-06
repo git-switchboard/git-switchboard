@@ -4,11 +4,13 @@
  * Uses node-pty to allocate a real pseudo-TTY cross-platform so that
  * @opentui/core renders properly and accepts keyboard input.
  *
+ * Spawns the CLI via `bunx git-switchboard` pointed at the local
+ * verdaccio registry — the same flow a real user would follow.
+ *
  * We intentionally avoid asserting on the visual output — instead, tests
  * observe side-effects (e.g. the current git branch) after the process exits.
  */
 
-import { realpathSync } from "node:fs";
 import { spawn as ptySpawn, type IPty } from "node-pty";
 
 const ENTER = "\r";
@@ -41,7 +43,8 @@ export interface CLIHarness {
 }
 
 /**
- * Spawn git-switchboard inside a real PTY via node-pty.
+ * Spawn `bunx git-switchboard` inside a real PTY via node-pty,
+ * pulling the package from the local verdaccio registry.
  *
  * @param cwd - The git repo to run in.
  * @param args - Extra CLI args (e.g. `["--no-pr"]`).
@@ -50,33 +53,34 @@ export function spawnCLI(
   cwd: string,
   args: string[] = [],
 ): CLIHarness {
-  const binPath = process.env.E2E_BIN_PATH;
-  if (!binPath) {
-    throw new Error("E2E_BIN_PATH not set — is the globalSetup running?");
+  const registryUrl = process.env.E2E_REGISTRY_URL;
+  const version = process.env.E2E_PACKAGE_VERSION;
+  if (!registryUrl || !version) {
+    throw new Error(
+      "E2E_REGISTRY_URL / E2E_PACKAGE_VERSION not set — is the globalSetup running?"
+    );
   }
-
-  // Resolve through symlinks to the actual JS file in the published package.
-  // We invoke it via `bun <script>` rather than the bin wrapper because
-  // `bun add` prepends its own shebang to bin scripts, which combined with
-  // the banner shebang in the built file causes a duplicate-shebang error.
-  // Running the resolved script directly via bun still exercises the full
-  // published artifact.
-  const scriptPath = realpathSync(binPath);
 
   const env: Record<string, string> = {
     ...process.env as Record<string, string>,
     NO_COLOR: "1",
     FORCE_COLOR: "0",
     GIT_PAGER: "",
+    // Point bunx at the local verdaccio registry
+    npm_config_registry: registryUrl,
   };
 
-  const term = ptySpawn("bun", [scriptPath, ...args], {
-    name: "xterm-256color",
-    cols: 120,
-    rows: 40,
-    cwd,
-    env,
-  });
+  const term = ptySpawn(
+    "bunx",
+    [`git-switchboard@${version}`, ...args],
+    {
+      name: "xterm-256color",
+      cols: 120,
+      rows: 40,
+      cwd,
+      env,
+    }
+  );
 
   let output = "";
   term.onData((data: string) => {

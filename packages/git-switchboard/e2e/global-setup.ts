@@ -4,15 +4,13 @@
  * - Builds git-switchboard
  * - Starts an ephemeral verdaccio registry
  * - Publishes the built package to it
- * - Installs it into a temp dir via `bun add` (so native deps resolve)
- * - Exports the installed bin path and registry URL for tests
+ * - Exposes the registry URL so tests can `bunx git-switchboard`
  * - Tears everything down on shutdown
  */
 
 import { execSync, spawn, type ChildProcess } from "node:child_process";
 import {
   copyFileSync,
-  existsSync,
   mkdirSync,
   readFileSync,
   rmSync,
@@ -27,7 +25,6 @@ const PKG_DIR = resolve(__dirname, "..");
 
 let verdaccioProc: ChildProcess | undefined;
 let verdaccioDir: string | undefined;
-let installDir: string | undefined;
 
 function pickPort(): number {
   return 10000 + Math.floor(Math.random() * 50000);
@@ -47,10 +44,7 @@ async function waitForHttp(url: string, timeoutMs = 30_000): Promise<void> {
   throw new Error(`Timed out waiting for ${url}`);
 }
 
-export async function setup(): Promise<{
-  verdaccioUrl: string;
-  binPath: string;
-}> {
+export async function setup() {
   const port = pickPort();
   const registryUrl = `http://localhost:${port}`;
 
@@ -111,45 +105,16 @@ export async function setup(): Promise<{
     { cwd: PKG_DIR, stdio: "inherit" }
   );
 
-  // 5. Install into a temp dir via bun so native deps (@opentui/core) resolve
-  console.log("[e2e] Installing published package via bun...");
-  installDir = join(tmpdir(), `git-switchboard-e2e-install-${port}`);
-  mkdirSync(installDir, { recursive: true });
-  writeFileSync(
-    join(installDir, "package.json"),
-    '{"name":"e2e-runner","private":true}\n'
-  );
-
-  // Use the exact version rather than a dist-tag since bun doesn't resolve
-  // npm dist-tags from custom registries reliably.
+  // Read the published version so tests can reference it
   const pkgJson = JSON.parse(
     readFileSync(join(PKG_DIR, "package.json"), "utf-8")
   );
-  const version: string = pkgJson.version;
-
-  // Use npm (not bun) to install because bun prepends a duplicate shebang
-  // to bin scripts during installation, causing a syntax error at runtime.
-  execSync(
-    `npm add git-switchboard@${version} @opentui/core --registry ${registryUrl}`,
-    { cwd: installDir, stdio: "inherit" }
-  );
-
-  const binPath = join(
-    installDir,
-    "node_modules",
-    ".bin",
-    "git-switchboard"
-  );
-  if (!existsSync(binPath)) {
-    throw new Error(`Expected bin at ${binPath} but it does not exist`);
-  }
 
   // Expose to tests via env vars
-  process.env.E2E_VERDACCIO_URL = registryUrl;
-  process.env.E2E_BIN_PATH = binPath;
+  process.env.E2E_REGISTRY_URL = registryUrl;
+  process.env.E2E_PACKAGE_VERSION = pkgJson.version;
 
   console.log("[e2e] Setup complete.");
-  return { verdaccioUrl: registryUrl, binPath };
 }
 
 export async function teardown() {
@@ -166,5 +131,4 @@ export async function teardown() {
     }
   }
   if (verdaccioDir) rmSync(verdaccioDir, { recursive: true, force: true });
-  if (installDir) rmSync(installDir, { recursive: true, force: true });
 }
