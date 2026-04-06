@@ -66,4 +66,4 @@ jobs:
         run: npm install -g npm@11.11.0 && npm install -g npm@latest
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm e2e
+      - run: pnpm --filter @git-switchboard/e2e-git-switchboard e2e

@@ -17,9 +17,6 @@ importers:
       ejs:
         specifier: ^5.0.1
         version: 5.0.1
-      node-pty:
-        specifier: 1.2.0-beta.12
-        version: 1.2.0-beta.12
       nx:
         specifier: ^22.5.0
         version: 22.6.4
@@ -29,12 +26,6 @@ importers:
       typescript:
         specifier: ^5.9.2
         version: 5.9.2
-      verdaccio:
-        specifier: ^6.4.0
-        version: 6.4.0(typanion@3.14.0)
-      vitest:
-        specifier: ^4.1.2
-        version: 4.1.2(@types/node@22.18.1)(vite@7.3.1(@types/node@22.18.1)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
 
   docs-site:
     dependencies:
@@ -111,6 +102,18 @@ importers:
       vite:
         specifier: ^7.3.1
         version: 7.3.1(@types/node@22.18.1)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3)
+
+  e2e/git-switchboard:
+    devDependencies:
+      node-pty:
+        specifier: 1.2.0-beta.12
+        version: 1.2.0-beta.12
+      verdaccio:
+        specifier: ^6.4.0
+        version: 6.4.0(typanion@3.14.0)
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@22.18.1)(vite@7.3.1(@types/node@22.18.1)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
 
   packages/git-switchboard:
     devDependencies:
