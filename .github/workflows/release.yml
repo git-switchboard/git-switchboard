@@ -240,8 +240,8 @@ jobs:
         run: |
           VERSION="${{ needs.version.outputs.version }}"
           # Chocolatey doesn't support semver v2 (dots in prerelease).
-          # Convert e.g. 1.0.0-beta.1 -> 1.0.0-beta1
-          CHOCO_VERSION=$(echo "$VERSION" | sed 's/\(-[a-zA-Z]*\)\./\1/')
+          # Convert e.g. 1.0.0-beta.7 -> 1.0.0-beta-7
+          CHOCO_VERSION=$(echo "$VERSION" | sed 's/\(-[a-zA-Z]*\)\.\([0-9]\)/\1-\2/')
           WINDOWS_URL="https://github.com/git-switchboard/git-switchboard/releases/download/${{ needs.version.outputs.tag }}/git-switchboard-windows-x64.exe"
           CHECKSUM=$(sha256sum packages/git-switchboard/native-builds/git-switchboard-windows-x64.exe | awk '{print $1}')
           # Render nuspec and install script into a staging directory
