@@ -1,5 +1,3 @@
-#!/usr/bin/env bun
-
 if (typeof Bun === 'undefined') {
   console.error(
     'git-switchboard requires the Bun runtime.\n' +
