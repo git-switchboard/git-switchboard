@@ -1,3 +1,7 @@
+## 0.0.1-alpha.3 (2026-04-06)
+
+This was a version bump only for git-switchboard to align it with other projects, there were no code changes.
+
 ## 0.0.0-beta.7 (2026-04-05)
 
 This was a version bump only for git-switchboard to align it with other projects, there were no code changes.

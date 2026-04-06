@@ -1,3 +1,29 @@
+## 0.0.1-alpha.3 (2026-04-06)
+
+### 🚀 Features
+
+- add dry-run input to release workflow ([e9d01dc](https://github.com/git-switchboard/git-switchboard/commit/e9d01dc))
+- validate release inputs and pass npm dist-tag for prereleases ([396cf3f](https://github.com/git-switchboard/git-switchboard/commit/396cf3f))
+
+### 🩹 Fixes
+
+- remove unsupported --yes flag from nx release subcommands ([#4](https://github.com/git-switchboard/git-switchboard/pull/4))
+- install all platform optional deps in build-native job ([68494c9](https://github.com/git-switchboard/git-switchboard/commit/68494c9))
+- use windows-11-arm runner for windows-arm64 builds ([323da22](https://github.com/git-switchboard/git-switchboard/commit/323da22))
+- pin nuget.exe to v6.12.2 for Mono compatibility ([2ad06a6](https://github.com/git-switchboard/git-switchboard/commit/2ad06a6))
+- move all git config to CLI flags, remove from nx.json ([3df870a](https://github.com/git-switchboard/git-switchboard/commit/3df870a))
+- restore git config under version/changelog in nx.json ([2f6ffd1](https://github.com/git-switchboard/git-switchboard/commit/2f6ffd1))
+- replace Mono + nuget.exe with nuget/setup-nuget for Chocolatey ([ad006c7](https://github.com/git-switchboard/git-switchboard/commit/ad006c7))
+- build .nupkg as zip instead of using nuget.exe ([9100b7e](https://github.com/git-switchboard/git-switchboard/commit/9100b7e))
+- use dotnet pack + dotnet nuget push for Chocolatey ([6d7101e](https://github.com/git-switchboard/git-switchboard/commit/6d7101e))
+- move Chocolatey publish to separate job with continue-on-error ([7aac325](https://github.com/git-switchboard/git-switchboard/commit/7aac325))
+- run publish and publish-choco jobs in parallel ([dfa0673](https://github.com/git-switchboard/git-switchboard/commit/dfa0673))
+
+### ❤️ Thank You
+
+- Claude
+- Craigory Coppola @AgentEnder
+
 ## 0.0.0-beta.7 (2026-04-05)
 
 ### 🚀 Features
