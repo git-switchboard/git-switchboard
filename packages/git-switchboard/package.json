@@ -26,7 +26,8 @@
   "scripts": {
     "dev": "bun run src/cli.ts",
     "build": "bun build src/cli.ts --target=bun --outdir=dist --entry-naming='git-switchboard.js' --banner='#!/usr/bin/env bun'",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "e2e": "bash e2e/run.sh"
   },
   "devDependencies": {
     "@octokit/graphql-schema": "^15.26.1",

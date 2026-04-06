@@ -1,0 +1,22 @@
+# Minimal verdaccio config for e2e testing.
+# Storage is ephemeral (relative to the config location, which is a tmpdir).
+storage: ./storage
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+packages:
+  "git-switchboard":
+    access: $anonymous
+    publish: $authenticated
+  "**":
+    access: $anonymous
+    publish: $authenticated
+    proxy: npmjs
+auth:
+  htpasswd:
+    file: ./htpasswd
+    max_users: 100
+log:
+  type: stdout
+  format: pretty
+  level: warn
