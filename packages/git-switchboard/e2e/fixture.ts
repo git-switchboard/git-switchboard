@@ -5,7 +5,7 @@
  */
 
 import { execSync } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -26,8 +26,6 @@ function git(cwd: string, cmd: string) {
 /**
  * Create a fixture git repo with a few branches.
  *
- * Returns the repo path and a teardown function.
- *
  * Layout:
  *   - `main` branch with one commit
  *   - `feature/alpha` branch (1 commit ahead of main)
@@ -46,20 +44,20 @@ export function createFixtureRepo(): FixtureRepo {
   git(repoPath, "config commit.gpgsign false");
 
   // Initial commit on main
-  execSync('echo "init" > README.md', { cwd: repoPath });
+  writeFileSync(join(repoPath, "README.md"), "init\n");
   git(repoPath, "add .");
   git(repoPath, 'commit -m "initial commit"');
 
   // feature/alpha
   git(repoPath, "checkout -b feature/alpha");
-  execSync('echo "alpha" > alpha.txt', { cwd: repoPath });
+  writeFileSync(join(repoPath, "alpha.txt"), "alpha\n");
   git(repoPath, "add .");
   git(repoPath, 'commit -m "add alpha"');
 
   // feature/beta (branch off main)
   git(repoPath, "checkout main");
   git(repoPath, "checkout -b feature/beta");
-  execSync('echo "beta" > beta.txt', { cwd: repoPath });
+  writeFileSync(join(repoPath, "beta.txt"), "beta\n");
   git(repoPath, "add .");
   git(repoPath, 'commit -m "add beta"');
 
@@ -84,10 +82,10 @@ export function currentBranch(repoPath: string): string {
 
 /** List local branch names for a repo. */
 export function listBranches(repoPath: string): string[] {
-  return execSync("git for-each-ref --format='%(refname:short)' refs/heads/", {
-    cwd: repoPath,
-    encoding: "utf-8",
-  })
+  return execSync(
+    'git for-each-ref --format="%(refname:short)" refs/heads/',
+    { cwd: repoPath, encoding: "utf-8" }
+  )
     .trim()
     .split("\n")
     .filter(Boolean);

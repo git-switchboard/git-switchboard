@@ -1,17 +1,15 @@
 /**
  * Test harness for driving the git-switchboard interactive TUI.
  *
- * Uses the `script` command to allocate a real pseudo-TTY so that
+ * Uses node-pty to allocate a real pseudo-TTY cross-platform so that
  * @opentui/core renders properly and accepts keyboard input.
  *
  * We intentionally avoid asserting on the visual output — instead, tests
  * observe side-effects (e.g. the current git branch) after the process exits.
  */
 
-import { execSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { realpathSync } from "node:fs";
+import { spawn as ptySpawn, type IPty } from "node-pty";
 
 const ENTER = "\r";
 const ARROW_DOWN = "\x1b[B";
@@ -21,14 +19,14 @@ const CTRL_C = "\x03";
 export { ENTER, ARROW_DOWN, ARROW_UP, CTRL_C };
 
 export interface HarnessResult {
-  /** Combined output captured from the process */
+  /** Combined output captured from the PTY */
   output: string;
-  /** Exit code (null if killed by signal) */
-  exitCode: number | null;
+  /** Exit code (undefined if killed by signal) */
+  exitCode: number | undefined;
 }
 
 export interface CLIHarness {
-  /** Send raw bytes to the process stdin. */
+  /** Send raw bytes to the PTY. */
   write(data: string): void;
   /** Send a keystroke after a short delay (ms). Returns a promise. */
   sendKey(key: string, delayMs?: number): Promise<void>;
@@ -38,103 +36,54 @@ export interface CLIHarness {
   waitForExit(timeoutMs?: number): Promise<HarnessResult>;
   /** Kill the process. */
   kill(): void;
-  /** The underlying child process. */
-  proc: ChildProcess;
-}
-
-let _installDir: string | undefined;
-
-/**
- * Install git-switchboard from the local verdaccio registry into a temp dir.
- * Caches across calls so we only install once per test run.
- */
-export function ensureInstalled(registry: string): string {
-  if (_installDir) return _installDir;
-
-  const dir = join(tmpdir(), "git-switchboard-e2e-install");
-  mkdirSync(dir, { recursive: true });
-
-  // Write a bunfig.toml so bun resolves packages from verdaccio
-  writeFileSync(
-    join(dir, "bunfig.toml"),
-    `[install]\nregistry = "${registry}"\n`
-  );
-  // Seed package.json so bun add works
-  if (!existsSync(join(dir, "package.json"))) {
-    writeFileSync(join(dir, "package.json"), '{"name":"e2e-runner","private":true}\n');
-  }
-
-  // Install the package along with @opentui/core which provides native
-  // platform-specific bindings that the bun bundler can't inline.
-  execSync("bun add git-switchboard@e2e @opentui/core", {
-    cwd: dir,
-    stdio: "pipe",
-    env: { ...process.env, BUN_INSTALL_CACHE_DIR: join(dir, ".cache") },
-  });
-
-  _installDir = dir;
-  return dir;
+  /** The underlying node-pty instance. */
+  pty: IPty;
 }
 
 /**
- * Spawn git-switchboard inside a pseudo-TTY.
- *
- * Uses `script -qfc` (Linux) to wrap the command in a real PTY so that
- * the TUI renders and responds to keyboard input.
+ * Spawn git-switchboard inside a real PTY via node-pty.
  *
  * @param cwd - The git repo to run in.
  * @param args - Extra CLI args (e.g. `["--no-pr"]`).
- * @param registry - npm registry URL to use (for verdaccio).
  */
 export function spawnCLI(
   cwd: string,
   args: string[] = [],
-  registry?: string
 ): CLIHarness {
-  const installDir = registry ? ensureInstalled(registry) : undefined;
+  const binPath = process.env.E2E_BIN_PATH;
+  if (!binPath) {
+    throw new Error("E2E_BIN_PATH not set — is the globalSetup running?");
+  }
+
+  // Resolve through symlinks to the actual JS file in the published package.
+  // We invoke it via `bun <script>` rather than the bin wrapper because
+  // `bun add` prepends its own shebang to bin scripts, which combined with
+  // the banner shebang in the built file causes a duplicate-shebang error.
+  // Running the resolved script directly via bun still exercises the full
+  // published artifact.
+  const scriptPath = realpathSync(binPath);
 
   const env: Record<string, string> = {
     ...process.env as Record<string, string>,
-    // Force color off so escape codes don't pollute output matching
     NO_COLOR: "1",
     FORCE_COLOR: "0",
-    // Prevent git pager from hanging
     GIT_PAGER: "",
-    // Set a reasonable terminal size
-    COLUMNS: "120",
-    LINES: "40",
   };
 
-  // Resolve the installed bin path
-  const binPath = installDir
-    ? join(installDir, "node_modules", ".bin", "git-switchboard")
-    : "git-switchboard";
-
-  // Build the inner command string for `script -qfc`
-  const innerCmd = [binPath, ...args]
-    .map((a) => `'${a.replace(/'/g, "'\\''")}'`)
-    .join(" ");
-
-  // `script -qfc <cmd> /dev/null` allocates a PTY, runs the command,
-  // and streams output to stdout. The -q flag suppresses the "Script
-  // started" banner, -f flushes after each write.
-  const proc = spawn("script", ["-qfc", innerCmd, "/dev/null"], {
+  const term = ptySpawn("bun", [scriptPath, ...args], {
+    name: "xterm-256color",
+    cols: 120,
+    rows: 40,
     cwd,
     env,
-    stdio: ["pipe", "pipe", "pipe"],
   });
 
   let output = "";
-  proc.stdout?.on("data", (chunk: Buffer) => {
-    output += chunk.toString();
-  });
-  proc.stderr?.on("data", (chunk: Buffer) => {
-    output += chunk.toString();
+  term.onData((data: string) => {
+    output += data;
   });
 
-  const write = (data: string) => {
-    proc.stdin?.write(data);
-  };
+  const write = (data: string) => term.write(data);
 
   const sendKey = (key: string, delayMs = 200): Promise<void> =>
     new Promise((resolve) => {
@@ -153,17 +102,21 @@ export function spawnCLI(
   const waitForExit = (timeoutMs = 15_000): Promise<HarnessResult> =>
     new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        proc.kill("SIGKILL");
-        reject(new Error(`CLI did not exit within ${timeoutMs}ms.\nOutput: ${output}`));
+        term.kill();
+        reject(
+          new Error(
+            `CLI did not exit within ${timeoutMs}ms.\nOutput: ${output}`
+          )
+        );
       }, timeoutMs);
 
-      proc.on("close", (code) => {
+      term.onExit(({ exitCode }) => {
         clearTimeout(timer);
-        resolve({ output, exitCode: code });
+        resolve({ output, exitCode });
       });
     });
 
-  const kill = () => proc.kill();
+  const kill = () => term.kill();
 
-  return { write, sendKey, sendKeys, waitForExit, kill, proc };
+  return { write, sendKey, sendKeys, waitForExit, kill, pty: term };
 }

@@ -20,5 +20,12 @@
     "nx": "^22.5.0",
     "nx-github-pages": "^1.2.0",
     "typescript": "^5.9.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "node-pty",
+      "nx"
+    ]
   }
 }
