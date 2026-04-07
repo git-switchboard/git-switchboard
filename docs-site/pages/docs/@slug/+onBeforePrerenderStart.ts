@@ -1,6 +1,7 @@
 import type { OnBeforePrerenderStartAsync } from 'vike/types';
 import { join, basename, extname } from 'node:path';
 import { readdir, access, readFile } from 'node:fs/promises';
+import { generateWorkflowDocs } from '../../../server/utils/workflow-docs';
 
 interface CliSubcommand {
   name: string;
@@ -40,6 +41,16 @@ const onBeforePrerenderStart: OnBeforePrerenderStartAsync = async () => {
     }
   } catch {
     // No CLI docs generated
+  }
+
+  // Generated workflow guide pages
+  try {
+    const workflowPages = await generateWorkflowDocs();
+    for (const page of workflowPages) {
+      routes.push(`/docs/${page.slug}`);
+    }
+  } catch {
+    // No workflow docs generated
   }
 
   return routes;
