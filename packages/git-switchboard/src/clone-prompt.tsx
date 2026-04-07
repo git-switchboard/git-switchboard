@@ -1,16 +1,19 @@
 import { useKeyboard } from '@opentui/react';
 import { useState } from 'react';
+import { useKeybinds } from './use-keybinds.js';
 import type { LocalRepo } from './scanner.js';
-import { DOWN_ARROW, ESC_SYMBOL, LEFT_ARROW, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
+import { footerParts } from './view.js';
+import type { ViewProps } from './view.js';
+import { useHistory } from './tui-router.js';
 
-interface ClonePromptProps {
+interface ClonePromptProps extends ViewProps {
   repoId: string;
   branchName: string;
   matches: LocalRepo[];
-  onSelect: (repo: LocalRepo, alreadyCheckedOut: boolean) => void;
+  /** Called when a clone is selected. After it resolves, navigation goes back. */
+  onSelect: (repo: LocalRepo, alreadyCheckedOut: boolean) => Promise<void>;
   onCreateWorktree: (path: string) => void;
-  onCancel: () => void;
 }
 
 export function ClonePrompt({
@@ -19,9 +22,10 @@ export function ClonePrompt({
   matches,
   onSelect,
   onCreateWorktree,
-  onCancel,
+  keybinds,
 }: ClonePromptProps) {
   useExitOnCtrlC();
+  const { goBack } = useHistory();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [inputMode, setInputMode] = useState(false);
   const [worktreePath, setWorktreePath] = useState('');
@@ -51,45 +55,41 @@ export function ClonePrompt({
   const clampIndex = (idx: number) =>
     Math.max(0, Math.min(idx, items.length - 1));
 
-  useKeyboard((key) => {
-    if (inputMode) {
-      if (key.name === 'escape') {
-        setInputMode(false);
-        setWorktreePath('');
-      } else if (key.name === 'return' && worktreePath) {
-        onCreateWorktree(worktreePath);
-      } else if (key.name === 'backspace') {
-        setWorktreePath((p) => p.slice(0, -1));
-      } else if (key.raw && key.raw.length === 1 && key.raw >= ' ') {
-        setWorktreePath((p) => p + key.raw);
+  useKeybinds(keybinds, {
+    navigate: (key) => {
+      if (key.name === 'up' || key.name === 'k') setSelectedIndex((i) => clampIndex(i - 1));
+      else setSelectedIndex((i) => clampIndex(i + 1));
+    },
+    select: () => {
+      const item = items[selectedIndex];
+      if (item.type === 'clone' && item.repo) {
+        void onSelect(item.repo, item.onBranch).then(() => goBack());
+      } else if (item.type === 'new-worktree') {
+        setInputMode(true);
       }
-      return;
-    }
+    },
+    back: () => goBack(),
+    confirmInput: () => {
+      if (worktreePath) onCreateWorktree(worktreePath);
+    },
+    cancelInput: () => {
+      setInputMode(false);
+      setWorktreePath('');
+    },
+  }, { show: { confirmInput: inputMode, cancelInput: inputMode } });
 
-    switch (key.name) {
-      case 'up':
-      case 'k':
-        setSelectedIndex((i) => clampIndex(i - 1));
-        break;
-      case 'down':
-      case 'j':
-        setSelectedIndex((i) => clampIndex(i + 1));
-        break;
-      case 'return': {
-        const item = items[selectedIndex];
-        if (item.type === 'clone' && item.repo) {
-          onSelect(item.repo, item.onBranch);
-        } else if (item.type === 'new-worktree') {
-          setInputMode(true);
-        }
-        break;
-      }
-      case 'backspace':
-      case 'escape':
-      case 'q':
-        onCancel();
-        break;
+  // Fires first (LIFO) — handles worktree path text input.
+  useKeyboard((key) => {
+    if (!inputMode) return;
+    if (key.name === 'backspace') {
+      setWorktreePath((p) => p.slice(0, -1));
+      return true;
     }
+    if (key.raw && key.raw.length === 1 && key.raw >= ' ') {
+      setWorktreePath((p) => p + key.raw);
+      return true;
+    }
+    // Non-printable keys fall through to let confirmInput/cancelInput fire.
   });
 
   return (
@@ -142,11 +142,7 @@ export function ClonePrompt({
 
       <box style={{ height: 1, width: '100%' }}>
         <text
-          content={
-            inputMode
-              ? ` Type path, [${RETURN_SYMBOL}] confirm, [${ESC_SYMBOL}] cancel`
-              : ` [${UP_ARROW}\\${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [${LEFT_ARROW}] Back`
-          }
+          content={` ${footerParts(keybinds, { confirmInput: inputMode, cancelInput: inputMode, navigate: !inputMode, select: !inputMode, back: !inputMode }).join(' | ')}`}
           fg="#565f89"
         />
       </box>

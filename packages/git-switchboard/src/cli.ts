@@ -1,4 +1,4 @@
-if (typeof Bun === 'undefined') {
+if (typeof (globalThis as { Bun?: unknown }).Bun === 'undefined') {
   console.error(
     'git-switchboard requires the Bun runtime.\n' +
     'Install Bun: https://bun.sh\n' +
@@ -321,7 +321,7 @@ const gitSwitchboard = cli('git-switchboard', {
     const { createRoot } = await import('@opentui/react');
     const React = await import('react');
     const { createElement } = React;
-    const { App } = await import('./app.js');
+    const { BranchRouter } = await import('./branch-router.js');
     const {
       getBranches,
       getCurrentUser,
@@ -378,7 +378,7 @@ const gitSwitchboard = cli('git-switchboard', {
       });
     };
 
-    const element = createElement(App, {
+    const element = createElement(BranchRouter, {
       branches,
       currentUser,
       currentUserAliases,

@@ -7,3 +7,4 @@ native-builds/
 docs-site/generated
 .playwright-mcp/
 .claude/settings.local.json
+.DS_Store

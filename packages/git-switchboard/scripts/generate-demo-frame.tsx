@@ -7,12 +7,19 @@
 import { testRender } from '@opentui/react/test-utils';
 import { App } from '../src/app.js';
 import { PrApp } from '../src/pr-app.js';
+import { PrDetail } from '../src/pr-detail.js';
+import { ClonePrompt } from '../src/clone-prompt.js';
+import { BRANCH_COMMAND } from '../src/branch-router.js';
+import { PR_COMMAND } from '../src/pr-router.js';
+import { TuiRouter } from '../src/tui-router.js';
 import type {
   BranchWithPR,
   CIInfo,
   ReviewInfo,
   UserPullRequest,
 } from '../src/types.js';
+import type { LocalRepo } from '../src/scanner.js';
+import type { PrScreen } from '../src/store.js';
 
 // ── Mock data: Branch Picker ──
 
@@ -276,6 +283,67 @@ const MOCK_MERGEABLE_CACHE: Record<string, 'MERGEABLE' | 'CONFLICTING' | 'UNKNOW
   'acme/frontend#301': 'CONFLICTING',
 };
 
+// The PR used for detail + clone-prompt demo frames
+const DETAIL_PR = MOCK_PRS[1]!; // acme/backend-api#127 — has a failing test
+
+const DETAIL_CI: CIInfo = {
+  status: 'failing',
+  checks: [
+    {
+      id: 4, name: 'build', status: 'completed', conclusion: 'success',
+      detailsUrl: 'https://github.com/acme/backend-api/actions/runs/4',
+      startedAt: new Date(NOW.getTime() - 8 * 60_000).toISOString(),
+      completedAt: new Date(NOW.getTime() - 5 * 60_000).toISOString(),
+    },
+    {
+      id: 5, name: 'test', status: 'completed', conclusion: 'failure',
+      detailsUrl: 'https://github.com/acme/backend-api/actions/runs/5',
+      startedAt: new Date(NOW.getTime() - 7 * 60_000).toISOString(),
+      completedAt: new Date(NOW.getTime() - 4 * 60_000).toISOString(),
+    },
+    {
+      id: 6, name: 'lint', status: 'completed', conclusion: 'success',
+      detailsUrl: 'https://github.com/acme/backend-api/actions/runs/6',
+      startedAt: new Date(NOW.getTime() - 6 * 60_000).toISOString(),
+      completedAt: new Date(NOW.getTime() - 3 * 60_000).toISOString(),
+    },
+    {
+      id: 7, name: 'typecheck', status: 'completed', conclusion: 'success',
+      detailsUrl: null,
+      startedAt: new Date(NOW.getTime() - 5 * 60_000).toISOString(),
+      completedAt: new Date(NOW.getTime() - 2 * 60_000).toISOString(),
+    },
+  ],
+  fetchedAt: Date.now(),
+};
+
+const DETAIL_REVIEW: ReviewInfo = {
+  status: 'changes-requested',
+  reviewers: [
+    { login: 'sarah', state: 'CHANGES_REQUESTED', submittedAt: new Date(NOW.getTime() - 30 * 60_000).toISOString() },
+  ],
+  fetchedAt: Date.now(),
+};
+
+const CLONE_MATCHES: LocalRepo[] = [
+  {
+    path: '~/repos/backend-api',
+    remoteUrl: 'git@github.com:acme/backend-api.git',
+    repoId: 'acme/backend-api',
+    isWorktree: false,
+    isClean: true,
+    currentBranch: 'main',
+  },
+  {
+    path: '~/repos/worktrees/backend-api/refactor-auth',
+    remoteUrl: 'git@github.com:acme/backend-api.git',
+    repoId: 'acme/backend-api',
+    isWorktree: true,
+    isClean: false,
+    currentBranch: 'refactor/auth-middleware',
+  },
+];
+
 // ── Capture helpers ──
 
 interface SerializedFrame {
@@ -323,9 +391,15 @@ async function captureFrame(
 // ── Main ──
 
 async function main() {
-  const [branchFrame, prFrame] = await Promise.all([
+  const branchKeybinds = BRANCH_COMMAND.views['branch-picker'].keybinds;
+  const prListKeybinds = PR_COMMAND.views['pr-list'].keybinds;
+  const prDetailKeybinds = PR_COMMAND.views['pr-detail'].keybinds;
+  const clonePromptKeybinds = PR_COMMAND.views['clone-prompt'].keybinds;
+
+  const [branchFrame, prFrame, prDetailFrame, clonePromptFrame] = await Promise.all([
     captureFrame(
       <App
+        keybinds={branchKeybinds}
         branches={MOCK_BRANCHES}
         currentUser="craigory"
         currentUserAliases={['craigory', 'Craigory Coppola']}
@@ -339,27 +413,99 @@ async function main() {
       14
     ),
     captureFrame(
-      <PrApp
-        prs={MOCK_PRS}
-        localRepos={[]}
-        ciCache={MOCK_CI_CACHE}
-        reviewCache={MOCK_REVIEW_CACHE}
-        mergeableCache={MOCK_MERGEABLE_CACHE}
-        repoMode={null}
-        refreshing={false}
-        onSelect={() => {}}
-        onFetchCI={async () => {}}
-        onPrefetchDetails={() => {}}
-        onRetryChecks={async () => ''}
-        onRefreshAll={() => {}}
-        onExit={() => {}}
+      <TuiRouter
+        views={{
+          'pr-list': {
+            keybinds: prListKeybinds,
+            render: (_, keybinds) => (
+              <PrApp
+                keybinds={keybinds}
+                prs={MOCK_PRS}
+                localRepos={[]}
+                ciCache={MOCK_CI_CACHE}
+                reviewCache={MOCK_REVIEW_CACHE}
+                mergeableCache={MOCK_MERGEABLE_CACHE}
+                repoMode={null}
+                refreshing={false}
+                onFetchCI={async () => {}}
+                onPrefetchDetails={() => {}}
+                onRetryChecks={async () => ''}
+                onRefreshAll={async () => {}}
+                onExit={() => {}}
+              />
+            ),
+          },
+        }}
+        initialScreen={{ type: 'pr-list' }}
       />,
       96,
       14
     ),
+    captureFrame(
+      <TuiRouter<PrScreen>
+        views={{
+          'pr-detail': {
+            keybinds: prDetailKeybinds,
+            render: (screen, keybinds) => (
+              <PrDetail
+                keybinds={keybinds}
+                pr={(screen as Extract<PrScreen, { type: 'pr-detail' }>).pr}
+                ci={DETAIL_CI}
+                review={DETAIL_REVIEW}
+                ciLoading={false}
+                matches={CLONE_MATCHES}
+                watched={false}
+                onPrepareEditorOpen={async () => CLONE_MATCHES}
+                onWatch={() => {}}
+                onRefreshCI={() => {}}
+                onRetryChecks={async () => ''}
+                onRetryCheck={async () => ''}
+                onOpenUrl={() => {}}
+                onCopyLogs={async () => ''}
+                onExit={() => {}}
+              />
+            ),
+          },
+        }}
+        initialScreen={{ type: 'pr-detail', pr: DETAIL_PR, matches: CLONE_MATCHES }}
+      />,
+      96,
+      20
+    ),
+    captureFrame(
+      <TuiRouter<PrScreen>
+        views={{
+          'clone-prompt': {
+            keybinds: clonePromptKeybinds,
+            render: (screen, keybinds) => {
+              const s = screen as Extract<PrScreen, { type: 'clone-prompt' }>;
+              return (
+                <ClonePrompt
+                  keybinds={keybinds}
+                  repoId={s.pr.repoId}
+                  branchName={s.pr.headRef}
+                  matches={CLONE_MATCHES}
+                  onSelect={async () => {}}
+                  onCreateWorktree={() => {}}
+                />
+              );
+            },
+          },
+        }}
+        initialScreen={{ type: 'clone-prompt', pr: DETAIL_PR, matches: CLONE_MATCHES }}
+      />,
+      80,
+      12
+    ),
   ]);
 
-  console.log(JSON.stringify({ branchPicker: branchFrame, prDashboard: prFrame }, null, 2));
+  console.log(
+    JSON.stringify(
+      { branchPicker: branchFrame, prDashboard: prFrame, prDetail: prDetailFrame, clonePrompt: clonePromptFrame },
+      null,
+      2
+    )
+  );
 
   process.exit(0);
 }

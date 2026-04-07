@@ -92,16 +92,61 @@ export async function scanAndRenderDocs(
 
 /**
  * Build sidebar navigation from scanned docs.
+ * Pages with slugs matching `usage/*` are grouped under a "CLI Reference" section.
  */
 export function buildNavigation(docs: DocPage[]): NavigationItem[] {
-  const items: NavigationItem[] = docs.map((doc) => ({
+  const cliIndexDoc = docs.find((d) => d.slug === 'usage');
+  const cliSubDocs = docs
+    .filter((d) => d.slug.startsWith('usage/'))
+    .sort((a, b) => a.order - b.order);
+
+  const guideDocs = docs
+    .filter((d) => d.slug.startsWith('guide/'))
+    .sort((a, b) => a.order - b.order);
+
+  const regularDocs = docs.filter(
+    (d) =>
+      d.slug !== 'usage' &&
+      !d.slug.startsWith('usage/') &&
+      !d.slug.startsWith('guide/')
+  );
+
+  const regularItems: NavigationItem[] = regularDocs.map((doc) => ({
     title: doc.title,
     path: `/docs/${doc.slug}`,
     order: doc.order,
   }));
 
-  return [
+  const nav: NavigationItem[] = [
     { title: 'Overview', path: '/docs', order: 0 },
-    ...items,
+    ...regularItems,
   ];
+
+  if (guideDocs.length > 0) {
+    const minOrder = Math.min(...guideDocs.map((d) => d.order));
+    nav.push({
+      title: 'Guides',
+      order: minOrder,
+      children: guideDocs.map((doc) => ({
+        title: doc.title,
+        path: `/docs/${doc.slug}`,
+        order: doc.order,
+      })),
+    });
+  }
+
+  if (cliIndexDoc || cliSubDocs.length > 0) {
+    nav.push({
+      title: 'CLI Reference',
+      order: cliIndexDoc?.order ?? 2,
+      path: cliIndexDoc ? `/docs/${cliIndexDoc.slug}` : undefined,
+      children: cliSubDocs.map((doc) => ({
+        title: doc.title,
+        path: `/docs/${doc.slug}`,
+        order: doc.order,
+      })),
+    });
+  }
+
+  return nav.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
 }

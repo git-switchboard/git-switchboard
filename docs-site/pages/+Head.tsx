@@ -3,7 +3,7 @@ import './tailwind.css';
 export function Head() {
   return (
     <>
-      <meta name="theme-color" content="#0a0f1a" />
+      <meta name="theme-color" content="#06090e" />
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link
         rel="preconnect"
@@ -11,7 +11,7 @@ export function Head() {
         crossOrigin=""
       />
       <link
-        href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter+Tight:wght@300;400;500;600;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
         rel="stylesheet"
       />
     </>

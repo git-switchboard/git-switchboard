@@ -1,12 +1,17 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useKeybinds } from './use-keybinds.js';
 import { buildFooterRows, FooterRows } from './footer.js';
+import { footerParts } from './view.js';
+import type { ViewProps } from './view.js';
 import { rateLimit } from './github.js';
 import { ScrollList, handleListKey } from './scroll-list.js';
 import type { LocalRepo } from './scanner.js';
-import type { CIInfo, CheckRun, ReviewInfo, ReviewerState, UserPullRequest } from './types.js';
-import { CHECKMARK, CROSSMARK, EN_DASH, LEFT_ARROW, RETURN_SYMBOL } from './unicode.js';
+import type { CIInfo, CheckRun, ReviewInfo, UserPullRequest } from './types.js';
+import { CHECKMARK, CROSSMARK, EN_DASH } from './unicode.js';
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
+import { useHistory, useNavigate } from './tui-router.js';
+import type { PrScreen } from './store.js';
 
 function relativeTime(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -111,15 +116,19 @@ function getCheckActions(check: CheckRun): CheckAction[] {
   return actions;
 }
 
-interface PrDetailProps {
+interface PrDetailProps extends ViewProps {
   pr: UserPullRequest;
   ci: CIInfo | null;
   review: ReviewInfo | null;
   ciLoading: boolean;
   matches: LocalRepo[];
   watched: boolean;
-  onOpenInEditor: () => void;
-  onBack: () => void;
+  /**
+   * Handles editor-opening logic. Returns `null` when fully handled (editor
+   * opened or picker shown), or a `LocalRepo[]` when the clone-prompt screen
+   * is needed — the component will navigate there itself.
+   */
+  onPrepareEditorOpen: (pr: UserPullRequest, matches: LocalRepo[]) => Promise<LocalRepo[] | null>;
   onWatch: () => void;
   onRefreshCI: () => void;
   onRetryChecks: () => Promise<string>;
@@ -137,8 +146,7 @@ export function PrDetail({
   ciLoading,
   matches,
   watched,
-  onOpenInEditor,
-  onBack,
+  onPrepareEditorOpen,
   onWatch,
   onRefreshCI,
   onRetryChecks,
@@ -146,8 +154,16 @@ export function PrDetail({
   onOpenUrl,
   onCopyLogs,
   onExit,
+  keybinds,
 }: PrDetailProps) {
   useExitOnCtrlC();
+  const navigate = useNavigate<PrScreen>();
+  const { goBack } = useHistory();
+
+  const handleOpenInEditor = useCallback(async () => {
+    const cloneMatches = await onPrepareEditorOpen(pr, matches);
+    if (cloneMatches) navigate({ type: 'clone-prompt', pr, matches: cloneMatches });
+  }, [onPrepareEditorOpen, pr, matches, navigate]);
   const { width, height } = useTerminalDimensions();
   const prIdentity = `${pr.repoId}#${pr.number}`;
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -183,15 +199,7 @@ export function PrDetail({
   const reviewRowCount = hasReviewers ? 1 + review.reviewers.length : 1;
 
   // Compute wrapped footer rows
-  const footerKeyParts = [
-    `[${RETURN_SYMBOL}] Select`,
-    '[c]opy logs',
-    '[^R]efresh',
-    '[r]etry',
-    '[w]atch',
-    `[${LEFT_ARROW}] Back`,
-    '[q]uit',
-  ];
+  const footerKeyParts = footerParts(keybinds);
   const footerRows = buildFooterRows(
     footerKeyParts,
     width,
@@ -280,29 +288,56 @@ export function PrDetail({
     [onOpenUrl, onRetryCheck, onCopyLogs, showStatus]
   );
 
+  useKeybinds(keybinds, {
+    navigate: (key) => {
+      if (key.name === 'up' || key.name === 'k') moveTo(selectedIndex - 1);
+      else moveTo(selectedIndex + 1);
+    },
+    select: () => {
+      if (selectedIndex === 0) {
+        void handleOpenInEditor();
+      } else if (selectedIndex === 1) {
+        onOpenUrl(pr.url);
+      } else {
+        const check = checks[selectedIndex - ACTION_COUNT];
+        if (check) {
+          const actions = getCheckActions(check);
+          if (actions.length > 0) setModal({ check, selectedOption: 0 });
+        }
+      }
+    },
+    copyLogs: () => {
+      if (selectedIndex >= ACTION_COUNT) {
+        const check = checks[selectedIndex - ACTION_COUNT];
+        if (check) {
+          showStatus('Fetching logs...');
+          onCopyLogs(check).then((msg) => showStatus(msg));
+        }
+      }
+    },
+    refresh: () => onRefreshCI(),
+    retry: () => {
+      showStatus('Retrying failed checks...');
+      onRetryChecks().then((msg) => showStatus(msg));
+    },
+    watch: () => onWatch(),
+    back: () => goBack(),
+    quit: () => onExit(),
+  });
+
+  // Fires first (LIFO) — handles check action modal and page/home/end navigation.
   useKeyboard((key) => {
-    // ─── Modal mode ─────────────────────────────────────────
     if (modal) {
       const actions = getCheckActions(modal.check);
       switch (key.name) {
         case 'up':
         case 'k':
-          setModal((m) =>
-            m ? { ...m, selectedOption: Math.max(0, m.selectedOption - 1) } : m
-          );
+          setModal((m) => m ? { ...m, selectedOption: Math.max(0, m.selectedOption - 1) } : m);
           break;
         case 'down':
         case 'j':
           setModal((m) =>
-            m
-              ? {
-                  ...m,
-                  selectedOption: Math.min(
-                    actions.length - 1,
-                    m.selectedOption + 1
-                  ),
-                }
-              : m
+            m ? { ...m, selectedOption: Math.min(actions.length - 1, m.selectedOption + 1) } : m
           );
           break;
         case 'return': {
@@ -315,10 +350,9 @@ export function PrDetail({
           setModal(null);
           break;
       }
-      return;
+      return true;
     }
 
-    // ─── Normal mode ────────────────────────────────────────
     if (statusText && key.name !== 'c') {
       setStatusText('');
       if (statusTimerRef.current) {
@@ -327,61 +361,7 @@ export function PrDetail({
       }
     }
 
-    // Ctrl+R or Shift+R → refresh CI
-    if ((key.ctrl && key.name === 'r') || key.raw === 'R') {
-      onRefreshCI();
-      return;
-    }
-
-    if (handleListKey(key.name, selectedIndex, totalItems, checkListHeight, moveTo)) return;
-
-    switch (key.name) {
-      case 'up':
-      case 'k':
-        moveTo(selectedIndex - 1);
-        break;
-      case 'down':
-      case 'j':
-        moveTo(selectedIndex + 1);
-        break;
-      case 'return': {
-        if (selectedIndex === 0) {
-          onOpenInEditor();
-        } else if (selectedIndex === 1) {
-          onOpenUrl(pr.url);
-        } else {
-          const check = checks[selectedIndex - ACTION_COUNT];
-          if (check) {
-            const actions = getCheckActions(check);
-            if (actions.length > 0) {
-              setModal({ check, selectedOption: 0 });
-            }
-          }
-        }
-        break;
-      }
-      case 'backspace':
-      case 'escape':
-        onBack();
-        break;
-      case 'q':
-        onExit();
-        break;
-      default:
-        if (key.raw === 'w') {
-          onWatch();
-        } else if (key.raw === 'r') {
-          showStatus('Retrying failed checks...');
-          onRetryChecks().then((msg) => showStatus(msg));
-        } else if (key.raw === 'c' && selectedIndex >= ACTION_COUNT) {
-          const check = checks[selectedIndex - ACTION_COUNT];
-          if (check) {
-            showStatus('Fetching logs...');
-            onCopyLogs(check).then((msg) => showStatus(msg));
-          }
-        }
-        break;
-    }
+    if (handleListKey(key.name, selectedIndex, totalItems, checkListHeight, moveTo)) return true;
   });
 
   // Header
@@ -456,7 +436,7 @@ export function PrDetail({
           backgroundColor: selectedIndex === 0 ? '#292e42' : undefined,
         }}
         onMouseDown={() => {
-          if (selectedIndex === 0) onOpenInEditor();
+          if (selectedIndex === 0) void handleOpenInEditor();
           else moveTo(0);
         }}
       >

@@ -9,12 +9,57 @@ import remarkParse from 'remark-parse';
 import remarkRehype from 'remark-rehype';
 import { unified } from 'unified';
 
+// Minimal hast node types — avoids depending on the `hast` package directly
+interface HastNode {
+  type: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+}
+
+/** Walk a hast tree depth-first, calling `fn` on every element node. */
+function walkElements(node: HastNode, fn: (el: HastNode) => void) {
+  if (node.type === 'element') fn(node);
+  for (const child of node.children ?? []) walkElements(child, fn);
+}
+
+/**
+ * Rehype plugin: counts the cells in the first <tr> of each <table> and
+ * injects `style="--cols: N"` so CSS grid/subgrid knows how many column
+ * tracks to create — no client-side JS required.
+ */
+function rehypeTableCols() {
+  return (tree: HastNode) => {
+    walkElements(tree, (node) => {
+      if (node.tagName !== 'table') return;
+
+      let colCount = 0;
+      walkElements(node, (child) => {
+        if (child.tagName === 'tr' && colCount === 0) {
+          colCount =
+            child.children?.filter(
+              (c) => c.type === 'element' && (c.tagName === 'th' || c.tagName === 'td')
+            ).length ?? 0;
+        }
+      });
+
+      if (colCount > 0) {
+        node.properties ??= {};
+        const existing = (node.properties.style as string) ?? '';
+        node.properties.style = existing
+          ? `${existing}; --cols: ${colCount}`
+          : `--cols: ${colCount}`;
+      }
+    });
+  };
+}
+
 /**
  * Convert a Markdown string to syntax-highlighted HTML.
  *
  * Pipeline: remarkParse -> remarkGfm -> remarkDirective -> remarkRehype
  *   -> rehypeRaw -> rehypeSlug -> rehypeGithubAlerts -> @shikijs/rehype
- *   -> rehypeStringify
+ *   -> rehypeTableCols -> rehypeStringify
  */
 export async function renderMarkdown(md: string): Promise<string> {
   const processor = unified()
@@ -26,6 +71,7 @@ export async function renderMarkdown(md: string): Promise<string> {
     .use(rehypeSlug)
     .use(rehypeGithubAlerts, {})
     .use(rehypeShiki, { theme: 'github-dark' })
+    .use(rehypeTableCols)
     .use(rehypeStringify);
 
   const file = await processor.process(md);

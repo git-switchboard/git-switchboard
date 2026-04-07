@@ -5,17 +5,19 @@ import {
   type DocPage,
   type NavigationItem,
 } from '../server/utils/docs';
-import { generateUsageDoc } from '../server/utils/cli-docs';
+import { generateUsageDocs } from '../server/utils/cli-docs';
+import { generateWorkflowDocs } from '../server/utils/workflow-docs';
 
 export async function onCreateGlobalContext(
   context: Partial<GlobalContextServer>
 ): Promise<void> {
   const docsDir = join(process.cwd(), '..', 'docs');
-  const [scannedDocs, usageDoc] = await Promise.all([
+  const [scannedDocs, usageDocs, workflowDocs] = await Promise.all([
     scanAndRenderDocs(docsDir),
-    generateUsageDoc(),
+    generateUsageDocs(),
+    generateWorkflowDocs(),
   ]);
-  const docs = [...scannedDocs, ...(usageDoc ? [usageDoc] : [])].sort(
+  const docs = [...scannedDocs, ...usageDocs, ...workflowDocs].sort(
     (a, b) => a.order - b.order
   );
   const navigation = buildNavigation(docs);

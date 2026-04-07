@@ -1,6 +1,14 @@
 import type { OnBeforePrerenderStartAsync } from 'vike/types';
 import { join, basename, extname } from 'node:path';
-import { readdir, access } from 'node:fs/promises';
+import { readdir, access, readFile } from 'node:fs/promises';
+
+interface CliSubcommand {
+  name: string;
+}
+
+interface CliDocumentation {
+  subcommands: CliSubcommand[];
+}
 
 const onBeforePrerenderStart: OnBeforePrerenderStartAsync = async () => {
   const docsDir = join(process.cwd(), '..', 'docs');
@@ -18,11 +26,17 @@ const onBeforePrerenderStart: OnBeforePrerenderStartAsync = async () => {
     // No docs directory
   }
 
-  // Generated usage page from CLI docs JSON
+  // Generated usage pages from CLI docs JSON
   try {
-    await access(join(process.cwd(), 'generated', 'cli-docs.json'));
-    if (!routes.includes('/docs/usage')) {
-      routes.push('/docs/usage');
+    const cliDocsPath = join(process.cwd(), 'generated', 'cli-docs.json');
+    await access(cliDocsPath);
+    const raw = await readFile(cliDocsPath, 'utf-8');
+    const doc: CliDocumentation = JSON.parse(raw);
+
+    routes.push('/docs/usage');
+    routes.push('/docs/usage/git-switchboard');
+    for (const sub of doc.subcommands ?? []) {
+      routes.push(`/docs/usage/${sub.name}`);
     }
   } catch {
     // No CLI docs generated

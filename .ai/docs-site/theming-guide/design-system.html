@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Design System — git-switchboard Mission Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:              #06090e;
+  --bg-raised:       #0b1018;
+  --bg-surface:      #101820;
+  --bg-panel:        #0d1520;
+  --border:          #192838;
+  --border-light:    #243848;
+  --border-accent:   #2a5070;
+  --text:            #b0c4d4;
+  --text-dim:        #4a6878;
+  --text-bright:     #d8eaf5;
+  --amber:           #d4920a;
+  --amber-bright:    #ecb030;
+  --amber-glow:      rgba(212,146,10,0.15);
+  --blue:            #2e80c0;
+  --blue-bright:     #50a0e0;
+  --blue-glow:       rgba(46,128,192,0.12);
+  --green:           #28b060;
+  --green-glow:      rgba(40,176,96,0.12);
+  --red:             #b83030;
+  --red-glow:        rgba(184,48,48,0.12);
+  --grid-line:       rgba(46,128,192,0.06);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Space Grotesk', sans-serif;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* NAV */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border);
+  padding: 0 1.5rem; display: flex; align-items: center; height: 54px; gap: 1.5rem;
+}
+.nav-telemetry { display: flex; gap: 1.25rem; border-right: 1px solid var(--border); padding-right: 1.25rem; }
+.telem-cell { display: flex; flex-direction: column; gap: 1px; }
+.telem-key { font-family: 'Space Grotesk', sans-serif; font-size: 0.52rem; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); line-height: 1; }
+.telem-val { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--amber); letter-spacing: 0.05em; line-height: 1; }
+.telem-val.green { color: var(--green); }
+.nav-logo { text-decoration: none; display: flex; align-items: center; gap: 0.5rem; margin-right: auto; }
+.logo-badge { background: var(--blue); color: #fff; font-family: 'Space Grotesk', sans-serif; font-size: 0.55rem; font-weight: 700; letter-spacing: 0.1em; padding: 2px 6px; }
+.logo-name { font-family: 'Bebas Neue', sans-serif; font-size: 1.4rem; color: var(--text-bright); letter-spacing: 0.1em; }
+.logo-accent { color: var(--amber); }
+.nav-links { display: flex; list-style: none; }
+.nav-links a { color: var(--text-dim); text-decoration: none; font-size: 0.82rem; font-weight: 500; letter-spacing: 0.04em; padding: 0 1rem; height: 54px; display: flex; align-items: center; border-left: 1px solid var(--border); transition: color 0.15s; }
+.nav-links a:last-child { border-right: 1px solid var(--border); }
+.nav-links a:hover { color: var(--text-bright); }
+.nav-github { color: var(--text-dim); text-decoration: none; font-size: 0.8rem; font-weight: 500; border: 1px solid var(--border-light); padding: 0.35rem 0.9rem; transition: all 0.15s; margin-left: 0.5rem; }
+.nav-github:hover { color: var(--amber); border-color: var(--amber); }
+
+/* BOTTOM NAV */
+.nav-bar-bottom {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999;
+  background: var(--bg-panel); border-top: 1px solid var(--border);
+  padding: 0 1.5rem; display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; height: 44px;
+  font-family: 'Space Grotesk', sans-serif; font-size: 0.72rem; font-weight: 600;
+}
+.nav-bar-pages, .nav-bar-themes { display: flex; align-items: center; gap: 0.3rem; }
+.nav-bar-label { color: var(--text-dim); letter-spacing: 0.15em; font-size: 0.6rem; text-transform: uppercase; margin-right: 0.4rem; }
+.nav-page-link { color: var(--text-dim); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; transition: all 0.12s; letter-spacing: 0.04em; }
+.nav-page-link:hover, .nav-page-link.active { color: var(--amber); border-color: var(--amber); background: var(--amber-glow); }
+.nav-theme-link { color: var(--text-dim); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; transition: all 0.12s; letter-spacing: 0.04em; }
+.nav-theme-link:hover { color: var(--amber); }
+.nav-theme-link.active { color: var(--amber); border-color: var(--amber); background: var(--amber-glow); }
+
+/* LAYOUT */
+.doc-layout { display: grid; grid-template-columns: 230px 1fr; min-height: calc(100vh - 54px - 44px); }
+.sidebar { background: var(--bg-raised); border-right: 1px solid var(--border); padding: 1.5rem 0; position: sticky; top: 54px; height: calc(100vh - 54px - 44px); overflow-y: auto; }
+.sidebar-phase { margin-bottom: 1.75rem; }
+.sidebar-phase-label { font-size: 0.55rem; font-weight: 700; letter-spacing: 0.25em; text-transform: uppercase; color: var(--text-dim); padding: 0 1.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem; }
+.sidebar-link { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 1.25rem; font-size: 0.82rem; font-weight: 500; color: var(--text-dim); text-decoration: none; transition: all 0.12s; }
+.sidebar-link:hover { color: var(--text-bright); background: rgba(46,128,192,0.05); }
+.sidebar-link.active { color: var(--amber); background: var(--amber-glow); border-left: 2px solid var(--amber); padding-left: calc(1.25rem - 2px); }
+.page-content { padding: 2.5rem 3rem; max-width: 820px; }
+
+/* STATUS DOT */
+.status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.status-dot.green  { background: var(--green); box-shadow: 0 0 4px var(--green-glow); }
+.status-dot.amber  { background: var(--amber); box-shadow: 0 0 4px var(--amber-glow); }
+.status-dot.red    { background: var(--red);   box-shadow: 0 0 4px var(--red-glow); }
+.status-dot.blue   { background: var(--blue);  box-shadow: 0 0 4px var(--blue-glow); }
+
+/* PROSE */
+.prose h1 { font-family: 'Bebas Neue', sans-serif; font-size: 2.5rem; color: var(--text-bright); letter-spacing: 0.08em; margin-bottom: 0.75rem; }
+.prose h2 { font-family: 'Space Grotesk', sans-serif; font-size: 1.2rem; font-weight: 700; color: var(--amber); margin: 2rem 0 0.75rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); letter-spacing: 0.04em; }
+.prose h3 { font-family: 'Space Grotesk', sans-serif; font-size: 0.92rem; font-weight: 700; color: var(--text-bright); letter-spacing: 0.06em; text-transform: uppercase; margin: 1.5rem 0 0.5rem; }
+.prose p  { color: var(--text); line-height: 1.75; margin-bottom: 1rem; font-size: 0.92rem; }
+.prose code { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; color: var(--amber); background: rgba(212,146,10,0.1); padding: 1px 4px; }
+.prose ul, .prose ol { color: var(--text); font-size: 0.92rem; line-height: 1.75; margin: 0.75rem 0 1rem 1.25rem; }
+.prose li { margin-bottom: 0.3rem; }
+.prose table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.86rem; }
+.prose th { background: var(--bg-surface); color: var(--text-bright); font-family: 'Space Grotesk', sans-serif; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; text-align: left; padding: 0.5rem 1rem; border: 1px solid var(--border); }
+.prose td { color: var(--text); padding: 0.45rem 1rem; border: 1px solid var(--border); font-size: 0.88rem; }
+.prose tr:hover td { background: var(--bg-raised); }
+
+/* BUTTONS */
+.btn-primary {
+  background: var(--amber); color: var(--bg); border: none;
+  padding: 0.65rem 1.75rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.88rem; font-weight: 700;
+  letter-spacing: 0.08em; cursor: pointer; text-decoration: none; transition: all 0.15s; display: inline-block;
+}
+.btn-primary:hover { background: var(--amber-bright); box-shadow: 0 0 16px var(--amber-glow); }
+.btn-secondary {
+  background: transparent; color: var(--text); border: 1px solid var(--border-light);
+  padding: 0.65rem 1.75rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.88rem; font-weight: 500;
+  letter-spacing: 0.06em; cursor: pointer; text-decoration: none; transition: all 0.15s; display: inline-block;
+}
+.btn-secondary:hover { border-color: var(--blue); color: var(--blue-bright); }
+
+/* CODE BLOCK */
+.code-block { background: #020810; border: 1px solid var(--border); overflow: hidden; }
+.code-block-header { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 0.35rem 1rem; display: flex; align-items: center; justify-content: space-between; }
+.code-block-label { font-family: 'Space Grotesk', sans-serif; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); }
+.code-block pre { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--amber); line-height: 1.6; margin: 0; padding: 1rem 1.25rem; }
+.code-block .prompt { color: var(--text-dim); }
+.code-block .comment { color: var(--text-dim); font-style: italic; }
+
+/* CALLOUTS */
+.callout { border-left: 2px solid; padding: 0.85rem 1.1rem; margin: 1.25rem 0; }
+.callout.info   { border-color: var(--blue);  background: var(--blue-glow); }
+.callout.tip    { border-color: var(--green); background: var(--green-glow); }
+.callout.warn   { border-color: var(--amber); background: var(--amber-glow); }
+.callout.danger { border-color: var(--red);   background: var(--red-glow); }
+.callout-label { font-family: 'Space Grotesk', sans-serif; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 0.35rem; }
+.callout.info   .callout-label { color: var(--blue-bright); }
+.callout.tip    .callout-label { color: var(--green); }
+.callout.warn   .callout-label { color: var(--amber); }
+.callout.danger .callout-label { color: var(--red); }
+.callout p { font-size: 0.88rem; color: var(--text); line-height: 1.65; margin: 0; }
+
+/* CARDS */
+.card { background: var(--bg-raised); border: 1px solid var(--border); padding: 1.5rem; transition: border-color 0.15s; }
+.card:hover { border-color: var(--border-accent); }
+.card-readout { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.75rem; }
+.card-readout-label { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
+
+/* TERMINAL */
+.term-output { font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #000; color: #c0caf5; white-space: pre; overflow-x: auto; padding: 0; }
+.tl { display: block; padding: 0 6px; line-height: 1.4; font-size: 13px; }
+.tl-sel { background: #292e42; }
+.terminal-panel { border: 1px solid var(--border-accent); position: relative; }
+.terminal-panel-header { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 0.45rem 1rem; display: flex; align-items: center; justify-content: space-between; }
+.panel-label { font-family: 'Space Grotesk', sans-serif; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
+.panel-tabs { display: flex; gap: 0.75rem; }
+.panel-tab { font-size: 0.7rem; font-weight: 600; color: var(--text-dim); cursor: pointer; padding: 1px 0; border-bottom: 1px solid transparent; transition: all 0.12s; letter-spacing: 0.04em; }
+.panel-tab.active { color: var(--blue-bright); border-bottom-color: var(--blue); }
+
+/* DS SPECIFIC */
+.ds-section { margin-bottom: 3rem; }
+.ds-section-title { font-family: 'Space Grotesk', sans-serif; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.75rem; }
+.ds-section-title::before { content: ''; display: inline-block; width: 4px; height: 4px; background: var(--amber); border-radius: 50%; }
+
+.swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.75rem; }
+.swatch { border: 1px solid var(--border); overflow: hidden; }
+.swatch-color { height: 44px; }
+.swatch-info { padding: 0.5rem 0.6rem; background: var(--bg-surface); }
+.swatch-var { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--amber); display: block; margin-bottom: 2px; }
+.swatch-hex { font-family: 'JetBrains Mono', monospace; font-size: 0.62rem; color: var(--text-dim); display: block; margin-bottom: 2px; }
+.swatch-label { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
+
+.type-row { padding: 0.85rem 0; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 1.5rem; }
+.type-meta { flex-shrink: 0; width: 160px; }
+.type-meta-name { font-family: 'Space Grotesk', sans-serif; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); display: block; margin-bottom: 2px; }
+.type-meta-spec { font-family: 'JetBrains Mono', monospace; font-size: 0.62rem; color: var(--text-dim); }
+
+.btn-row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+.btn-demo-label { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); margin-top: 0.75rem; display: block; }
+
+.indicator-row { display: flex; gap: 2rem; flex-wrap: wrap; }
+.indicator-item { display: flex; align-items: center; gap: 0.6rem; }
+.indicator-label { font-size: 0.8rem; color: var(--text); }
+
+.telem-showcase { display: flex; gap: 2rem; flex-wrap: wrap; background: var(--bg-raised); border: 1px solid var(--border); padding: 1.25rem; }
+
+.page-header { margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border); }
+.page-header-label { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.5rem; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-telemetry">
+    <div class="telem-cell">
+      <span class="telem-key">STATUS</span>
+      <span class="telem-val green">NOMINAL</span>
+    </div>
+    <div class="telem-cell">
+      <span class="telem-key">PLATFORM</span>
+      <span class="telem-val">ALL</span>
+    </div>
+  </div>
+  <a href="index.html" class="nav-logo">
+    <span class="logo-badge">OSS</span>
+    <span class="logo-name">git-<span class="logo-accent">switchboard</span></span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="usage.html">Usage</a></li>
+    <li><a href="guide.html">Guides</a></li>
+    <li><a href="changelog.html">Changelog</a></li>
+  </ul>
+  <a href="#" class="nav-github">★ GitHub</a>
+</nav>
+
+<div class="doc-layout">
+  <aside class="sidebar">
+    <div class="sidebar-phase">
+      <div class="sidebar-phase-label"><span class="status-dot green"></span> PHASE 01</div>
+      <a href="#colors" class="sidebar-link active">Colors</a>
+      <a href="#typography" class="sidebar-link">Typography</a>
+    </div>
+    <div class="sidebar-phase">
+      <div class="sidebar-phase-label"><span class="status-dot green"></span> PHASE 02</div>
+      <a href="#buttons" class="sidebar-link">Buttons</a>
+      <a href="#status" class="sidebar-link">Status Indicators</a>
+      <a href="#telem" class="sidebar-link">Telemetry Cells</a>
+    </div>
+    <div class="sidebar-phase">
+      <div class="sidebar-phase-label"><span class="status-dot blue"></span> PHASE 03</div>
+      <a href="#code" class="sidebar-link">Code Blocks</a>
+      <a href="#callouts" class="sidebar-link">Callouts</a>
+      <a href="#cards" class="sidebar-link">Cards</a>
+      <a href="#tables" class="sidebar-link">Tables</a>
+    </div>
+  </aside>
+
+  <main class="page-content">
+    <div class="page-header">
+      <div class="page-header-label">Design System / Mission Control</div>
+      <h1 class="prose" style="font-family:'Bebas Neue',sans-serif;font-size:2.5rem;color:var(--text-bright);letter-spacing:0.08em;">Component Reference</h1>
+      <p style="color:var(--text);font-size:0.9rem;margin-top:0.5rem;line-height:1.75">All visual primitives for the Mission Control theme. Use these consistently to maintain information density and the phosphor-display aesthetic.</p>
+    </div>
+
+    <!-- COLORS -->
+    <div class="ds-section" id="colors">
+      <div class="ds-section-title">Background</div>
+      <div class="swatch-grid">
+        <div class="swatch"><div class="swatch-color" style="background:#06090e"></div><div class="swatch-info"><span class="swatch-var">--bg</span><span class="swatch-hex">#06090e</span><span class="swatch-label">Base</span></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#0b1018"></div><div class="swatch-info"><span class="swatch-var">--bg-raised</span><span class="swatch-hex">#0b1018</span><span class="swatch-label">Raised</span></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#101820"></div><div class="swatch-info"><span class="swatch-var">--bg-surface</span><span class="swatch-hex">#101820</span><span class="swatch-label">Surface</span></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#0d1520"></div><div class="swatch-info"><span class="swatch-var">--bg-panel</span><span class="swatch-hex">#0d1520</span><span class="swatch-label">Panel / Nav</span></div></div>
+      </div>
+
+      <div class="ds-section-title" style="margin-top:1.5rem">Borders</div>
+      <div class="swatch-grid">
+        <div class="swatch"><div class="swatch-color" style="background:#192838"></div><div class="swatch-info"><span class="swatch-var">--border</span><span class="swatch-hex">#192838</span><span class="swatch-label">Default</span></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#243848"></div><div class="swatch-info"><span class="swatch-var">--border-light</span><span class="swatch-hex">#243848</span><span class="swatch-label">Light</span></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#2a5070"></div><div class="swatch-info"><span class="swatch-var">--border-accent</span><span class="swatch-hex">#2a5070</span><span class="swatch-label">Accent</span></div></div>
+      </div>
+
+      <div class="ds-section-title" style="margin-top:1.5rem">Text</div>
+      <div class="swatch-grid">
+        <div class="swatch"><div class="swatch-color" style="background:#b0c4d4"></div><div class="swatch-info"><span class="swatch-var">--text</span><span class="swatch-hex">#b0c4d4</span><span class="swatch-label">Body</span></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#4a6878"></div><div class="swatch-info"><span class="swatch-var">--text-dim</span><span class="swatch-hex">#4a6878</span><span class="swatch-label">Dim / Labels</span></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#d8eaf5"></div><div class="swatch-info"><span class="swatch-var">--text-bright</span><span class="swatch-hex">#d8eaf5</span><span class="swatch-label">Bright / Heads</span></div></div>
+      </div>
+
+      <div class="ds-section-title" style="margin-top:1.5rem">Accents</div>
+      <div class="swatch-grid">
+        <div class="swatch"><div class="swatch-color" style="background:#d4920a"></div><div class="swatch-info"><span class="swatch-var">--amber</span><span class="swatch-hex">#d4920a</span><span class="swatch-label">Amber Phosphor</span></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#ecb030"></div><div class="swatch-info"><span class="swatch-var">--amber-bright</span><span class="swatch-hex">#ecb030</span><span class="swatch-label">Amber Bright</span></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#2e80c0"></div><div class="swatch-info"><span class="swatch-var">--blue</span><span class="swatch-hex">#2e80c0</span><span class="swatch-label">Blue</span></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#50a0e0"></div><div class="swatch-info"><span class="swatch-var">--blue-bright</span><span class="swatch-hex">#50a0e0</span><span class="swatch-label">Blue Bright</span></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#28b060"></div><div class="swatch-info"><span class="swatch-var">--green</span><span class="swatch-hex">#28b060</span><span class="swatch-label">Nominal</span></div></div>
+        <div class="swatch"><div class="swatch-color" style="background:#b83030"></div><div class="swatch-info"><span class="swatch-var">--red</span><span class="swatch-hex">#b83030</span><span class="swatch-label">Abort</span></div></div>
+      </div>
+    </div>
+
+    <!-- TYPOGRAPHY -->
+    <div class="ds-section" id="typography">
+      <div class="ds-section-title">Typography</div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <span class="type-meta-name">H1 / Page Title</span>
+          <span class="type-meta-spec">Bebas Neue 2.5rem</span>
+        </div>
+        <h1 style="font-family:'Bebas Neue',sans-serif;font-size:2.5rem;color:var(--text-bright);letter-spacing:0.08em;line-height:1">Mission Control</h1>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <span class="type-meta-name">H2 / Section</span>
+          <span class="type-meta-spec">Space Grotesk 700 1.2rem</span>
+        </div>
+        <h2 style="font-family:'Space Grotesk',sans-serif;font-size:1.2rem;font-weight:700;color:var(--amber);letter-spacing:0.04em">Branch Navigator</h2>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <span class="type-meta-name">H3 / Subsection</span>
+          <span class="type-meta-spec">Space Grotesk 700 0.92rem</span>
+        </div>
+        <h3 style="font-family:'Space Grotesk',sans-serif;font-size:0.92rem;font-weight:700;color:var(--text-bright);letter-spacing:0.06em;text-transform:uppercase">Configuration Options</h3>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <span class="type-meta-name">Body Text</span>
+          <span class="type-meta-spec">Space Grotesk 400 0.92rem</span>
+        </div>
+        <p style="font-family:'Space Grotesk',sans-serif;font-size:0.92rem;color:var(--text);line-height:1.75">Browse, filter, and check out branches with live GitHub PR integration — all from the command line. Every keypress is immediate, every data field is real.</p>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <span class="type-meta-name">Dim / Label</span>
+          <span class="type-meta-spec">Space Grotesk 600 0.72rem</span>
+        </div>
+        <span style="font-family:'Space Grotesk',sans-serif;font-size:0.72rem;font-weight:600;color:var(--text-dim);letter-spacing:0.1em">Secondary label text used for captions, metadata, and supporting details</span>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <span class="type-meta-name">Monospace</span>
+          <span class="type-meta-spec">JetBrains Mono 0.82rem</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;color:var(--amber)">feat/add-pr-dashboard  #42 Open  3d ago</span>
+      </div>
+
+      <div class="type-row">
+        <div class="type-meta">
+          <span class="type-meta-name">Telem Key</span>
+          <span class="type-meta-spec">Space Grotesk 700 0.52rem</span>
+        </div>
+        <span style="font-family:'Space Grotesk',sans-serif;font-size:0.52rem;font-weight:600;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim)">PLATFORM · VERSION · STATUS · LICENSE</span>
+      </div>
+    </div>
+
+    <!-- BUTTONS -->
+    <div class="ds-section" id="buttons">
+      <div class="ds-section-title">Buttons</div>
+      <div class="btn-row">
+        <div>
+          <span class="btn-demo-label">Primary</span>
+          <a href="#" class="btn-primary" style="margin-top:0.4rem;display:inline-block">Get Started</a>
+        </div>
+        <div>
+          <span class="btn-demo-label">Secondary</span>
+          <a href="#" class="btn-secondary" style="margin-top:0.4rem;display:inline-block">View on GitHub</a>
+        </div>
+        <div>
+          <span class="btn-demo-label">Primary Disabled</span>
+          <a href="#" class="btn-primary" style="margin-top:0.4rem;display:inline-block;opacity:0.4;pointer-events:none">Disabled</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATUS INDICATORS -->
+    <div class="ds-section" id="status">
+      <div class="ds-section-title">Status Indicators</div>
+      <div class="indicator-row">
+        <div class="indicator-item">
+          <span class="status-dot green"></span>
+          <span class="indicator-label">Nominal</span>
+        </div>
+        <div class="indicator-item">
+          <span class="status-dot amber"></span>
+          <span class="indicator-label">Warning</span>
+        </div>
+        <div class="indicator-item">
+          <span class="status-dot red"></span>
+          <span class="indicator-label">Abort</span>
+        </div>
+        <div class="indicator-item">
+          <span class="status-dot blue"></span>
+          <span class="indicator-label">Info</span>
+        </div>
+      </div>
+      <p style="font-size:0.82rem;color:var(--text-dim);margin-top:1rem;line-height:1.65">Status dots appear in sidebar phase labels, card readouts, changelog entries, and table rows. They signal operational state at a glance — never use color alone without the dot.</p>
+    </div>
+
+    <!-- TELEMETRY CELLS -->
+    <div class="ds-section" id="telem">
+      <div class="ds-section-title">Telemetry Cells</div>
+      <p style="font-size:0.86rem;color:var(--text);margin-bottom:1rem;line-height:1.7">The core motif. A small uppercase label stacked above a monospace value — used in nav, hero strips, install metadata, and inline readouts throughout.</p>
+      <div class="telem-showcase">
+        <div class="telem-cell">
+          <span class="telem-key">STATUS</span>
+          <span class="telem-val green">NOMINAL</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">LICENSE</span>
+          <span class="telem-val">MIT</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">PLATFORM</span>
+          <span class="telem-val">ALL</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">VERSION</span>
+          <span class="telem-val">v0.3.0</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">BRANCHES</span>
+          <span class="telem-val">12</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">OPEN PRS</span>
+          <span class="telem-val">4</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CODE BLOCKS -->
+    <div class="ds-section" id="code">
+      <div class="ds-section-title">Code Blocks</div>
+
+      <div class="code-block" style="margin-bottom:1rem">
+        <div class="code-block-header">
+          <span class="code-block-label">Shell</span>
+          <div style="display:flex;align-items:center;gap:0.5rem"><span class="status-dot green"></span><span style="font-family:'Space Grotesk',sans-serif;font-size:0.6rem;color:var(--text-dim);letter-spacing:0.1em">VERIFIED</span></div>
+        </div>
+        <pre><span class="prompt">$ </span>brew tap craigory/git-switchboard
+<span class="prompt">$ </span>brew install git-switchboard
+<span class="comment"># Then launch the branch picker:</span>
+<span class="prompt">$ </span>git switchboard</pre>
+      </div>
+
+      <div class="terminal-panel">
+        <div class="terminal-panel-header">
+          <span class="panel-label">TUI EMBED</span>
+          <div class="panel-tabs">
+            <span class="panel-tab active">Branches</span>
+            <span class="panel-tab">Pull Requests</span>
+          </div>
+        </div>
+        <div class="term-output">
+<span class="tl"> </span>
+<span class="tl"><span style="color:#7aa2f7"> git-switchboard</span><span style="color:#c0caf5">  Remote: OFF | Author: All                                    </span></span>
+<span class="tl"> </span>
+<span class="tl"><span style="color:#bb9af7">   Branch                Author             Updated            PR             </span></span>
+<span class="tl tl-sel"><span style="color:#c0caf5">   feat/add-pr-dashboard craigory           3d ago             #42 Open       </span></span>
+<span class="tl"><span style="color:#c0caf5">   fix/auth-token-refre… craigory           2d ago             #38 Open       </span></span>
+<span class="tl"><span style="color:#73daca"> * main                  craigory           1d ago             -              </span></span>
+<span class="tl"><span style="color:#c0caf5">   chore/update-deps     dependabot         4d ago             #45 Draft      </span></span>
+<span class="tl"><span style="color:#c0caf5">   docs/update-readme    craigory           5d ago             -              </span></span>
+<span class="tl"><span style="color:#c0caf5">   refactor/auth-system  craigory           1w ago             #35 Merged     </span></span>
+<span class="tl"> </span>
+<span class="tl"><span style="color:#565f89">   ↑/↓ navigate  ↵ checkout  / search  q quit  ? help                        </span></span>
+<span class="tl"> </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CALLOUTS -->
+    <div class="ds-section" id="callouts">
+      <div class="ds-section-title">Callouts</div>
+      <div class="callout info">
+        <div class="callout-label">Info</div>
+        <p>GitHub integration requires a personal access token with <code>repo</code> scope. Set <code>GITHUB_TOKEN</code> or configure via <code>git switchboard config</code>.</p>
+      </div>
+      <div class="callout tip">
+        <div class="callout-label">Tip</div>
+        <p>Press <code>/</code> to enter fuzzy search mode. Matches branch names, authors, and PR titles simultaneously.</p>
+      </div>
+      <div class="callout warn">
+        <div class="callout-label">Warning</div>
+        <p>Checking out a branch with uncommitted changes will prompt you to stash or discard before switching.</p>
+      </div>
+      <div class="callout danger">
+        <div class="callout-label">Danger</div>
+        <p>Force checkout with <code>--force</code> will discard all uncommitted changes without confirmation.</p>
+      </div>
+    </div>
+
+    <!-- CARDS -->
+    <div class="ds-section" id="cards">
+      <div class="ds-section-title">Cards</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+        <div class="card">
+          <div class="card-readout">
+            <span class="status-dot green"></span>
+            <span class="card-readout-label">SUBSYSTEM 01</span>
+          </div>
+          <div style="font-family:'Space Grotesk',sans-serif;font-size:1rem;font-weight:700;color:var(--text-bright);margin-bottom:0.5rem">Interactive Branch Picker</div>
+          <p style="font-size:0.86rem;color:var(--text);line-height:1.7">Keyboard-driven TUI for listing, filtering, and checking out branches. Fuzzy search, vim keybindings included.</p>
+        </div>
+        <div class="card">
+          <div class="card-readout">
+            <span class="status-dot blue"></span>
+            <span class="card-readout-label">SUBSYSTEM 03</span>
+          </div>
+          <div style="font-family:'Space Grotesk',sans-serif;font-size:1rem;font-weight:700;color:var(--text-bright);margin-bottom:0.5rem">GitHub Integration</div>
+          <p style="font-size:0.86rem;color:var(--text);line-height:1.7">Authenticate once with a GitHub token and get PR status, CI checks, and review states overlaid on the branch list.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TABLES -->
+    <div class="ds-section prose" id="tables">
+      <div class="ds-section-title">Tables</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Branch</th>
+            <th>Author</th>
+            <th>Updated</th>
+            <th>PR</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>feat/add-pr-dashboard</code></td>
+            <td>craigory</td>
+            <td>3d ago</td>
+            <td>#42 Open</td>
+            <td><span class="status-dot green" style="margin-right:4px"></span>CI Pass</td>
+          </tr>
+          <tr>
+            <td><code>fix/auth-token-refresh</code></td>
+            <td>craigory</td>
+            <td>2d ago</td>
+            <td>#38 Open</td>
+            <td><span class="status-dot red" style="margin-right:4px"></span>CI Fail</td>
+          </tr>
+          <tr>
+            <td><code>main</code></td>
+            <td>craigory</td>
+            <td>1d ago</td>
+            <td>-</td>
+            <td><span class="status-dot green" style="margin-right:4px"></span>Protected</td>
+          </tr>
+          <tr>
+            <td><code>chore/update-deps</code></td>
+            <td>dependabot</td>
+            <td>4d ago</td>
+            <td>#45 Draft</td>
+            <td><span class="status-dot amber" style="margin-right:4px"></span>Draft</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </main>
+</div>
+
+<div class="nav-bar-bottom">
+  <div class="nav-bar-pages">
+    <span class="nav-bar-label">PAGES</span>
+    <a href="index.html"         class="nav-page-link">Landing</a>
+    <a href="design-system.html" class="nav-page-link active">Design System</a>
+    <a href="usage.html"         class="nav-page-link">Usage</a>
+    <a href="guide.html"         class="nav-page-link">Guide</a>
+    <a href="changelog.html"     class="nav-page-link">Changelog</a>
+  </div>
+  <div class="nav-bar-themes">
+    <span class="nav-bar-label">THEME</span>
+    <a href="../theme-1/index.html" class="nav-theme-link">1 · Switchboard</a>
+    <a href="../theme-3/index.html" class="nav-theme-link">3 · Phosphor</a>
+    <a href="../theme-4/index.html" class="nav-theme-link active">4 · Mission Control</a>
+  </div>
+</div>
+<div style="height:44px"></div>
+
+</body>
+</html>

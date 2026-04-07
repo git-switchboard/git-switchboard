@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useData } from 'vike-react/useData';
 import { Link } from '../../../components/Link';
 import type { DocDetailData } from './+data';
@@ -5,10 +6,23 @@ import type { DocDetailData } from './+data';
 export default function DocDetailPage() {
   const { doc } = useData<DocDetailData>();
 
+  // Wrap each table in a scrollable container for narrow viewports.
+  // --cols is injected server-side by rehypeTableCols so no JS counting needed.
+  useEffect(() => {
+    document.querySelectorAll<HTMLTableElement>('.prose-content table').forEach((table) => {
+      if (!table.parentElement?.classList.contains('table-scroll')) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'table-scroll';
+        table.parentNode?.insertBefore(wrapper, table);
+        wrapper.appendChild(table);
+      }
+    });
+  }, [doc?.slug]);
+
   if (!doc) {
     return (
       <div className="text-center py-24 animate-fade-in">
-        <div className="w-16 h-16 rounded-full bg-switch-bg-raised border border-switch-border flex items-center justify-center mx-auto mb-6">
+        <div className="w-16 h-16 border border-switch-border flex items-center justify-center mx-auto mb-6 bg-switch-bg-raised">
           <svg
             className="w-7 h-7 text-switch-text-dim"
             fill="none"
@@ -23,7 +37,14 @@ export default function DocDetailPage() {
             />
           </svg>
         </div>
-        <h1 className="text-2xl font-bold text-switch-text-bright mb-2">
+        <h1
+          className="text-switch-text-bright mb-2"
+          style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: '2rem',
+            letterSpacing: '0.08em',
+          }}
+        >
           Page Not Found
         </h1>
         <p className="text-switch-text-dim mb-6 text-sm">
@@ -31,7 +52,8 @@ export default function DocDetailPage() {
         </p>
         <Link
           href="/docs"
-          className="inline-flex items-center gap-2 text-switch-accent hover:text-switch-accent-bright transition-colors text-sm"
+          className="inline-flex items-center gap-2 text-switch-accent hover:text-switch-accent-bright transition-colors text-sm uppercase tracking-wider"
+          style={{ letterSpacing: '0.06em' }}
         >
           <svg
             className="w-4 h-4"
@@ -56,20 +78,8 @@ export default function DocDetailPage() {
     <div className="flex gap-10 animate-fade-in">
       <article className="flex-1 min-w-0">
         {/* Breadcrumb */}
-        <nav className="inline-flex items-center gap-2 text-xs text-switch-text-dim mb-8 px-3 py-1.5 rounded-full bg-switch-bg-raised/50 border border-switch-border">
-          <svg
-            className="w-3 h-3 text-switch-accent/50"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
+        <nav className="inline-flex items-center gap-2 text-[11px] text-switch-text-dim mb-8 px-3 py-1.5 border border-switch-border bg-switch-bg-surface uppercase tracking-wider" style={{ letterSpacing: '0.06em' }}>
+          <span className="status-dot blue" />
           <Link
             href="/docs"
             className="hover:text-switch-accent transition-colors"
@@ -92,7 +102,14 @@ export default function DocDetailPage() {
           <span className="text-switch-text font-medium">{doc.title}</span>
         </nav>
 
-        <h1 className="text-3xl md:text-4xl font-bold text-switch-text-bright mb-2 tracking-tight">
+        <h1
+          className="text-switch-text-bright mb-2"
+          style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: 'clamp(2rem, 5vw, 3rem)',
+            letterSpacing: '0.08em',
+          }}
+        >
           {doc.title}
         </h1>
 
@@ -103,18 +120,24 @@ export default function DocDetailPage() {
         )}
 
         {/* Accent line separator */}
-        <div className="h-px bg-gradient-to-r from-switch-accent/40 via-switch-accent/10 to-transparent mb-10" />
+        <div
+          className="h-px mb-10"
+          style={{
+            background: 'linear-gradient(to right, #d4920a 0%, rgba(212,146,10,0.15) 40%, transparent 100%)',
+          }}
+        />
 
         <div
           className="prose-content"
           dangerouslySetInnerHTML={{ __html: doc.renderedHtml }}
         />
 
-        {/* Bottom navigation hint */}
-        <div className="mt-16 pt-8 border-t border-switch-border">
+        {/* Bottom navigation */}
+        <div className="mt-16 pt-8 border-t border-switch-border flex items-center justify-between">
           <Link
             href="/docs"
-            className="inline-flex items-center gap-2 text-sm text-switch-text-dim hover:text-switch-accent transition-colors"
+            className="inline-flex items-center gap-2 text-sm text-switch-text-dim hover:text-switch-accent transition-colors uppercase tracking-wider"
+            style={{ letterSpacing: '0.06em' }}
           >
             <svg
               className="w-4 h-4"
@@ -129,18 +152,22 @@ export default function DocDetailPage() {
                 d="M11 17l-5-5m0 0l5-5m-5 5h12"
               />
             </svg>
-            Back to all docs
+            All docs
           </Link>
+          <div className="telem-cell text-right">
+            <span className="telem-key">Status</span>
+            <span className="telem-val green">READ</span>
+          </div>
         </div>
       </article>
 
       {doc.headings.length > 0 && (
-        <aside className="hidden xl:block w-56 shrink-0">
+        <aside className="hidden xl:block w-48 shrink-0" style={{ paddingTop: '0.25rem' }}>
           <div className="sticky top-20">
-            <h4 className="text-[10px] font-semibold uppercase tracking-widest text-switch-text-dim/60 mb-4 flex items-center gap-2">
-              <span className="w-4 h-px bg-switch-accent/30" />
-              On this page
-            </h4>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="w-4 h-px bg-switch-accent/40" />
+              <span className="telem-key">On this page</span>
+            </div>
             <nav className="space-y-0.5">
               {doc.headings.map((heading) => (
                 <a

@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>git-switchboard — Mission Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:              #06090e;
+  --bg-raised:       #0b1018;
+  --bg-surface:      #101820;
+  --bg-panel:        #0d1520;
+  --border:          #192838;
+  --border-light:    #243848;
+  --border-accent:   #2a5070;
+  --text:            #b0c4d4;
+  --text-dim:        #4a6878;
+  --text-bright:     #d8eaf5;
+  --amber:           #d4920a;
+  --amber-bright:    #ecb030;
+  --amber-glow:      rgba(212,146,10,0.15);
+  --blue:            #2e80c0;
+  --blue-bright:     #50a0e0;
+  --blue-glow:       rgba(46,128,192,0.12);
+  --green:           #28b060;
+  --green-glow:      rgba(40,176,96,0.12);
+  --red:             #b83030;
+  --red-glow:        rgba(184,48,48,0.12);
+  --grid-line:       rgba(46,128,192,0.06);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Space Grotesk', sans-serif;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* NAV */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border);
+  padding: 0 1.5rem; display: flex; align-items: center; height: 54px; gap: 1.5rem;
+}
+.nav-telemetry { display: flex; gap: 1.25rem; border-right: 1px solid var(--border); padding-right: 1.25rem; }
+.telem-cell { display: flex; flex-direction: column; gap: 1px; }
+.telem-key { font-family: 'Space Grotesk', sans-serif; font-size: 0.52rem; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); line-height: 1; }
+.telem-val { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--amber); letter-spacing: 0.05em; line-height: 1; }
+.telem-val.green { color: var(--green); }
+.nav-logo { text-decoration: none; display: flex; align-items: center; gap: 0.5rem; margin-right: auto; }
+.logo-badge { background: var(--blue); color: #fff; font-family: 'Space Grotesk', sans-serif; font-size: 0.55rem; font-weight: 700; letter-spacing: 0.1em; padding: 2px 6px; }
+.logo-name { font-family: 'Bebas Neue', sans-serif; font-size: 1.4rem; color: var(--text-bright); letter-spacing: 0.1em; }
+.logo-accent { color: var(--amber); }
+.nav-links { display: flex; list-style: none; }
+.nav-links a { color: var(--text-dim); text-decoration: none; font-size: 0.82rem; font-weight: 500; letter-spacing: 0.04em; padding: 0 1rem; height: 54px; display: flex; align-items: center; border-left: 1px solid var(--border); transition: color 0.15s; }
+.nav-links a:last-child { border-right: 1px solid var(--border); }
+.nav-links a:hover { color: var(--text-bright); }
+.nav-github { color: var(--text-dim); text-decoration: none; font-size: 0.8rem; font-weight: 500; border: 1px solid var(--border-light); padding: 0.35rem 0.9rem; transition: all 0.15s; margin-left: 0.5rem; }
+.nav-github:hover { color: var(--amber); border-color: var(--amber); }
+
+/* BOTTOM NAV */
+.nav-bar-bottom {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999;
+  background: var(--bg-panel); border-top: 1px solid var(--border);
+  padding: 0 1.5rem; display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; height: 44px;
+  font-family: 'Space Grotesk', sans-serif; font-size: 0.72rem; font-weight: 600;
+}
+.nav-bar-pages, .nav-bar-themes { display: flex; align-items: center; gap: 0.3rem; }
+.nav-bar-label { color: var(--text-dim); letter-spacing: 0.15em; font-size: 0.6rem; text-transform: uppercase; margin-right: 0.4rem; }
+.nav-page-link { color: var(--text-dim); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; transition: all 0.12s; letter-spacing: 0.04em; }
+.nav-page-link:hover, .nav-page-link.active { color: var(--amber); border-color: var(--amber); background: var(--amber-glow); }
+.nav-theme-link { color: var(--text-dim); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; transition: all 0.12s; letter-spacing: 0.04em; }
+.nav-theme-link:hover { color: var(--amber); }
+.nav-theme-link.active { color: var(--amber); border-color: var(--amber); background: var(--amber-glow); }
+
+/* TERMINAL */
+.term-output { font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #000; color: #c0caf5; white-space: pre; overflow-x: auto; padding: 0; }
+.tl { display: block; padding: 0 6px; line-height: 1.4; font-size: 13px; }
+.tl-sel { background: #292e42; }
+.terminal-panel { border: 1px solid var(--border-accent); position: relative; }
+.terminal-panel-header { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 0.45rem 1rem; display: flex; align-items: center; justify-content: space-between; }
+.panel-label { font-family: 'Space Grotesk', sans-serif; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
+.panel-tabs { display: flex; gap: 0.75rem; }
+.panel-tab { font-size: 0.7rem; font-weight: 600; color: var(--text-dim); cursor: pointer; padding: 1px 0; border-bottom: 1px solid transparent; transition: all 0.12s; letter-spacing: 0.04em; }
+.panel-tab.active { color: var(--blue-bright); border-bottom-color: var(--blue); }
+
+/* BUTTONS */
+.btn-primary {
+  background: var(--amber); color: var(--bg); border: none;
+  padding: 0.65rem 1.75rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.88rem; font-weight: 700;
+  letter-spacing: 0.08em; cursor: pointer; text-decoration: none; transition: all 0.15s;
+  display: inline-block;
+}
+.btn-primary:hover { background: var(--amber-bright); box-shadow: 0 0 16px var(--amber-glow); }
+.btn-secondary {
+  background: transparent; color: var(--text); border: 1px solid var(--border-light);
+  padding: 0.65rem 1.75rem; font-family: 'Space Grotesk', sans-serif; font-size: 0.88rem; font-weight: 500;
+  letter-spacing: 0.06em; cursor: pointer; text-decoration: none; transition: all 0.15s;
+  display: inline-block;
+}
+.btn-secondary:hover { border-color: var(--blue); color: var(--blue-bright); }
+
+/* STATUS DOT */
+.status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.status-dot.green  { background: var(--green); box-shadow: 0 0 4px var(--green-glow); }
+.status-dot.amber  { background: var(--amber); box-shadow: 0 0 4px var(--amber-glow); }
+.status-dot.red    { background: var(--red);   box-shadow: 0 0 4px var(--red-glow); }
+.status-dot.blue   { background: var(--blue);  box-shadow: 0 0 4px var(--blue-glow); }
+
+/* CARDS */
+.card { background: var(--bg-raised); border: 1px solid var(--border); padding: 1.5rem; transition: border-color 0.15s; }
+.card:hover { border-color: var(--border-accent); }
+.card-readout { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.75rem; }
+.card-readout-label { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
+
+/* CODE BLOCK */
+.code-block { background: #020810; border: 1px solid var(--border); overflow: hidden; }
+.code-block-header { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 0.35rem 1rem; display: flex; align-items: center; justify-content: space-between; }
+.code-block-label { font-family: 'Space Grotesk', sans-serif; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); }
+.code-block pre { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--amber); line-height: 1.6; margin: 0; padding: 1rem 1.25rem; }
+.code-block .prompt { color: var(--text-dim); }
+.code-block .comment { color: var(--text-dim); font-style: italic; }
+
+/* HERO */
+.hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  padding: 4rem 4rem 3.5rem;
+  min-height: calc(100vh - 54px - 44px - 2rem);
+  align-items: center;
+}
+.hero-left {}
+.hero-telemetry-strip {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.hero-h1 {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 4.5rem;
+  color: var(--text-bright);
+  letter-spacing: 0.08em;
+  line-height: 1;
+  margin-bottom: 0.5rem;
+}
+.hero-h1 .accent { color: var(--amber); }
+.hero-subtitle {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 1.5rem;
+}
+.hero-desc {
+  color: var(--text);
+  font-size: 0.96rem;
+  line-height: 1.75;
+  margin-bottom: 2rem;
+  max-width: 480px;
+}
+.hero-ctas { display: flex; gap: 0.75rem; align-items: center; }
+
+/* FEATURES */
+.features-section {
+  padding: 3rem 4rem;
+  border-top: 1px solid var(--border);
+}
+.features-section-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+.features-section-header h2 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.features-section-header::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.feature-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.feature-card-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-bright);
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.02em;
+}
+.feature-card-desc {
+  font-size: 0.86rem;
+  color: var(--text);
+  line-height: 1.7;
+}
+
+/* INSTALL */
+.install-section {
+  padding: 3rem 4rem;
+  border-top: 1px solid var(--border);
+}
+.install-section-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+.install-section-header h2 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.install-section-header::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.install-tabs { display: flex; gap: 0; margin-bottom: 0; border-bottom: 1px solid var(--border); }
+.install-tab {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  padding: 0.55rem 1.25rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-bottom: none;
+  margin-bottom: -1px;
+  transition: all 0.12s;
+  background: transparent;
+}
+.install-tab.active {
+  color: var(--amber);
+  background: var(--bg-panel);
+  border-color: var(--border);
+  border-bottom-color: var(--bg-panel);
+}
+.install-meta {
+  display: flex;
+  gap: 2rem;
+  margin-top: 0.85rem;
+}
+.install-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.install-meta-key {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.install-meta-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+@media (max-width: 900px) {
+  .hero { grid-template-columns: 1fr; padding: 2.5rem 1.5rem; min-height: auto; }
+  .feature-grid { grid-template-columns: 1fr; }
+  .features-section, .install-section { padding: 2rem 1.5rem; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-telemetry">
+    <div class="telem-cell">
+      <span class="telem-key">STATUS</span>
+      <span class="telem-val green">NOMINAL</span>
+    </div>
+    <div class="telem-cell">
+      <span class="telem-key">PLATFORM</span>
+      <span class="telem-val">ALL</span>
+    </div>
+  </div>
+  <a href="index.html" class="nav-logo">
+    <span class="logo-badge">OSS</span>
+    <span class="logo-name">git-<span class="logo-accent">switchboard</span></span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="usage.html">Usage</a></li>
+    <li><a href="guide.html">Guides</a></li>
+    <li><a href="changelog.html">Changelog</a></li>
+  </ul>
+  <a href="#" class="nav-github">★ GitHub</a>
+</nav>
+
+<section class="hero">
+  <div class="hero-left">
+    <div class="hero-telemetry-strip">
+      <div class="telem-cell">
+        <span class="telem-key">STATUS</span>
+        <span class="telem-val green">NOMINAL</span>
+      </div>
+      <div class="telem-cell">
+        <span class="telem-key">LICENSE</span>
+        <span class="telem-val">MIT</span>
+      </div>
+      <div class="telem-cell">
+        <span class="telem-key">PLATFORM</span>
+        <span class="telem-val">ALL</span>
+      </div>
+      <div class="telem-cell">
+        <span class="telem-key">VERSION</span>
+        <span class="telem-val">v0.3.0</span>
+      </div>
+    </div>
+
+    <h1 class="hero-h1">git-<span class="accent">switchboard</span></h1>
+    <div class="hero-subtitle">Branch Navigator · PR Dashboard · GitHub Integration</div>
+    <p class="hero-desc">
+      A terminal TUI for mission-critical branch operations. Browse, filter, and checkout git branches with live GitHub PR integration — all from your command line.
+    </p>
+    <div class="hero-ctas">
+      <a href="guide.html" class="btn-primary">Get Started</a>
+      <a href="#" class="btn-secondary">View on GitHub</a>
+    </div>
+  </div>
+
+  <div class="hero-right">
+    <div class="terminal-panel">
+      <div class="terminal-panel-header">
+        <span class="panel-label">LIVE DISPLAY</span>
+        <div class="panel-tabs">
+          <span class="panel-tab active">Branches</span>
+          <span class="panel-tab">Pull Requests</span>
+        </div>
+      </div>
+      <div class="term-output">
+<span class="tl"> </span>
+<span class="tl"><span style="color:#7aa2f7"> git-switchboard</span><span style="color:#c0caf5">  Remote: OFF | Author: All                                    </span></span>
+<span class="tl"> </span>
+<span class="tl"><span style="color:#bb9af7">   Branch                Author             Updated            PR             </span></span>
+<span class="tl tl-sel"><span style="color:#c0caf5">   feat/add-pr-dashboard craigory           3d ago             #42 Open       </span></span>
+<span class="tl"><span style="color:#c0caf5">   fix/auth-token-refre… craigory           2d ago             #38 Open       </span></span>
+<span class="tl"><span style="color:#73daca"> * main                  craigory           1d ago             -              </span></span>
+<span class="tl"><span style="color:#c0caf5">   chore/update-deps     dependabot         4d ago             #45 Draft      </span></span>
+<span class="tl"><span style="color:#c0caf5">   docs/update-readme    craigory           5d ago             -              </span></span>
+<span class="tl"><span style="color:#c0caf5">   refactor/auth-system  craigory           1w ago             #35 Merged     </span></span>
+<span class="tl"> </span>
+<span class="tl"><span style="color:#565f89">   ↑/↓ navigate  ↵ checkout  / search  q quit  ? help                        </span></span>
+<span class="tl"> </span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="features-section">
+  <div class="features-section-header">
+    <h2>Subsystems</h2>
+  </div>
+  <div class="feature-grid">
+    <div class="card">
+      <div class="card-readout">
+        <span class="status-dot green"></span>
+        <span class="card-readout-label">SUBSYSTEM 01</span>
+      </div>
+      <div class="feature-card-title">Interactive Branch Picker</div>
+      <p class="feature-card-desc">Keyboard-driven TUI for listing, filtering, and checking out branches. Fuzzy search, vim keybindings, and real-time author filtering. Never type a branch name again.</p>
+    </div>
+    <div class="card">
+      <div class="card-readout">
+        <span class="status-dot green"></span>
+        <span class="card-readout-label">SUBSYSTEM 02</span>
+      </div>
+      <div class="feature-card-title">PR Dashboard</div>
+      <p class="feature-card-desc">Full pull request overview across all your repos. Track CI status, review state, and open PRs without leaving the terminal. Press <code style="font-family:'JetBrains Mono',monospace;font-size:0.82em;color:var(--amber);background:rgba(212,146,10,0.1);padding:1px 4px">↵</code> to open in browser.</p>
+    </div>
+    <div class="card">
+      <div class="card-readout">
+        <span class="status-dot blue"></span>
+        <span class="card-readout-label">SUBSYSTEM 03</span>
+      </div>
+      <div class="feature-card-title">GitHub Integration</div>
+      <p class="feature-card-desc">Authenticate once with a GitHub token and get PR status, CI checks, and review states overlaid directly on the branch list. Remote and local branches unified.</p>
+    </div>
+    <div class="card">
+      <div class="card-readout">
+        <span class="status-dot amber"></span>
+        <span class="card-readout-label">SUBSYSTEM 04</span>
+      </div>
+      <div class="feature-card-title">Cross-Platform</div>
+      <p class="feature-card-desc">Ships as a single binary for macOS, Linux, and Windows. Install via Homebrew, Chocolatey, or a shell script. Zero runtime dependencies — just run it.</p>
+    </div>
+  </div>
+</section>
+
+<section class="install-section">
+  <div class="install-section-header">
+    <h2>Installation</h2>
+  </div>
+  <div class="install-tabs">
+    <div class="install-tab active">Homebrew</div>
+    <div class="install-tab">Chocolatey</div>
+    <div class="install-tab">Script</div>
+    <div class="install-tab">npm</div>
+  </div>
+  <div class="code-block" style="border-top:none">
+    <div class="code-block-header">
+      <span class="code-block-label">Shell</span>
+      <div style="display:flex;align-items:center;gap:0.5rem">
+        <span class="status-dot green"></span>
+        <span style="font-family:'Space Grotesk',sans-serif;font-size:0.6rem;color:var(--text-dim);letter-spacing:0.1em">VERIFIED</span>
+      </div>
+    </div>
+    <pre><span class="prompt">$ </span>brew tap craigory/git-switchboard
+<span class="prompt">$ </span>brew install git-switchboard</pre>
+  </div>
+  <div class="install-meta">
+    <div class="install-meta-item">
+      <span class="install-meta-key">Platform</span>
+      <span class="install-meta-val">macOS / Linux</span>
+    </div>
+    <div class="install-meta-item">
+      <span class="install-meta-key">Requires</span>
+      <span class="install-meta-val">Homebrew ≥ 3.0</span>
+    </div>
+    <div class="install-meta-item">
+      <span class="install-meta-key">Latest</span>
+      <span class="install-meta-val">v0.3.0</span>
+    </div>
+  </div>
+</section>
+
+<div class="nav-bar-bottom">
+  <div class="nav-bar-pages">
+    <span class="nav-bar-label">PAGES</span>
+    <a href="index.html"         class="nav-page-link active">Landing</a>
+    <a href="design-system.html" class="nav-page-link">Design System</a>
+    <a href="usage.html"         class="nav-page-link">Usage</a>
+    <a href="guide.html"         class="nav-page-link">Guide</a>
+    <a href="changelog.html"     class="nav-page-link">Changelog</a>
+  </div>
+  <div class="nav-bar-themes">
+    <span class="nav-bar-label">THEME</span>
+    <a href="../theme-1/index.html" class="nav-theme-link">1 · Switchboard</a>
+    <a href="../theme-3/index.html" class="nav-theme-link">3 · Phosphor</a>
+    <a href="../theme-4/index.html" class="nav-theme-link active">4 · Mission Control</a>
+  </div>
+</div>
+<div style="height:44px"></div>
+
+</body>
+</html>

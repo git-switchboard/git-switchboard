@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Getting Started — git-switchboard Mission Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:              #06090e;
+  --bg-raised:       #0b1018;
+  --bg-surface:      #101820;
+  --bg-panel:        #0d1520;
+  --border:          #192838;
+  --border-light:    #243848;
+  --border-accent:   #2a5070;
+  --text:            #b0c4d4;
+  --text-dim:        #4a6878;
+  --text-bright:     #d8eaf5;
+  --amber:           #d4920a;
+  --amber-bright:    #ecb030;
+  --amber-glow:      rgba(212,146,10,0.15);
+  --blue:            #2e80c0;
+  --blue-bright:     #50a0e0;
+  --blue-glow:       rgba(46,128,192,0.12);
+  --green:           #28b060;
+  --green-glow:      rgba(40,176,96,0.12);
+  --red:             #b83030;
+  --red-glow:        rgba(184,48,48,0.12);
+  --grid-line:       rgba(46,128,192,0.06);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Space Grotesk', sans-serif;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+  color: var(--text);
+  min-height: 100vh;
+}
+nav {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border);
+  padding: 0 1.5rem; display: flex; align-items: center; height: 54px; gap: 1.5rem;
+}
+.nav-telemetry { display: flex; gap: 1.25rem; border-right: 1px solid var(--border); padding-right: 1.25rem; }
+.telem-cell { display: flex; flex-direction: column; gap: 1px; }
+.telem-key { font-family: 'Space Grotesk', sans-serif; font-size: 0.52rem; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); line-height: 1; }
+.telem-val { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--amber); letter-spacing: 0.05em; line-height: 1; }
+.telem-val.green { color: var(--green); }
+.nav-logo { text-decoration: none; display: flex; align-items: center; gap: 0.5rem; margin-right: auto; }
+.logo-badge { background: var(--blue); color: #fff; font-family: 'Space Grotesk', sans-serif; font-size: 0.55rem; font-weight: 700; letter-spacing: 0.1em; padding: 2px 6px; }
+.logo-name { font-family: 'Bebas Neue', sans-serif; font-size: 1.4rem; color: var(--text-bright); letter-spacing: 0.1em; }
+.logo-accent { color: var(--amber); }
+.nav-links { display: flex; list-style: none; }
+.nav-links a { color: var(--text-dim); text-decoration: none; font-size: 0.82rem; font-weight: 500; letter-spacing: 0.04em; padding: 0 1rem; height: 54px; display: flex; align-items: center; border-left: 1px solid var(--border); transition: color 0.15s; }
+.nav-links a:last-child { border-right: 1px solid var(--border); }
+.nav-links a:hover, .nav-links a.active { color: var(--text-bright); }
+.nav-github { color: var(--text-dim); text-decoration: none; font-size: 0.8rem; font-weight: 500; border: 1px solid var(--border-light); padding: 0.35rem 0.9rem; transition: all 0.15s; margin-left: 0.5rem; }
+.nav-github:hover { color: var(--amber); border-color: var(--amber); }
+.nav-bar-bottom {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999;
+  background: var(--bg-panel); border-top: 1px solid var(--border);
+  padding: 0 1.5rem; display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; height: 44px;
+  font-family: 'Space Grotesk', sans-serif; font-size: 0.72rem; font-weight: 600;
+}
+.nav-bar-pages, .nav-bar-themes { display: flex; align-items: center; gap: 0.3rem; }
+.nav-bar-label { color: var(--text-dim); letter-spacing: 0.15em; font-size: 0.6rem; text-transform: uppercase; margin-right: 0.4rem; }
+.nav-page-link { color: var(--text-dim); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; transition: all 0.12s; letter-spacing: 0.04em; }
+.nav-page-link:hover, .nav-page-link.active { color: var(--amber); border-color: var(--amber); background: var(--amber-glow); }
+.nav-theme-link { color: var(--text-dim); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; transition: all 0.12s; letter-spacing: 0.04em; }
+.nav-theme-link:hover { color: var(--amber); }
+.nav-theme-link.active { color: var(--amber); border-color: var(--amber); background: var(--amber-glow); }
+.doc-layout { display: grid; grid-template-columns: 230px 1fr; min-height: calc(100vh - 54px - 44px); }
+.sidebar { background: var(--bg-raised); border-right: 1px solid var(--border); padding: 1.5rem 0; position: sticky; top: 54px; height: calc(100vh - 54px - 44px); overflow-y: auto; }
+.sidebar-phase { margin-bottom: 1.75rem; }
+.sidebar-phase-label { font-size: 0.55rem; font-weight: 700; letter-spacing: 0.25em; text-transform: uppercase; color: var(--text-dim); padding: 0 1.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem; }
+.sidebar-link { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 1.25rem; font-size: 0.82rem; font-weight: 500; color: var(--text-dim); text-decoration: none; transition: all 0.12s; }
+.sidebar-link:hover { color: var(--text-bright); background: rgba(46,128,192,0.05); }
+.sidebar-link.active { color: var(--amber); background: var(--amber-glow); border-left: 2px solid var(--amber); padding-left: calc(1.25rem - 2px); }
+.page-content { padding: 2.5rem 3rem; max-width: 820px; }
+.status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.status-dot.green  { background: var(--green); box-shadow: 0 0 4px var(--green-glow); }
+.status-dot.amber  { background: var(--amber); box-shadow: 0 0 4px var(--amber-glow); }
+.status-dot.red    { background: var(--red);   box-shadow: 0 0 4px var(--red-glow); }
+.status-dot.blue   { background: var(--blue);  box-shadow: 0 0 4px var(--blue-glow); }
+.prose h1 { font-family: 'Bebas Neue', sans-serif; font-size: 2.5rem; color: var(--text-bright); letter-spacing: 0.08em; margin-bottom: 0.75rem; }
+.prose h2 { font-family: 'Space Grotesk', sans-serif; font-size: 1.2rem; font-weight: 700; color: var(--amber); margin: 2rem 0 0.75rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); letter-spacing: 0.04em; }
+.prose h3 { font-family: 'Space Grotesk', sans-serif; font-size: 0.92rem; font-weight: 700; color: var(--text-bright); letter-spacing: 0.06em; text-transform: uppercase; margin: 1.5rem 0 0.5rem; }
+.prose p  { color: var(--text); line-height: 1.75; margin-bottom: 1rem; font-size: 0.92rem; }
+.prose code { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; color: var(--amber); background: rgba(212,146,10,0.1); padding: 1px 4px; }
+.prose ul, .prose ol { color: var(--text); font-size: 0.92rem; line-height: 1.75; margin: 0.75rem 0 1rem 1.25rem; }
+.prose li { margin-bottom: 0.3rem; }
+.prose table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.86rem; }
+.prose th { background: var(--bg-surface); color: var(--text-bright); font-family: 'Space Grotesk', sans-serif; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; text-align: left; padding: 0.5rem 1rem; border: 1px solid var(--border); }
+.prose td { color: var(--text); padding: 0.45rem 1rem; border: 1px solid var(--border); font-size: 0.88rem; }
+.prose tr:hover td { background: var(--bg-raised); }
+.code-block { background: #020810; border: 1px solid var(--border); overflow: hidden; margin: 1rem 0; }
+.code-block-header { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 0.35rem 1rem; display: flex; align-items: center; justify-content: space-between; }
+.code-block-label { font-family: 'Space Grotesk', sans-serif; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); }
+.code-block pre { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--amber); line-height: 1.6; margin: 0; padding: 1rem 1.25rem; }
+.code-block .prompt { color: var(--text-dim); }
+.code-block .comment { color: var(--text-dim); font-style: italic; }
+.callout { border-left: 2px solid; padding: 0.85rem 1.1rem; margin: 1.25rem 0; }
+.callout.info   { border-color: var(--blue);  background: var(--blue-glow); }
+.callout.tip    { border-color: var(--green); background: var(--green-glow); }
+.callout.warn   { border-color: var(--amber); background: var(--amber-glow); }
+.callout.danger { border-color: var(--red);   background: var(--red-glow); }
+.callout-label { font-family: 'Space Grotesk', sans-serif; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 0.35rem; }
+.callout.info   .callout-label { color: var(--blue-bright); }
+.callout.tip    .callout-label { color: var(--green); }
+.callout.warn   .callout-label { color: var(--amber); }
+.callout.danger .callout-label { color: var(--red); }
+.callout p { font-size: 0.88rem; color: var(--text); line-height: 1.65; margin: 0; }
+.term-output { font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #000; color: #c0caf5; white-space: pre; overflow-x: auto; padding: 0; }
+.tl { display: block; padding: 0 6px; line-height: 1.4; font-size: 13px; }
+.tl-sel { background: #292e42; }
+.terminal-panel { border: 1px solid var(--border-accent); position: relative; margin: 1rem 0; }
+.terminal-panel-header { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 0.45rem 1rem; display: flex; align-items: center; justify-content: space-between; }
+.panel-label { font-family: 'Space Grotesk', sans-serif; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
+.panel-tabs { display: flex; gap: 0.75rem; }
+.panel-tab { font-size: 0.7rem; font-weight: 600; color: var(--text-dim); cursor: pointer; padding: 1px 0; border-bottom: 1px solid transparent; transition: all 0.12s; letter-spacing: 0.04em; }
+.panel-tab.active { color: var(--blue-bright); border-bottom-color: var(--blue); }
+
+/* STEP BADGES */
+.step-badge { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: 1px solid var(--border-accent); font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 700; color: var(--amber); flex-shrink: 0; margin-right: 0.5rem; }
+
+/* INSTALL TABS */
+.install-tabs { display: flex; gap: 0; margin-bottom: 0; border-bottom: 1px solid var(--border); }
+.install-tab { font-family: 'Space Grotesk', sans-serif; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; color: var(--text-dim); padding: 0.55rem 1.25rem; cursor: pointer; border: 1px solid transparent; border-bottom: none; margin-bottom: -1px; transition: all 0.12s; background: transparent; }
+.install-tab.active { color: var(--amber); background: var(--bg-panel); border-color: var(--border); border-bottom-color: var(--bg-panel); }
+
+.page-header { margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border); }
+.page-header-meta { display: flex; gap: 1.5rem; margin-bottom: 0.85rem; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-telemetry">
+    <div class="telem-cell">
+      <span class="telem-key">STATUS</span>
+      <span class="telem-val green">NOMINAL</span>
+    </div>
+    <div class="telem-cell">
+      <span class="telem-key">PLATFORM</span>
+      <span class="telem-val">ALL</span>
+    </div>
+  </div>
+  <a href="index.html" class="nav-logo">
+    <span class="logo-badge">OSS</span>
+    <span class="logo-name">git-<span class="logo-accent">switchboard</span></span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="usage.html">Usage</a></li>
+    <li><a href="guide.html" class="active">Guides</a></li>
+    <li><a href="changelog.html">Changelog</a></li>
+  </ul>
+  <a href="#" class="nav-github">★ GitHub</a>
+</nav>
+
+<div class="doc-layout">
+  <aside class="sidebar">
+    <div class="sidebar-phase">
+      <div class="sidebar-phase-label"><span class="status-dot green"></span> PREFLIGHT</div>
+      <a href="#prerequisites" class="sidebar-link active">Prerequisites</a>
+      <a href="#installation" class="sidebar-link">Installation</a>
+    </div>
+    <div class="sidebar-phase">
+      <div class="sidebar-phase-label"><span class="status-dot green"></span> LAUNCH</div>
+      <a href="#first-run" class="sidebar-link">First Run</a>
+      <a href="#navigating" class="sidebar-link">Navigating Branches</a>
+    </div>
+    <div class="sidebar-phase">
+      <div class="sidebar-phase-label"><span class="status-dot blue"></span> INTEGRATION</div>
+      <a href="#github-setup" class="sidebar-link">GitHub Integration</a>
+      <a href="#pr-dashboard" class="sidebar-link">PR Dashboard</a>
+    </div>
+    <div class="sidebar-phase">
+      <div class="sidebar-phase-label"><span class="status-dot amber"></span> CONFIG</div>
+      <a href="#configuration" class="sidebar-link">Configuration</a>
+      <a href="#next-steps" class="sidebar-link">Next Steps</a>
+    </div>
+  </aside>
+
+  <main class="page-content prose">
+    <div class="page-header">
+      <div class="page-header-meta">
+        <div class="telem-cell">
+          <span class="telem-key">Document</span>
+          <span class="telem-val">Getting Started</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Est. Time</span>
+          <span class="telem-val">5 MIN</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Status</span>
+          <span class="telem-val green">Current</span>
+        </div>
+      </div>
+      <h1>Getting Started</h1>
+      <p>From zero to checking out branches with PR status in under five minutes. This guide walks you through installation, first run, and GitHub integration.</p>
+    </div>
+
+    <!-- PREREQUISITES -->
+    <h2 id="prerequisites">Prerequisites</h2>
+    <p>Before installing git-switchboard, make sure you have the following in place.</p>
+    <ul>
+      <li><strong>git</strong> 2.20 or newer installed and on your <code>PATH</code></li>
+      <li>A terminal emulator with UTF-8 support (virtually all modern terminals qualify)</li>
+      <li>For GitHub integration: a GitHub account and a personal access token (created during setup)</li>
+    </ul>
+    <div class="callout info">
+      <div class="callout-label">Info</div>
+      <p>git-switchboard ships as a self-contained binary. There are no runtime dependencies — no Node.js, no Python, no interpreters required.</p>
+    </div>
+
+    <!-- INSTALLATION -->
+    <h2 id="installation">Installation</h2>
+    <p>Choose the installation method that matches your platform and package manager preference.</p>
+
+    <h3>Homebrew (macOS / Linux)</h3>
+    <div class="code-block">
+      <div class="code-block-header">
+        <span class="code-block-label">Shell</span>
+        <div style="display:flex;align-items:center;gap:0.5rem"><span class="status-dot green"></span><span style="font-family:'Space Grotesk',sans-serif;font-size:0.6rem;color:var(--text-dim);letter-spacing:0.1em">RECOMMENDED</span></div>
+      </div>
+      <pre><span class="prompt">$ </span>brew tap craigory/git-switchboard
+<span class="prompt">$ </span>brew install git-switchboard</pre>
+    </div>
+
+    <h3>Chocolatey (Windows)</h3>
+    <div class="code-block">
+      <div class="code-block-header">
+        <span class="code-block-label">PowerShell (Admin)</span>
+      </div>
+      <pre><span class="prompt">PS&gt; </span>choco install git-switchboard</pre>
+    </div>
+
+    <h3>Install Script (macOS / Linux)</h3>
+    <div class="code-block">
+      <div class="code-block-header">
+        <span class="code-block-label">Shell</span>
+      </div>
+      <pre><span class="prompt">$ </span>curl -fsSL https://git-switchboard.dev/install.sh | sh</pre>
+    </div>
+
+    <h3>npm / Bun / pnpm</h3>
+    <div class="code-block">
+      <div class="code-block-header">
+        <span class="code-block-label">Shell</span>
+      </div>
+      <pre><span class="prompt">$ </span>npm install -g git-switchboard
+<span class="comment"># or:</span>
+<span class="prompt">$ </span>bun add -g git-switchboard</pre>
+    </div>
+
+    <p>Verify the installation by running:</p>
+    <div class="code-block">
+      <div class="code-block-header"><span class="code-block-label">Shell</span></div>
+      <pre><span class="prompt">$ </span>git switchboard --version
+<span style="color:var(--text-dim)">git-switchboard v0.3.0</span></pre>
+    </div>
+
+    <!-- FIRST RUN -->
+    <h2 id="first-run">First Run</h2>
+    <p>Navigate to any git repository and run the branch picker:</p>
+    <div class="code-block">
+      <div class="code-block-header"><span class="code-block-label">Shell</span></div>
+      <pre><span class="prompt">$ </span>cd ~/repos/my-project
+<span class="prompt">$ </span>git switchboard</pre>
+    </div>
+
+    <p>The TUI will launch immediately, showing all local branches sorted by most-recently-updated.</p>
+
+    <div class="terminal-panel">
+      <div class="terminal-panel-header">
+        <span class="panel-label">BRANCH PICKER — FIRST LAUNCH</span>
+        <div class="panel-tabs">
+          <span class="panel-tab active">Branches</span>
+        </div>
+      </div>
+      <div class="term-output">
+<span class="tl"> </span>
+<span class="tl"><span style="color:#7aa2f7"> git-switchboard</span><span style="color:#c0caf5">  Remote: OFF | Author: All                                    </span></span>
+<span class="tl"> </span>
+<span class="tl"><span style="color:#bb9af7">   Branch                Author             Updated            PR             </span></span>
+<span class="tl tl-sel"><span style="color:#c0caf5">   feat/add-pr-dashboard craigory           3d ago             #42 Open       </span></span>
+<span class="tl"><span style="color:#c0caf5">   fix/auth-token-refre… craigory           2d ago             #38 Open       </span></span>
+<span class="tl"><span style="color:#73daca"> * main                  craigory           1d ago             -              </span></span>
+<span class="tl"><span style="color:#c0caf5">   chore/update-deps     dependabot         4d ago             #45 Draft      </span></span>
+<span class="tl"><span style="color:#c0caf5">   docs/update-readme    craigory           5d ago             -              </span></span>
+<span class="tl"><span style="color:#c0caf5">   refactor/auth-system  craigory           1w ago             #35 Merged     </span></span>
+<span class="tl"> </span>
+<span class="tl"><span style="color:#565f89">   ↑/↓ navigate  ↵ checkout  / search  q quit  ? help                        </span></span>
+<span class="tl"> </span>
+      </div>
+    </div>
+
+    <p>The current branch is highlighted in teal with a <code>*</code> prefix. PR columns will show as <code>-</code> until GitHub integration is configured.</p>
+
+    <!-- NAVIGATING -->
+    <h2 id="navigating">Navigating Branches</h2>
+    <p>The branch picker is keyboard-driven. Use the arrow keys or vim-style <code>j</code>/<code>k</code> to move through the list. Press <code>↵</code> to check out the highlighted branch.</p>
+
+    <h3>Fuzzy Search</h3>
+    <p>Press <code>/</code> to activate search mode. Start typing any part of the branch name, author, or PR title. Results narrow instantly. Press <code>Esc</code> to clear and return to the full list.</p>
+
+    <h3>Filtering by Author</h3>
+    <p>Press <code>a</code> to toggle between showing only your own branches and showing all authors. The current filter is displayed in the status bar at the top of the TUI.</p>
+
+    <div class="callout tip">
+      <div class="callout-label">Tip</div>
+      <p>Set <code>ui.default_author</code> in your config to automatically filter to your branches on every launch — useful on shared repos with many contributors.</p>
+    </div>
+
+    <!-- GITHUB SETUP -->
+    <h2 id="github-setup">GitHub Integration Setup</h2>
+    <p>To see PR numbers, CI status, and review states in the branch picker, you need a GitHub personal access token.</p>
+
+    <h3>Step 1: Create a Token</h3>
+    <p>Go to <strong>GitHub → Settings → Developer Settings → Personal Access Tokens → Tokens (classic)</strong>. Create a token with the <code>repo</code> scope.</p>
+
+    <div class="callout warn">
+      <div class="callout-label">Warning</div>
+      <p>Copy your token immediately — GitHub only shows it once. Store it in a password manager.</p>
+    </div>
+
+    <h3>Step 2: Add to Config</h3>
+    <div class="code-block">
+      <div class="code-block-header"><span class="code-block-label">~/.config/git-switchboard/config.toml</span></div>
+      <pre>[github]
+token = <span style="color:var(--text-bright)">"ghp_yourTokenHere"</span></pre>
+    </div>
+
+    <p>Or set it as an environment variable:</p>
+    <div class="code-block">
+      <div class="code-block-header"><span class="code-block-label">Shell</span></div>
+      <pre><span class="prompt">$ </span>export GITHUB_TOKEN=ghp_yourTokenHere</pre>
+    </div>
+
+    <h3>Step 3: Verify</h3>
+    <p>Relaunch <code>git switchboard</code>. The PR column should now populate with linked PR numbers and states.</p>
+
+    <!-- PR DASHBOARD -->
+    <h2 id="pr-dashboard">PR Dashboard</h2>
+    <p>Once GitHub integration is active, launch the PR dashboard to see all open pull requests across your repositories:</p>
+    <div class="code-block">
+      <div class="code-block-header"><span class="code-block-label">Shell</span></div>
+      <pre><span class="prompt">$ </span>git switchboard pr</pre>
+    </div>
+
+    <div class="terminal-panel">
+      <div class="terminal-panel-header">
+        <span class="panel-label">PR DASHBOARD</span>
+        <div class="panel-tabs">
+          <span class="panel-tab active">Pull Requests</span>
+        </div>
+      </div>
+      <div class="term-output">
+<span class="tl"> </span>
+<span class="tl"><span style="color:#7aa2f7"> git-switchboard pr</span><span style="color:#c0caf5">  Filter: Open | Repo: All                               </span></span>
+<span class="tl"> </span>
+<span class="tl"><span style="color:#bb9af7">   #    Title                           Repo              Status    Updated    </span></span>
+<span class="tl tl-sel"><span style="color:#c0caf5">   #42  Add PR dashboard                git-switchboard   </span><span style="color:#73daca">✓ CI</span><span style="color:#c0caf5">      3d ago     </span></span>
+<span class="tl"><span style="color:#c0caf5">   #38  Fix auth token refresh          git-switchboard   </span><span style="color:#f87171">✗ CI</span><span style="color:#c0caf5">      2d ago     </span></span>
+<span class="tl"><span style="color:#bb9af7">   #45  Update dependencies             my-other-repo     ○ Draft   4d ago     </span></span>
+<span class="tl"><span style="color:#c0caf5">   #12  Improve search performance      another-repo      </span><span style="color:#73daca">✓ CI</span><span style="color:#c0caf5">      1w ago     </span></span>
+<span class="tl"> </span>
+<span class="tl"><span style="color:#565f89">   ↑/↓ navigate  ↵ open in browser  c clone  e editor  q quit                </span></span>
+<span class="tl"> </span>
+      </div>
+    </div>
+
+    <p>From the PR dashboard you can open PRs in your browser (<code>↵</code>), clone the branch locally (<code>c</code>), or open it in your configured editor (<code>e</code>). Press <code>R</code> to retry CI on the selected PR.</p>
+
+    <!-- CONFIGURATION -->
+    <h2 id="configuration">Configuration</h2>
+    <p>The full config file lives at <code>~/.config/git-switchboard/config.toml</code>. A minimal working configuration looks like this:</p>
+    <div class="code-block">
+      <div class="code-block-header"><span class="code-block-label">config.toml</span></div>
+      <pre>[github]
+token = <span style="color:var(--text-bright)">"ghp_..."</span>
+
+[ui]
+show_remote = <span style="color:var(--blue-bright)">false</span>
+default_author = <span style="color:var(--text-bright)">""</span></pre>
+    </div>
+    <p>See the full <a href="usage.html#configuration" style="color:var(--amber)">Configuration Reference</a> for all available options.</p>
+
+    <!-- NEXT STEPS -->
+    <h2 id="next-steps">Next Steps</h2>
+    <ul>
+      <li>Read the <a href="usage.html" style="color:var(--amber)">full CLI reference</a> for all commands and flags</li>
+      <li>Review all <a href="usage.html#keybindings" style="color:var(--amber)">keybindings</a> to navigate faster</li>
+      <li>Check the <a href="changelog.html" style="color:var(--amber)">changelog</a> for the latest features in v0.3.0</li>
+      <li>File bugs or feature requests on <a href="#" style="color:var(--amber)">GitHub Issues</a></li>
+    </ul>
+  </main>
+</div>
+
+<div class="nav-bar-bottom">
+  <div class="nav-bar-pages">
+    <span class="nav-bar-label">PAGES</span>
+    <a href="index.html"         class="nav-page-link">Landing</a>
+    <a href="design-system.html" class="nav-page-link">Design System</a>
+    <a href="usage.html"         class="nav-page-link">Usage</a>
+    <a href="guide.html"         class="nav-page-link active">Guide</a>
+    <a href="changelog.html"     class="nav-page-link">Changelog</a>
+  </div>
+  <div class="nav-bar-themes">
+    <span class="nav-bar-label">THEME</span>
+    <a href="../theme-1/index.html" class="nav-theme-link">1 · Switchboard</a>
+    <a href="../theme-3/index.html" class="nav-theme-link">3 · Phosphor</a>
+    <a href="../theme-4/index.html" class="nav-theme-link active">4 · Mission Control</a>
+  </div>
+</div>
+<div style="height:44px"></div>
+
+</body>
+</html>

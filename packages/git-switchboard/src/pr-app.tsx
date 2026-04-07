@@ -1,7 +1,12 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useKeybinds } from './use-keybinds.js';
 import { muteColor } from './colors.js';
 import { buildFooterRows, FooterRows } from './footer.js';
+import { footerParts } from './view.js';
+import type { ViewProps } from './view.js';
+import { useNavigate } from './tui-router.js';
+import type { PrScreen } from './store.js';
 import { rateLimit } from './github.js';
 import { ScrollList, handleListKey } from './scroll-list.js';
 import type { LocalRepo } from './scanner.js';
@@ -16,10 +21,8 @@ import type {
 import {
   CHECKMARK,
   CROSSMARK,
-  DOWN_ARROW,
   ELLIPSIS,
   RETURN_SYMBOL,
-  UP_ARROW,
 } from './unicode.js';
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
 
@@ -165,7 +168,7 @@ function reviewLabel(status: ReviewStatus | undefined): { text: string; fg: stri
   }
 }
 
-interface PrAppProps {
+interface PrAppProps extends ViewProps {
   prs: UserPullRequest[];
   localRepos: LocalRepo[];
   ciCache: Map<string, CIInfo>;
@@ -173,7 +176,6 @@ interface PrAppProps {
   mergeableCache: Record<string, MergeableStatus>;
   repoMode: string | null;
   refreshing: boolean;
-  onSelect: (pr: UserPullRequest, matches: LocalRepo[]) => void;
   /** Fetch CI + review for a PR. Resolves when caches are updated. */
   onFetchCI: (pr: UserPullRequest) => Promise<void>;
   onPrefetchDetails: (prs: UserPullRequest[]) => void;
@@ -190,13 +192,14 @@ export function PrApp({
   mergeableCache,
   repoMode,
   refreshing,
-  onSelect,
   onFetchCI,
   onPrefetchDetails,
   onRetryChecks,
   onRefreshAll,
   onExit,
+  keybinds,
 }: PrAppProps) {
+  const navigate = useNavigate<PrScreen>();
   useExitOnCtrlC();
   const { width, height } = useTerminalDimensions();
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -294,28 +297,20 @@ export function PrApp({
     return map;
   }, [prs, localRepos]);
 
-  const footerRows = useMemo(() => {
+  const hasFailedChecks = useMemo(() => {
     const selectedPR = filteredPRs[selectedIndex];
     const selectedKey = selectedPR ? `${selectedPR.repoId}#${selectedPR.number}` : '';
     const selectedCI = selectedKey ? ciCache.get(selectedKey) : undefined;
-    const hasFailedChecks = selectedCI?.checks.some(
-      (c) => c.status === 'completed' && c.conclusion === 'failure'
-    );
-    const parts = [
-      `[${UP_ARROW}${DOWN_ARROW}] Navigate`,
-      `[${RETURN_SYMBOL}] Select`,
-      '[c] Fetch CI',
-      ...(hasFailedChecks ? ['[r]etry checks'] : []),
-      '[^R]efresh all',
-      '[s]ort',
-      '[/] Search',
-      '[q]uit',
-    ];
+    return selectedCI?.checks.some((c) => c.status === 'completed' && c.conclusion === 'failure') ?? false;
+  }, [filteredPRs, selectedIndex, ciCache]);
+
+  const footerRows = useMemo(() => {
+    const parts = footerParts(keybinds, { retryChecks: hasFailedChecks });
     const quota = rateLimit.current
       ? `API: ${rateLimit.current.remaining}/${rateLimit.current.limit}`
       : undefined;
     return buildFooterRows(parts, width, quota);
-  }, [filteredPRs, selectedIndex, ciCache, width]);
+  }, [hasFailedChecks, width, keybinds]);
 
   // 4 chrome rows (header, spacer, column headers, footer) + 2 padding rows
   const footerHeight = statusText ? 1 : footerRows.length;
@@ -427,22 +422,52 @@ export function PrApp({
     });
   }, []);
 
+  useKeybinds(keybinds, {
+    navigate: (key) => {
+      if (key.name === 'up' || key.name === 'k') moveTo(selectedIndex - 1);
+      else moveTo(selectedIndex + 1);
+    },
+    select: () => {
+      const pr = filteredPRs[selectedIndex];
+      if (pr) {
+        const matches = repoMatchMap.get(`${pr.repoId}#${pr.number}`) ?? [];
+        navigate({ type: 'pr-detail', pr, matches });
+      }
+    },
+    fetchCI: () => {
+      const pr = filteredPRs[selectedIndex];
+      if (pr) { onFetchCI(pr).then(() => forceRender((n) => n + 1)); }
+    },
+    retryChecks: () => {
+      const pr = filteredPRs[selectedIndex];
+      if (pr) {
+        onRetryChecks(pr).then((msg) => {
+          setStatusText(msg);
+          setTimeout(() => setStatusText(''), 4000);
+        });
+      }
+    },
+    refreshAll: () => {
+      if (refreshing) { queuedRefreshCountRef.current += 1; }
+      else { refreshCurrentChunk(); }
+    },
+    sort: () => setSortModal({ selectedIndex: 0 }),
+    search: () => setSearchMode(true),
+    quit: () => onExit(),
+  }, { show: { retryChecks: hasFailedChecks } });
+
+  // Fires first (LIFO) — handles sort modal, search text input, and page/home/end navigation.
   useKeyboard((key) => {
-    // ─── Sort modal ─────────────────────────────────────────
     if (sortModal) {
       switch (key.name) {
         case 'up':
         case 'k':
-          setSortModal((m) =>
-            m ? { selectedIndex: Math.max(0, m.selectedIndex - 1) } : m
-          );
+          setSortModal((m) => m ? { selectedIndex: Math.max(0, m.selectedIndex - 1) } : m);
           break;
         case 'down':
         case 'j':
           setSortModal((m) =>
-            m
-              ? { selectedIndex: Math.min(SORT_FIELDS.length - 1, m.selectedIndex + 1) }
-              : m
+            m ? { selectedIndex: Math.min(SORT_FIELDS.length - 1, m.selectedIndex + 1) } : m
           );
           break;
         case 'return': {
@@ -456,21 +481,17 @@ export function PrApp({
           setSortModal(null);
           break;
       }
-      return;
+      return true;
     }
 
     if (searchMode) {
-      const shouldCommitSearch =
-        key.name === 'return' ||
-        key.name === 'tab' ||
-        key.name === 'up' ||
-        key.name === 'down' ||
-        key.raw === '\t';
-
+      const shouldCommit =
+        key.name === 'return' || key.name === 'tab' ||
+        key.name === 'up' || key.name === 'down' || key.raw === '\t';
       if (key.name === 'escape') {
         setSearchMode(false);
         setSearchQuery('');
-      } else if (shouldCommitSearch) {
+      } else if (shouldCommit) {
         setSearchMode(false);
       } else if (key.name === 'backspace') {
         setSearchQuery((q) => q.slice(0, -1));
@@ -479,68 +500,10 @@ export function PrApp({
         setSelectedIndex(0);
         setScrollOffset(0);
       }
-      return;
+      return true;
     }
 
-    // Ctrl+R or Shift+R → refresh filtered PRs one screen at a time
-    if ((key.ctrl && key.name === 'r') || key.raw === 'R') {
-      if (refreshing) {
-        queuedRefreshCountRef.current += 1;
-      } else {
-        refreshCurrentChunk();
-      }
-      return;
-    }
-
-    if (handleListKey(key.name, selectedIndex, filteredPRs.length, listHeight, moveTo)) return;
-
-    switch (key.name) {
-      case 'up':
-      case 'k':
-        moveTo(selectedIndex - 1);
-        break;
-      case 'down':
-      case 'j':
-        moveTo(selectedIndex + 1);
-        break;
-      case 'return': {
-        const pr = filteredPRs[selectedIndex];
-        if (pr) {
-          const matches = repoMatchMap.get(`${pr.repoId}#${pr.number}`) ?? [];
-          onSelect(pr, matches);
-        }
-        break;
-      }
-      case 'c': {
-        const pr = filteredPRs[selectedIndex];
-        if (pr) {
-          onFetchCI(pr).then(() => forceRender((n) => n + 1));
-        }
-        break;
-      }
-      case 'r': {
-        const pr = filteredPRs[selectedIndex];
-        if (pr) {
-          onRetryChecks(pr).then((msg) => {
-            setStatusText(msg);
-            setTimeout(() => setStatusText(''), 4000);
-          });
-        }
-        break;
-      }
-      case 'escape':
-      case 'q':
-        onExit();
-        break;
-      case 's':
-        setSortModal({ selectedIndex: 0 });
-        break;
-      default:
-        if (key.raw === '/') {
-          setSearchMode(true);
-        }
-        break;
-    }
+    if (handleListKey(key.name, selectedIndex, filteredPRs.length, listHeight, moveTo)) return true;
   });
 
   // Column widths — repo mode replaces role+repo with author
@@ -642,7 +605,7 @@ export function PrApp({
                   if (actualIndex === selectedIndex) {
                     // Double-click effect: second click on same row opens it
                     const matches = repoMatchMap.get(`${pr.repoId}#${pr.number}`) ?? [];
-                    onSelect(pr, matches);
+                    navigate({ type: 'pr-detail', pr, matches });
                   } else {
                     moveTo(actualIndex);
                   }

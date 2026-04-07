@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { applyBaseUrl } from '../../utils/base-url';
 import type { DocPage } from './docs';
 
 interface CliOption {
@@ -19,32 +20,16 @@ interface CliDocumentation {
   subcommands: CliDocumentation[];
 }
 
-/** Keyboard shortcuts — hardcoded since they live in the TUI, not the CLI definition. */
-const BRANCH_PICKER_KEYS = [
-  { key: 'Up/Down or j/k', action: 'Navigate' },
-  { key: 'Enter', action: 'Checkout selected branch' },
-  { key: '/', action: 'Search' },
-  { key: 'r', action: 'Toggle remote branches' },
-  { key: 'a', action: 'Cycle author filter' },
-  { key: 'q or Esc', action: 'Quit' },
-];
+interface KeybindingEntry {
+  key: string;
+  action: string;
+}
 
-const PR_DASHBOARD_KEYS = [
-  { key: 'Up/Down or j/k', action: 'Navigate' },
-  { key: 'Enter', action: 'Select PR (clone, checkout, open in editor)' },
-  { key: 'c', action: 'Fetch/refresh CI status' },
-  { key: '/', action: 'Search' },
-  { key: 'q or Esc', action: 'Quit' },
-];
+type KeybindingsMap = Record<string, Record<string, KeybindingEntry[]>>;
 
-const PR_DETAIL_KEYS = [
-  { key: 'Enter', action: 'Open in editor' },
-  { key: 'c', action: 'Copy check logs' },
-  { key: 'r', action: 'Refresh CI' },
-  { key: 't', action: 'Retry failed checks' },
-  { key: 'w', action: 'Toggle watch mode' },
-  { key: 'Left or Esc', action: 'Back to list' },
-];
+function viewKeys(keybindings: KeybindingsMap, commandName: string, viewName: string): KeybindingEntry[] {
+  return keybindings[commandName]?.[viewName] ?? [];
+}
 
 function renderOptionsTable(options: Record<string, CliOption>): string {
   const userOptions = Object.values(options).filter(
@@ -74,7 +59,7 @@ function renderOptionsTable(options: Record<string, CliOption>): string {
     return `<tr><td>${flagStr}</td><td>${desc}${defaultVal}</td></tr>`;
   });
 
-  return `<table><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+  return `<table style="--cols: 2"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
 }
 
 function renderKeybindTable(
@@ -86,40 +71,7 @@ function renderKeybindTable(
         `<tr><td><code>${k.key}</code></td><td>${k.action}</td></tr>`
     )
     .join('');
-  return `<table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`;
-}
-
-function renderCliDocsToHtml(doc: CliDocumentation): string {
-  const parts: string[] = [];
-
-  // Branch Picker (root command)
-  parts.push(`<h2 id="branch-picker">Branch Picker (default)</h2>`);
-  parts.push(`<p>${doc.description}</p>`);
-  parts.push(
-    `<pre><code class="language-sh">${doc.usage}</code></pre>`
-  );
-  parts.push(`<h3 id="branch-picker-options">Options</h3>`);
-  parts.push(renderOptionsTable(doc.options));
-  parts.push(`<h3 id="branch-picker-keyboard">Keyboard shortcuts</h3>`);
-  parts.push(renderKeybindTable(BRANCH_PICKER_KEYS));
-
-  // PR Dashboard subcommand
-  const prCmd = doc.subcommands.find((s) => s.name === 'pr');
-  if (prCmd) {
-    parts.push(`<h2 id="pr-dashboard">PR Dashboard</h2>`);
-    parts.push(`<p>${prCmd.description}</p>`);
-    parts.push(
-      `<pre><code class="language-sh">${prCmd.usage}</code></pre>`
-    );
-    parts.push(`<h3 id="pr-dashboard-options">Options</h3>`);
-    parts.push(renderOptionsTable(prCmd.options));
-    parts.push(`<h3 id="pr-dashboard-keyboard">Keyboard shortcuts</h3>`);
-    parts.push(renderKeybindTable(PR_DASHBOARD_KEYS));
-    parts.push(`<h3 id="pr-detail-view">PR Detail View</h3>`);
-    parts.push(renderKeybindTable(PR_DETAIL_KEYS));
-  }
-
-  return parts.join('\n');
+  return `<table style="--cols: 2"><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function extractHeadingsFromHtml(
@@ -137,29 +89,122 @@ function extractHeadingsFromHtml(
   return headings;
 }
 
+function renderRootCommandPage(doc: CliDocumentation, keybindings: KeybindingsMap): string {
+  const parts: string[] = [];
+  parts.push(`<p>${doc.description ?? ''}</p>`);
+  parts.push(`<pre><code class="language-sh">${doc.usage}</code></pre>`);
+  parts.push(`<h2 id="options">Options</h2>`);
+  parts.push(renderOptionsTable(doc.options));
+  parts.push(`<h2 id="keyboard-shortcuts">Keyboard shortcuts</h2>`);
+  parts.push(renderKeybindTable(viewKeys(keybindings, 'default', 'branch-picker')));
+  return parts.join('\n');
+}
+
+function renderPrCommandPage(prCmd: CliDocumentation, keybindings: KeybindingsMap): string {
+  const parts: string[] = [];
+  parts.push(`<p>${prCmd.description ?? ''}</p>`);
+  parts.push(`<pre><code class="language-sh">${prCmd.usage}</code></pre>`);
+  parts.push(`<h2 id="options">Options</h2>`);
+  parts.push(renderOptionsTable(prCmd.options));
+  parts.push(`<h2 id="pr-dashboard-keyboard">PR Dashboard keyboard shortcuts</h2>`);
+  parts.push(renderKeybindTable(viewKeys(keybindings, 'pr', 'pr-list')));
+  parts.push(`<h2 id="pr-detail-view">PR Detail View keyboard shortcuts</h2>`);
+  parts.push(renderKeybindTable(viewKeys(keybindings, 'pr', 'pr-detail')));
+  return parts.join('\n');
+}
+
+function renderUsageIndexPage(doc: CliDocumentation): string {
+  const commands: { slug: string; name: string; description: string }[] = [
+    {
+      slug: 'usage/git-switchboard',
+      name: 'git-switchboard',
+      description: doc.description ?? 'Interactive branch picker TUI.',
+    },
+  ];
+
+  for (const sub of doc.subcommands) {
+    if (sub.name === 'pr') {
+      commands.push({
+        slug: 'usage/pr',
+        name: 'git-switchboard pr',
+        description: sub.description ?? 'PR dashboard TUI.',
+      });
+    }
+  }
+
+  const rows = commands
+    .map((cmd) => {
+      const href = applyBaseUrl(`/docs/${cmd.slug}`);
+      return `<tr style="cursor:pointer" onclick="window.location.href='${href}'"><td><code>${cmd.name}</code></td><td>${cmd.description}</td></tr>`;
+    })
+    .join('');
+
+  return `<p>Reference for all <code>git-switchboard</code> commands. Select a command below to view its options and keyboard shortcuts.</p>
+<table class="cmd-index-table" style="--cols: 2"><thead><tr><th>Command</th><th>Description</th></tr></thead><tbody>${rows}</tbody></table>
+<style>.cmd-index-table tbody tr:hover td { background: rgba(212,146,10,0.07); }</style>`;
+}
+
 /**
- * Load CLI docs JSON and produce a DocPage for the usage page.
+ * Load CLI docs JSON and produce DocPages for each command.
+ * Returns: usage (index), usage/git-switchboard, usage/pr (if present)
  */
-export async function generateUsageDoc(): Promise<DocPage | null> {
+export async function generateUsageDocs(): Promise<DocPage[]> {
   try {
-    const cliDocsPath = join(process.cwd(), 'generated', 'cli-docs.json');
-    const raw = await readFile(cliDocsPath, 'utf-8');
-    const doc: CliDocumentation = JSON.parse(raw);
-    const renderedHtml = renderCliDocsToHtml(doc);
-    return {
+    const generatedDir = join(process.cwd(), 'generated');
+    const [cliRaw, keybindingsRaw] = await Promise.all([
+      readFile(join(generatedDir, 'cli-docs.json'), 'utf-8'),
+      readFile(join(generatedDir, 'keybindings.json'), 'utf-8'),
+    ]);
+    const doc: CliDocumentation = JSON.parse(cliRaw);
+    const keybindings: KeybindingsMap = JSON.parse(keybindingsRaw);
+
+    const pages: DocPage[] = [];
+
+    // Index page
+    const indexHtml = renderUsageIndexPage(doc);
+    pages.push({
       slug: 'usage',
-      title: 'Usage',
+      title: 'CLI Reference',
       description: 'Commands, options, and keyboard shortcuts.',
       order: 2,
       content: '',
-      renderedHtml,
-      headings: extractHeadingsFromHtml(renderedHtml),
-    };
+      renderedHtml: indexHtml,
+      headings: extractHeadingsFromHtml(indexHtml),
+    });
+
+    // Root command page
+    const rootHtml = renderRootCommandPage(doc, keybindings);
+    pages.push({
+      slug: 'usage/git-switchboard',
+      title: 'git-switchboard',
+      description: doc.description ?? 'Interactive branch picker TUI.',
+      order: 2.1,
+      content: '',
+      renderedHtml: rootHtml,
+      headings: extractHeadingsFromHtml(rootHtml),
+    });
+
+    // PR subcommand page
+    const prCmd = doc.subcommands.find((s) => s.name === 'pr');
+    if (prCmd) {
+      const prHtml = renderPrCommandPage(prCmd, keybindings);
+      pages.push({
+        slug: 'usage/pr',
+        title: 'git-switchboard pr',
+        description: prCmd.description ?? 'PR dashboard TUI.',
+        order: 2.2,
+        content: '',
+        renderedHtml: prHtml,
+        headings: extractHeadingsFromHtml(prHtml),
+      });
+    }
+
+    return pages;
   } catch (err) {
     console.warn(
-      '[docs-site] Failed to generate usage doc from CLI docs:',
+      '[docs-site] Failed to generate usage docs from CLI docs:',
       (err as Error).message
     );
-    return null;
+    return [];
   }
 }

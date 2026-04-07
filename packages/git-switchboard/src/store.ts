@@ -19,7 +19,7 @@ import type {
 import type { LocalRepo } from './scanner.js';
 import type { ResolvedEditor, EditorInfo } from './editor.js';
 
-type Screen =
+export type PrScreen =
   | { type: 'pr-list' }
   | { type: 'pr-detail'; pr: UserPullRequest; matches: LocalRepo[] }
   | { type: 'clone-prompt'; pr: UserPullRequest; matches: LocalRepo[] };
@@ -40,10 +40,6 @@ export interface PrStore {
   reviewCache: Record<string, ReviewInfo>;
   mergeableCache: Record<string, MergeableStatus>;
   watchedPRs: Set<string>;
-
-  // ─── Navigation ───────────────────────────────────────────────
-  screen: Screen;
-  navigate: (screen: Screen) => void;
 
   // ─── UI state ─────────────────────────────────────────────────
   ciLoading: boolean;
@@ -335,10 +331,6 @@ export const createPrStore = (initial: {
     reviewCache: Object.fromEntries(initial.reviewCache),
     mergeableCache: Object.fromEntries(initial.mergeableCache),
     watchedPRs: new Set(),
-
-    // ─── Navigation ─────────────────────────────────────────────
-    screen: { type: 'pr-list' } as Screen,
-    navigate: (screen) => set({ screen }),
 
     // ─── UI state ───────────────────────────────────────────────
     ciLoading: false,

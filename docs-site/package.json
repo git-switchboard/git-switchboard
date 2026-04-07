@@ -6,10 +6,11 @@
   "scripts": {
     "generate:demo-frame": "bun run ../packages/git-switchboard/scripts/generate-demo-frame.tsx > generated/terminal-frame.json",
     "generate:cli-docs": "cd ../packages/git-switchboard && bunx --bun cli-forge generate-documentation ./src/cli.ts --format json --output /tmp/cli-docs-raw && bun run scripts/generate-cli-docs.ts /tmp/cli-docs-raw/git-switchboard.json ../../docs-site/generated/cli-docs.json",
-    "generate": "mkdir -p generated && pnpm generate:demo-frame && pnpm generate:cli-docs",
+    "generate:keybindings": "bun run ../packages/git-switchboard/scripts/generate-keybindings.ts generated/keybindings.json",
+    "generate": "mkdir -p generated && pnpm generate:demo-frame && pnpm generate:cli-docs && pnpm generate:keybindings",
     "dev": "vike dev",
-    "build": "pnpm generate && vike build && pnpm exec pagefind --site dist/client",
-    "preview": "pnpm generate && vike build && pnpm exec pagefind --site dist/client && vike preview"
+    "build": "vike build && pnpm exec pagefind --site dist/client",
+    "preview": "vike build && pnpm exec pagefind --site dist/client && vike preview"
   },
   "dependencies": {
     "@shikijs/rehype": "^3.21.0",
@@ -42,7 +43,11 @@
   "nx": {
     "name": "docs-site",
     "targets": {
+      "dev": {
+        "dependsOn": ["generate:demo-frame", "generate:cli-docs", "generate:keybindings"]
+      },
       "build": {
+        "dependsOn": ["generate:demo-frame", "generate:cli-docs", "generate:keybindings"],
         "outputs": ["{projectRoot}/dist"]
       },
       "deploy": {

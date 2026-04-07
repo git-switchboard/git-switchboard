@@ -1,9 +1,12 @@
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
 import { useCallback, useMemo, useState } from 'react';
+import { useKeybinds } from './use-keybinds.js';
 import { muteColor } from './colors.js';
 import { ScrollList, handleListKey } from './scroll-list.js';
 import type { AuthorFilterMode, BranchWithPR } from './types.js';
-import { DOWN_ARROW, ELLIPSIS, RETURN_SYMBOL, UP_ARROW } from './unicode.js';
+import { footerParts } from './view.js';
+import { ELLIPSIS, RETURN_SYMBOL } from './unicode.js';
+import type { ViewProps } from './view.js';
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
 
 /** Truncate string to fit width, adding ellipsis if needed */
@@ -12,7 +15,7 @@ function fit(str: string, width: number): string {
   return str.slice(0, width - 1) + ELLIPSIS;
 }
 
-interface AppProps {
+interface AppProps extends ViewProps {
   branches: BranchWithPR[];
   currentUser: string;
   /** All names the current user goes by (for "me" filter) */
@@ -33,6 +36,7 @@ export function App({
   onSelect,
   onExit,
   fetchBranches,
+  keybinds,
 }: AppProps) {
   useExitOnCtrlC();
   const { width, height } = useTerminalDimensions();
@@ -93,19 +97,44 @@ export function App({
     [filteredBranches.length, listHeight]
   );
 
+  useKeybinds(keybinds, {
+    navigate: (key) => {
+      if (key.name === 'up' || key.name === 'k') moveTo(selectedIndex - 1);
+      else moveTo(selectedIndex + 1);
+    },
+    select: () => {
+      const branch = filteredBranches[selectedIndex];
+      if (branch) onSelect(branch);
+    },
+    toggleRemote: () => {
+      const newShowRemote = !showRemote;
+      setShowRemote(newShowRemote);
+      setBranches(fetchBranches(newShowRemote));
+      setSelectedIndex(0);
+      setScrollOffset(0);
+    },
+    cycleAuthor: () => {
+      setAuthorFilter((current) => {
+        const idx = authorFilterModes.indexOf(current);
+        return authorFilterModes[(idx + 1) % authorFilterModes.length];
+      });
+      setSelectedIndex(0);
+      setScrollOffset(0);
+    },
+    search: () => setSearchMode(true),
+    quit: () => onExit(),
+  });
+
+  // Fires first (LIFO) — handles search text input and page/home/end navigation.
   useKeyboard((key) => {
     if (searchMode) {
-      const shouldCommitSearch =
-        key.name === 'return' ||
-        key.name === 'tab' ||
-        key.name === 'up' ||
-        key.name === 'down' ||
-        key.raw === '\t';
-
+      const shouldCommit =
+        key.name === 'return' || key.name === 'tab' ||
+        key.name === 'up' || key.name === 'down' || key.raw === '\t';
       if (key.name === 'escape') {
         setSearchMode(false);
         setSearchQuery('');
-      } else if (shouldCommitSearch) {
+      } else if (shouldCommit) {
         setSearchMode(false);
       } else if (key.name === 'backspace') {
         setSearchQuery((q) => q.slice(0, -1));
@@ -114,53 +143,9 @@ export function App({
         setSelectedIndex(0);
         setScrollOffset(0);
       }
-      return;
+      return true;
     }
-
-    if (handleListKey(key.name, selectedIndex, filteredBranches.length, listHeight, moveTo)) return;
-
-    switch (key.name) {
-      case 'up':
-      case 'k':
-        moveTo(selectedIndex - 1);
-        break;
-      case 'down':
-      case 'j':
-        moveTo(selectedIndex + 1);
-        break;
-      case 'return': {
-        const branch = filteredBranches[selectedIndex];
-        if (branch) onSelect(branch);
-        break;
-      }
-      case 'r': {
-        const newShowRemote = !showRemote;
-        setShowRemote(newShowRemote);
-        const newBranches = fetchBranches(newShowRemote);
-        setBranches(newBranches);
-        setSelectedIndex(0);
-        setScrollOffset(0);
-        break;
-      }
-      case 'a': {
-        setAuthorFilter((current) => {
-          const idx = authorFilterModes.indexOf(current);
-          return authorFilterModes[(idx + 1) % authorFilterModes.length];
-        });
-        setSelectedIndex(0);
-        setScrollOffset(0);
-        break;
-      }
-      case 'escape':
-      case 'q':
-        onExit();
-        break;
-      default:
-        if (key.raw === '/') {
-          setSearchMode(true);
-        }
-        break;
-    }
+    if (handleListKey(key.name, selectedIndex, filteredBranches.length, listHeight, moveTo)) return true;
   });
 
   const authorLabel =
@@ -282,7 +267,7 @@ export function App({
       {/* Footer */}
       <box style={{ height: 1, width: '100%' }}>
         <text
-          content={` [${UP_ARROW}\\${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [r]emote | [a]uthor | [/] Search | [q]uit`}
+          content={` ${footerParts(keybinds).join(' | ')}`}
           fg={tableFocused ? '#565f89' : muteColor('#565f89', 0.3)}
         />
       </box>

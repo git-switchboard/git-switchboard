@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Changelog — git-switchboard Mission Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:              #06090e;
+  --bg-raised:       #0b1018;
+  --bg-surface:      #101820;
+  --bg-panel:        #0d1520;
+  --border:          #192838;
+  --border-light:    #243848;
+  --border-accent:   #2a5070;
+  --text:            #b0c4d4;
+  --text-dim:        #4a6878;
+  --text-bright:     #d8eaf5;
+  --amber:           #d4920a;
+  --amber-bright:    #ecb030;
+  --amber-glow:      rgba(212,146,10,0.15);
+  --blue:            #2e80c0;
+  --blue-bright:     #50a0e0;
+  --blue-glow:       rgba(46,128,192,0.12);
+  --green:           #28b060;
+  --green-glow:      rgba(40,176,96,0.12);
+  --red:             #b83030;
+  --red-glow:        rgba(184,48,48,0.12);
+  --grid-line:       rgba(46,128,192,0.06);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Space Grotesk', sans-serif;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+  color: var(--text);
+  min-height: 100vh;
+}
+nav {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border);
+  padding: 0 1.5rem; display: flex; align-items: center; height: 54px; gap: 1.5rem;
+}
+.nav-telemetry { display: flex; gap: 1.25rem; border-right: 1px solid var(--border); padding-right: 1.25rem; }
+.telem-cell { display: flex; flex-direction: column; gap: 1px; }
+.telem-key { font-family: 'Space Grotesk', sans-serif; font-size: 0.52rem; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); line-height: 1; }
+.telem-val { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--amber); letter-spacing: 0.05em; line-height: 1; }
+.telem-val.green { color: var(--green); }
+.nav-logo { text-decoration: none; display: flex; align-items: center; gap: 0.5rem; margin-right: auto; }
+.logo-badge { background: var(--blue); color: #fff; font-family: 'Space Grotesk', sans-serif; font-size: 0.55rem; font-weight: 700; letter-spacing: 0.1em; padding: 2px 6px; }
+.logo-name { font-family: 'Bebas Neue', sans-serif; font-size: 1.4rem; color: var(--text-bright); letter-spacing: 0.1em; }
+.logo-accent { color: var(--amber); }
+.nav-links { display: flex; list-style: none; }
+.nav-links a { color: var(--text-dim); text-decoration: none; font-size: 0.82rem; font-weight: 500; letter-spacing: 0.04em; padding: 0 1rem; height: 54px; display: flex; align-items: center; border-left: 1px solid var(--border); transition: color 0.15s; }
+.nav-links a:last-child { border-right: 1px solid var(--border); }
+.nav-links a:hover, .nav-links a.active { color: var(--text-bright); }
+.nav-github { color: var(--text-dim); text-decoration: none; font-size: 0.8rem; font-weight: 500; border: 1px solid var(--border-light); padding: 0.35rem 0.9rem; transition: all 0.15s; margin-left: 0.5rem; }
+.nav-github:hover { color: var(--amber); border-color: var(--amber); }
+.nav-bar-bottom {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 9999;
+  background: var(--bg-panel); border-top: 1px solid var(--border);
+  padding: 0 1.5rem; display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; height: 44px;
+  font-family: 'Space Grotesk', sans-serif; font-size: 0.72rem; font-weight: 600;
+}
+.nav-bar-pages, .nav-bar-themes { display: flex; align-items: center; gap: 0.3rem; }
+.nav-bar-label { color: var(--text-dim); letter-spacing: 0.15em; font-size: 0.6rem; text-transform: uppercase; margin-right: 0.4rem; }
+.nav-page-link { color: var(--text-dim); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; transition: all 0.12s; letter-spacing: 0.04em; }
+.nav-page-link:hover, .nav-page-link.active { color: var(--amber); border-color: var(--amber); background: var(--amber-glow); }
+.nav-theme-link { color: var(--text-dim); text-decoration: none; border: 1px solid var(--border); padding: 2px 8px; transition: all 0.12s; letter-spacing: 0.04em; }
+.nav-theme-link:hover { color: var(--amber); }
+.nav-theme-link.active { color: var(--amber); border-color: var(--amber); background: var(--amber-glow); }
+.doc-layout { display: grid; grid-template-columns: 230px 1fr; min-height: calc(100vh - 54px - 44px); }
+.sidebar { background: var(--bg-raised); border-right: 1px solid var(--border); padding: 1.5rem 0; position: sticky; top: 54px; height: calc(100vh - 54px - 44px); overflow-y: auto; }
+.sidebar-phase { margin-bottom: 1.75rem; }
+.sidebar-phase-label { font-size: 0.55rem; font-weight: 700; letter-spacing: 0.25em; text-transform: uppercase; color: var(--text-dim); padding: 0 1.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem; }
+.sidebar-link { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 1.25rem; font-size: 0.82rem; font-weight: 500; color: var(--text-dim); text-decoration: none; transition: all 0.12s; }
+.sidebar-link:hover { color: var(--text-bright); background: rgba(46,128,192,0.05); }
+.sidebar-link.active { color: var(--amber); background: var(--amber-glow); border-left: 2px solid var(--amber); padding-left: calc(1.25rem - 2px); }
+.page-content { padding: 2.5rem 3rem; max-width: 820px; }
+.status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.status-dot.green  { background: var(--green); box-shadow: 0 0 4px var(--green-glow); }
+.status-dot.amber  { background: var(--amber); box-shadow: 0 0 4px var(--amber-glow); }
+.status-dot.red    { background: var(--red);   box-shadow: 0 0 4px var(--red-glow); }
+.status-dot.blue   { background: var(--blue);  box-shadow: 0 0 4px var(--blue-glow); }
+.prose h1 { font-family: 'Bebas Neue', sans-serif; font-size: 2.5rem; color: var(--text-bright); letter-spacing: 0.08em; margin-bottom: 0.75rem; }
+.prose p  { color: var(--text); line-height: 1.75; margin-bottom: 1rem; font-size: 0.92rem; }
+.prose code { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; color: var(--amber); background: rgba(212,146,10,0.1); padding: 1px 4px; }
+
+/* CHANGELOG SPECIFIC */
+.version-block { margin-bottom: 3.5rem; padding-bottom: 2.5rem; border-bottom: 1px solid var(--border); }
+.version-block:last-child { border-bottom: none; }
+.version-header { display: flex; align-items: baseline; gap: 1.25rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.version-number {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 2.8rem;
+  color: var(--text-bright);
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+.version-date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--amber);
+  letter-spacing: 0.05em;
+}
+.version-tag {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  border: 1px solid;
+  padding: 2px 8px;
+}
+.version-tag.latest { color: var(--green); border-color: var(--green); background: var(--green-glow); }
+.version-tag.stable { color: var(--blue-bright); border-color: var(--blue); background: var(--blue-glow); }
+
+.change-group { margin-bottom: 1.25rem; }
+.change-group-label {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  margin-bottom: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.change-group-label.new   { color: var(--green); }
+.change-group-label.improved { color: var(--blue-bright); }
+.change-group-label.fixed { color: var(--amber); }
+
+.change-list { list-style: none; margin: 0; padding: 0; }
+.change-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.3rem 0;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.65;
+  border-bottom: 1px solid rgba(25,40,56,0.6);
+}
+.change-item:last-child { border-bottom: none; }
+.change-dot-col { padding-top: 6px; flex-shrink: 0; }
+.change-text { flex: 1; }
+.change-text code { font-family: 'JetBrains Mono', monospace; font-size: 0.82em; color: var(--amber); background: rgba(212,146,10,0.1); padding: 1px 4px; }
+
+.version-telem { display: flex; gap: 1.5rem; margin-bottom: 1.25rem; padding: 0.85rem 1rem; background: var(--bg-surface); border: 1px solid var(--border); }
+
+.page-header { margin-bottom: 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border); }
+.page-header-meta { display: flex; gap: 1.5rem; margin-bottom: 0.85rem; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-telemetry">
+    <div class="telem-cell">
+      <span class="telem-key">STATUS</span>
+      <span class="telem-val green">NOMINAL</span>
+    </div>
+    <div class="telem-cell">
+      <span class="telem-key">PLATFORM</span>
+      <span class="telem-val">ALL</span>
+    </div>
+  </div>
+  <a href="index.html" class="nav-logo">
+    <span class="logo-badge">OSS</span>
+    <span class="logo-name">git-<span class="logo-accent">switchboard</span></span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="usage.html">Usage</a></li>
+    <li><a href="guide.html">Guides</a></li>
+    <li><a href="changelog.html" class="active">Changelog</a></li>
+  </ul>
+  <a href="#" class="nav-github">★ GitHub</a>
+</nav>
+
+<div class="doc-layout">
+  <aside class="sidebar">
+    <div class="sidebar-phase">
+      <div class="sidebar-phase-label"><span class="status-dot green"></span> RELEASES</div>
+      <a href="#v030" class="sidebar-link active">
+        <span class="status-dot green"></span>
+        v0.3.0 — Dec 2025
+      </a>
+      <a href="#v020" class="sidebar-link">
+        <span class="status-dot blue"></span>
+        v0.2.0 — Sep 2025
+      </a>
+      <a href="#v010" class="sidebar-link">
+        <span class="status-dot amber"></span>
+        v0.1.0 — Jun 2025
+      </a>
+    </div>
+    <div class="sidebar-phase">
+      <div class="sidebar-phase-label"><span class="status-dot blue"></span> RESOURCES</div>
+      <a href="guide.html" class="sidebar-link">Getting Started</a>
+      <a href="usage.html" class="sidebar-link">CLI Reference</a>
+      <a href="#" class="sidebar-link">GitHub Releases</a>
+    </div>
+  </aside>
+
+  <main class="page-content prose">
+    <div class="page-header">
+      <div class="page-header-meta">
+        <div class="telem-cell">
+          <span class="telem-key">Latest</span>
+          <span class="telem-val">v0.3.0</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Releases</span>
+          <span class="telem-val">3</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Status</span>
+          <span class="telem-val green">Active</span>
+        </div>
+      </div>
+      <h1>Changelog</h1>
+      <p>All notable changes to git-switchboard. Follows <a href="https://keepachangelog.com" style="color:var(--amber)">Keep a Changelog</a> and <a href="https://semver.org" style="color:var(--amber)">Semantic Versioning</a>.</p>
+    </div>
+
+    <!-- v0.3.0 -->
+    <div class="version-block" id="v030">
+      <div class="version-header">
+        <span class="version-number">v0.3.0</span>
+        <span class="version-date">2025-12-15</span>
+        <span class="version-tag latest">Latest</span>
+      </div>
+
+      <div class="version-telem">
+        <div class="telem-cell">
+          <span class="telem-key">New</span>
+          <span class="telem-val green">4</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Improved</span>
+          <span class="telem-val" style="color:var(--blue-bright)">2</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Fixed</span>
+          <span class="telem-val">3</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Release</span>
+          <span class="telem-val">v0.3.0</span>
+        </div>
+      </div>
+
+      <div class="change-group">
+        <div class="change-group-label new"><span class="status-dot green"></span> New</div>
+        <ul class="change-list">
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text">PR dashboard with live CI status — launch with <code>git switchboard pr</code> to see all open PRs across your repos with pass/fail/pending indicators</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text">Retry CI directly from the PR dashboard by pressing <code>R</code> on any selected PR — triggers a new run without leaving the terminal</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text">Clone a PR's branch locally from the PR dashboard with <code>c</code> — sets up tracking and optionally opens in your editor immediately</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text">Review status now displayed in the branch picker — shows approved, changes requested, or pending review state alongside CI status</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="change-group">
+        <div class="change-group-label improved"><span class="status-dot blue"></span> Improved</div>
+        <ul class="change-list">
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot blue"></span></span>
+            <span class="change-text">Fuzzy search performance significantly improved on repos with 500+ branches — now uses an indexed trie structure for sub-millisecond filtering</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot blue"></span></span>
+            <span class="change-text">Refresh behavior after checkout no longer briefly flickers the branch list — transitions are now frame-synchronized</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="change-group">
+        <div class="change-group-label fixed"><span class="status-dot amber"></span> Fixed</div>
+        <ul class="change-list">
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot amber"></span></span>
+            <span class="change-text">Crash on launch when no GitHub token is configured — now degrades gracefully with a clear inline notice rather than a panic</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot amber"></span></span>
+            <span class="change-text">Stale branch list displayed after checkout in some edge cases — now always re-fetches from git after any branch change</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot amber"></span></span>
+            <span class="change-text">Incorrect sort order on branches with identical commit timestamps — now uses a stable secondary sort by branch name</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- v0.2.0 -->
+    <div class="version-block" id="v020">
+      <div class="version-header">
+        <span class="version-number">v0.2.0</span>
+        <span class="version-date">2025-09-20</span>
+        <span class="version-tag stable">Stable</span>
+      </div>
+
+      <div class="version-telem">
+        <div class="telem-cell">
+          <span class="telem-key">New</span>
+          <span class="telem-val green">4</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Improved</span>
+          <span class="telem-val" style="color:var(--blue-bright)">0</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Fixed</span>
+          <span class="telem-val">0</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Release</span>
+          <span class="telem-val">v0.2.0</span>
+        </div>
+      </div>
+
+      <div class="change-group">
+        <div class="change-group-label new"><span class="status-dot green"></span> New</div>
+        <ul class="change-list">
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text">GitHub integration — authenticate with a personal access token to show linked PR numbers and states directly in the branch picker</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text">CI checks display in branch picker — pass/fail/pending CI status shown inline for branches with open pull requests</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text"><code>--author &lt;user&gt;</code> flag — filter branch list to a specific author at launch without entering the TUI filter</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text"><code>--remote</code> / <code>-r</code> flag — include remote branches in the picker listing, shown with a remote prefix</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- v0.1.0 -->
+    <div class="version-block" id="v010">
+      <div class="version-header">
+        <span class="version-number">v0.1.0</span>
+        <span class="version-date">2025-06-01</span>
+        <span class="version-tag stable">Initial Release</span>
+      </div>
+
+      <div class="version-telem">
+        <div class="telem-cell">
+          <span class="telem-key">New</span>
+          <span class="telem-val green">6</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Platforms</span>
+          <span class="telem-val">3</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Release</span>
+          <span class="telem-val">v0.1.0</span>
+        </div>
+        <div class="telem-cell">
+          <span class="telem-key">Status</span>
+          <span class="telem-val green">First</span>
+        </div>
+      </div>
+
+      <div class="change-group">
+        <div class="change-group-label new"><span class="status-dot green"></span> New</div>
+        <ul class="change-list">
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text">Initial release — keyboard-driven TUI for listing and checking out git branches without typing branch names</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text">Interactive branch picker with author, last-updated, and branch name columns sorted by recency</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text">Fuzzy search with <code>/</code> key — instantly narrows branch list as you type, no confirmation needed</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text">Vim keybindings (<code>j</code>/<code>k</code> to navigate, <code>gg</code>/<code>G</code> to jump to top/bottom) alongside arrow key support</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text">Cross-platform binary distribution — single executable for macOS (Intel + Apple Silicon), Linux (x86_64 + ARM), and Windows</span>
+          </li>
+          <li class="change-item">
+            <span class="change-dot-col"><span class="status-dot green"></span></span>
+            <span class="change-text">Homebrew tap and Chocolatey package for one-line installation on macOS/Linux and Windows respectively</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div class="nav-bar-bottom">
+  <div class="nav-bar-pages">
+    <span class="nav-bar-label">PAGES</span>
+    <a href="index.html"         class="nav-page-link">Landing</a>
+    <a href="design-system.html" class="nav-page-link">Design System</a>
+    <a href="usage.html"         class="nav-page-link">Usage</a>
+    <a href="guide.html"         class="nav-page-link">Guide</a>
+    <a href="changelog.html"     class="nav-page-link active">Changelog</a>
+  </div>
+  <div class="nav-bar-themes">
+    <span class="nav-bar-label">THEME</span>
+    <a href="../theme-1/index.html" class="nav-theme-link">1 · Switchboard</a>
+    <a href="../theme-3/index.html" class="nav-theme-link">3 · Phosphor</a>
+    <a href="../theme-4/index.html" class="nav-theme-link active">4 · Mission Control</a>
+  </div>
+</div>
+<div style="height:44px"></div>
+
+</body>
+</html>
