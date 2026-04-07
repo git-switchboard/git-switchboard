@@ -6,7 +6,8 @@
  *
  * Usage: bun run packages/git-switchboard/scripts/generate-cli-docs.ts <input-json> <output-json>
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 const [inputPath, outputPath] = process.argv.slice(2);
 
@@ -62,5 +63,6 @@ function sanitize(doc: Record<string, unknown>): Record<string, unknown> {
 }
 
 const sanitized = sanitize(raw);
+mkdirSync(dirname(outputPath), { recursive: true });
 writeFileSync(outputPath, JSON.stringify(sanitized, null, 2));
 console.log(`Wrote sanitized CLI docs to ${outputPath}`);
