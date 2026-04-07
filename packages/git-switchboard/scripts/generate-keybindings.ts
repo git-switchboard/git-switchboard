@@ -6,7 +6,8 @@
  *
  * Usage: bun run packages/git-switchboard/scripts/generate-keybindings.ts <output-json>
  */
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { ALL_COMMANDS } from '../src/commands.js';
 
 const [outputPath] = process.argv.slice(2);
@@ -44,5 +45,6 @@ for (const command of ALL_COMMANDS) {
   }
 }
 
+mkdirSync(dirname(outputPath), { recursive: true });
 writeFileSync(outputPath, JSON.stringify(output, null, 2));
 console.log(`Wrote keybindings for ${ALL_COMMANDS.length} command(s) to ${outputPath}`);

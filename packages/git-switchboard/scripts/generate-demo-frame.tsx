@@ -1,9 +1,10 @@
 /**
  * Generates captured frames of the TUI views for use in the docs site.
  *
- * Run with: bun run packages/git-switchboard/scripts/generate-demo-frame.tsx
- * Outputs JSON to stdout.
+ * Usage: bun run packages/git-switchboard/scripts/generate-demo-frame.tsx <output-json>
  */
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { testRender } from '@opentui/react/test-utils';
 import { App } from '../src/app.js';
 import { PrApp } from '../src/pr-app.js';
@@ -391,6 +392,12 @@ async function captureFrame(
 // ── Main ──
 
 async function main() {
+  const [outputPath] = process.argv.slice(2);
+  if (!outputPath) {
+    console.error('Usage: bun run generate-demo-frame.tsx <output-json>');
+    process.exit(1);
+  }
+
   const branchKeybinds = BRANCH_COMMAND.views['branch-picker'].keybinds;
   const prListKeybinds = PR_COMMAND.views['pr-list'].keybinds;
   const prDetailKeybinds = PR_COMMAND.views['pr-detail'].keybinds;
@@ -499,13 +506,16 @@ async function main() {
     ),
   ]);
 
-  console.log(
+  mkdirSync(dirname(outputPath), { recursive: true });
+  writeFileSync(
+    outputPath,
     JSON.stringify(
       { branchPicker: branchFrame, prDashboard: prFrame, prDetail: prDetailFrame, clonePrompt: clonePromptFrame },
       null,
       2
     )
   );
+  console.log(`Wrote demo frames to ${outputPath}`);
 
   process.exit(0);
 }
