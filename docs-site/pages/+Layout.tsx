@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { usePageContext } from 'vike-react/usePageContext';
 import { Link } from '../components/Link';
+import { PagefindSearch } from '../components/PagefindSearch';
 import type { NavigationItem } from '../server/utils/docs';
 
 const GITHUB_URL = 'https://github.com/git-switchboard/git-switchboard';
@@ -22,11 +23,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   return (
-    <div className="min-h-screen bg-switch-bg text-switch-text" style={{ paddingBottom: '44px' }}>
+    <div className="min-h-screen bg-switch-bg bg-grid-pattern text-switch-text" style={{ paddingBottom: '44px' }}>
       {/* ── Header ────────────────────────────────── */}
       <header
         className="sticky top-0 z-40 border-b border-switch-border"
         style={{ background: '#0d1520', height: '54px' }}
+        data-pagefind-ignore
       >
         <div className="flex items-center h-full px-6 gap-5">
           {/* Telemetry cells */}
@@ -102,6 +104,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               GitHub
             </a>
           </nav>
+
+          {/* Search */}
+          <div className="hidden md:block" style={{ marginLeft: '0.5rem' }}>
+            <PagefindSearch />
+          </div>
 
           {/* GitHub star button */}
           <a
@@ -198,6 +205,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               top: '54px',
               height: 'calc(100vh - 54px - 44px)',
             }}
+            data-pagefind-ignore
           >
             <SidebarContent navigation={navigation} pathname={pathname} />
           </aside>
@@ -222,7 +230,7 @@ function BottomNav({ pathname }: { pathname: string }) {
   const isDocs = pathname.startsWith('/docs');
 
   return (
-    <nav className="nav-bar-bottom">
+    <nav className="nav-bar-bottom" data-pagefind-ignore>
       <div className="nav-bar-section">
         <span className="nav-bar-label">Pages</span>
         <Link

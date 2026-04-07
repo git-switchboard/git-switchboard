@@ -78,7 +78,7 @@ export default function DocDetailPage() {
     <div className="flex gap-10 animate-fade-in">
       <article className="flex-1 min-w-0">
         {/* Breadcrumb */}
-        <nav className="inline-flex items-center gap-2 text-[11px] text-switch-text-dim mb-8 px-3 py-1.5 border border-switch-border bg-switch-bg-surface uppercase tracking-wider" style={{ letterSpacing: '0.06em' }}>
+        <nav data-pagefind-ignore className="inline-flex items-center gap-2 text-[11px] text-switch-text-dim mb-8 px-3 py-1.5 border border-switch-border bg-switch-bg-surface uppercase tracking-wider" style={{ letterSpacing: '0.06em' }}>
           <span className="status-dot blue" />
           <Link
             href="/docs"
@@ -129,11 +129,12 @@ export default function DocDetailPage() {
 
         <div
           className="prose-content"
+          data-pagefind-body
           dangerouslySetInnerHTML={{ __html: doc.renderedHtml }}
         />
 
         {/* Bottom navigation */}
-        <div className="mt-16 pt-8 border-t border-switch-border flex items-center justify-between">
+        <div data-pagefind-ignore className="mt-16 pt-8 border-t border-switch-border flex items-center justify-between">
           <Link
             href="/docs"
             className="inline-flex items-center gap-2 text-sm text-switch-text-dim hover:text-switch-accent transition-colors uppercase tracking-wider"
@@ -162,7 +163,7 @@ export default function DocDetailPage() {
       </article>
 
       {doc.headings.length > 0 && (
-        <aside className="hidden xl:block w-48 shrink-0" style={{ paddingTop: '0.25rem' }}>
+        <aside data-pagefind-ignore className="hidden xl:block w-48 shrink-0" style={{ paddingTop: '0.25rem' }}>
           <div className="sticky top-20">
             <div className="flex items-center gap-2 mb-4">
               <span className="w-4 h-px bg-switch-accent/40" />
