@@ -3,12 +3,19 @@
   <metadata>
     <id>git-switchboard</id>
     <version>{{VERSION}}</version>
-    <title>git-switchboard</title>
+    <title>Git Switchboard - Interactive Branch Switcher</title>
     <authors>Craigory Coppola</authors>
     <projectUrl>https://github.com/git-switchboard/git-switchboard</projectUrl>
+    <packageSourceUrl>https://github.com/git-switchboard/git-switchboard</packageSourceUrl>
+    <iconUrl>https://rawcdn.githack.com/git-switchboard/git-switchboard/main/docs-site/public/favicon.svg</iconUrl>
     <licenseUrl>https://github.com/git-switchboard/git-switchboard/blob/main/LICENSE</licenseUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <summary>Interactive TUI for browsing and checking out git branches, with GitHub PR integration.</summary>
     <description>Interactive TUI for browsing and checking out git branches, with GitHub PR integration.</description>
+    <releaseNotes>https://github.com/git-switchboard/git-switchboard/releases</releaseNotes>
+    <docsUrl>https://git-switchboard.com</docsUrl>
+    <bugTrackerUrl>https://github.com/git-switchboard/git-switchboard/issues</bugTrackerUrl>
+    <projectSourceUrl>https://github.com/git-switchboard/git-switchboard</projectSourceUrl>
     <tags>git branch tui terminal cli</tags>
   </metadata>
   <files>

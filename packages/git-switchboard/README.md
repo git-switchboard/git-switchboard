@@ -46,7 +46,7 @@ Scans your local repos, matches PRs to clones, shows CI status and reviews. Sele
 
 ## Documentation
 
-Full docs: [git-switchboard.github.io/git-switchboard](https://git-switchboard.github.io/git-switchboard/)
+Full docs: [git-switchboard.com](https://git-switchboard.com)
 
 ## License
 

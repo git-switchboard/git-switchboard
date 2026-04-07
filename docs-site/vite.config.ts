@@ -13,5 +13,4 @@ export default defineConfig({
   ssr: {
     external: ['gray-matter', 'shiki'],
   },
-  base: process.env.BASE_URL || '/git-switchboard',
 });

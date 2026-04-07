@@ -55,7 +55,8 @@
         "executor": "nx-github-pages:deploy",
         "options": {
           "remote": "https://github.com/git-switchboard/git-switchboard.git",
-          "directory": "{projectRoot}/dist/client"
+          "directory": "{projectRoot}/dist/client",
+          "CNAME": "git-switchboard.com"
         }
       }
     }
