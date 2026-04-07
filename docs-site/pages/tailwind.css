@@ -619,8 +619,6 @@ pre,
    ════════════════════════════════════════════════════════════ */
 
 .doc-layout {
-  max-width: 80rem; /* 1280px */
-  margin: 0 auto;
   min-height: calc(100vh - 54px - 44px);
 }
 
