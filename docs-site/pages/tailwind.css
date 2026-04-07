@@ -392,10 +392,40 @@ pre,
   padding: 1.25em;
   padding-top: 2.5em;
   margin: 1.5em 0;
-  overflow-x: auto;
+  overflow: hidden;
+  white-space: normal;
   font-size: 0.85rem;
   line-height: 1.65;
 }
+.prose-content pre code {
+  display: block;
+  overflow-x: auto;
+  white-space: pre;
+  padding-bottom: 0.25em;
+}
+/* Copy button */
+.copy-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #4a6878;
+  background: #0b1018;
+  border: 1px solid #243848;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.12s;
+  z-index: 1;
+}
+.copy-btn:hover {
+  color: #d4920a;
+  border-color: #d4920a;
+}
+
 /* Terminal dots on code blocks */
 .prose-content pre::before {
   content: '';

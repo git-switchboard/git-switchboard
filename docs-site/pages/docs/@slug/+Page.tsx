@@ -19,6 +19,24 @@ export default function DocDetailPage() {
     });
   }, [doc?.slug]);
 
+  // Attach copy buttons to every <pre> inside prose-content.
+  useEffect(() => {
+    document.querySelectorAll<HTMLPreElement>('.prose-content pre').forEach((pre) => {
+      if (pre.querySelector('.copy-btn')) return;
+      const btn = document.createElement('button');
+      btn.className = 'copy-btn';
+      btn.textContent = 'Copy';
+      btn.addEventListener('click', async () => {
+        const code = pre.querySelector('code');
+        const text = (code ?? pre).innerText;
+        await navigator.clipboard.writeText(text);
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+      });
+      pre.appendChild(btn);
+    });
+  }, [doc?.slug]);
+
   if (!doc) {
     return (
       <div className="text-center py-24 animate-fade-in">
