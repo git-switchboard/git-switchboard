@@ -281,35 +281,26 @@ function TerminalPanel({
 function CapturedFrameRenderer({ frame }: { frame: TerminalFrame }) {
   return (
     <div>
-      {frame.lines.map((line, lineIdx) => {
-        const lineText = line.spans.map((s) => s.text).join('');
-        if (
-          !lineText.trim() &&
-          (lineIdx === 0 || lineIdx === frame.lines.length - 1)
-        ) {
-          return <div key={lineIdx} className="h-[1.45em]" />;
-        }
-        return (
-          <div
-            key={lineIdx}
-            className="whitespace-pre"
-            style={{ display: 'block', padding: '0 6px', lineHeight: 1.4 }}
-          >
-            {line.spans.map((span, spanIdx) => {
-              const fg = rgbaToCSS(span.fg);
-              const bg = rgbaToCSS(span.bg);
-              if (!span.text.trim() && spanIdx === line.spans.length - 1) {
-                return null;
-              }
-              return (
-                <span key={spanIdx} style={{ color: fg, backgroundColor: bg }}>
-                  {span.text}
-                </span>
-              );
-            })}
-          </div>
-        );
-      })}
+      {frame.lines.map((line, lineIdx) => (
+        <div
+          key={lineIdx}
+          className="whitespace-pre"
+          style={{ display: 'block', padding: '0 6px', lineHeight: 1.4, minHeight: '1.4em' }}
+        >
+          {line.spans.map((span, spanIdx) => {
+            const fg = rgbaToCSS(span.fg);
+            const bg = rgbaToCSS(span.bg);
+            if (!span.text.trim() && spanIdx === line.spans.length - 1) {
+              return null;
+            }
+            return (
+              <span key={spanIdx} style={{ color: fg, backgroundColor: bg }}>
+                {span.text}
+              </span>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }

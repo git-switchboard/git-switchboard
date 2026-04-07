@@ -26,12 +26,7 @@ function rgba(components: [number, number, number, number]): string | null {
 }
 
 function frameToHtml(frame: TerminalFrame, label: string): string {
-  const lines = frame.lines.map((line, lineIdx) => {
-    const isEdge = lineIdx === 0 || lineIdx === frame.lines.length - 1;
-    const lineText = line.spans.map((s) => s.text).join('');
-    if (!lineText.trim() && isEdge) {
-      return `<div style="height:1.45em"></div>`;
-    }
+  const lines = frame.lines.map((line) => {
     const spans = line.spans
       .map((span, spanIdx) => {
         if (!span.text.trim() && spanIdx === line.spans.length - 1) return '';
@@ -50,7 +45,7 @@ function frameToHtml(frame: TerminalFrame, label: string): string {
         return style ? `<span style="${style}">${escaped}</span>` : escaped;
       })
       .join('');
-    return `<div style="display:block;padding:0 6px;line-height:1.4;white-space:pre">${spans}</div>`;
+    return `<div style="display:block;padding:0 6px;line-height:1.4;min-height:1.4em;white-space:pre">${spans}</div>`;
   });
 
   return `<div class="terminal-frame" aria-label="${label}" style="font-family:'JetBrains Mono',monospace;font-size:13px;background:#000;color:#c0caf5;white-space:pre;overflow-x:auto;border:1px solid #2a5070">${lines.join('')}</div>`;
