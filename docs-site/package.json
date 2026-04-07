@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "generate:demo-frame": "bun run ../packages/git-switchboard/scripts/generate-demo-frame.tsx > generated/terminal-frame.json",
-    "generate:cli-docs": "cd ../packages/git-switchboard && bunx --bun cli-forge generate-documentation ./src/cli.ts --format json --output /tmp/cli-docs-raw && bun run scripts/generate-cli-docs.ts /tmp/cli-docs-raw/git-switchboard.json ../../docs-site/generated/cli-docs.json",
-    "generate:keybindings": "bun run ../packages/git-switchboard/scripts/generate-keybindings.ts generated/keybindings.json",
-    "generate": "mkdir -p generated && pnpm generate:demo-frame && pnpm generate:cli-docs && pnpm generate:keybindings",
+    "generate:demo-frame": "mkdir -p generated && bun run ../packages/git-switchboard/scripts/generate-demo-frame.tsx > generated/terminal-frame.json",
+    "generate:cli-docs": "mkdir -p generated && cd ../packages/git-switchboard && bunx --bun cli-forge generate-documentation ./src/cli.ts --format json --output /tmp/cli-docs-raw && bun run scripts/generate-cli-docs.ts /tmp/cli-docs-raw/git-switchboard.json ../../docs-site/generated/cli-docs.json",
+    "generate:keybindings": "mkdir -p generated && bun run ../packages/git-switchboard/scripts/generate-keybindings.ts generated/keybindings.json",
+    "generate": "pnpm generate:demo-frame && pnpm generate:cli-docs && pnpm generate:keybindings",
     "dev": "vike dev",
     "build": "vike build && pnpm exec pagefind --site dist/client",
     "preview": "vike build && pnpm exec pagefind --site dist/client && vike preview"
