@@ -103,6 +103,7 @@ export function App({
       else moveTo(selectedIndex + 1);
     },
     select: () => {
+      if (searchMode) return;
       const branch = filteredBranches[selectedIndex];
       if (branch) onSelect(branch);
     },

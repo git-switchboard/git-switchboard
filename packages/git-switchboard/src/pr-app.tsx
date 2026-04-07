@@ -428,6 +428,7 @@ export function PrApp({
       else moveTo(selectedIndex + 1);
     },
     select: () => {
+      if (searchMode || sortModal) return;
       const pr = filteredPRs[selectedIndex];
       if (pr) {
         const matches = repoMatchMap.get(`${pr.repoId}#${pr.number}`) ?? [];
