@@ -220,13 +220,16 @@ export function ConnectSetup({
 
   return (
     <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
+      {/* Push content to vertical center */}
+      <box style={{ flexGrow: 1 }} />
+
       <box style={{ height: 1, width: '100%' }}>
         <text content={` Setup ${displayName}`} fg="#7aa2f7" />
       </box>
       <box style={{ height: 1, width: '100%' }}>
         <text content={'\u2500'.repeat(width)} fg="#292e42" />
       </box>
-      <box flexDirection="column" style={{ flexGrow: 1 }}>
+      <box flexDirection="column">
         {error && (
           <box style={{ height: 1 }}>
             <text content={`  Error: ${error}`} fg="#f7768e" />
@@ -258,11 +261,10 @@ export function ConnectSetup({
                     }
                   }}
                 >
-                  <text
-                    content={`  ${isActive ? '>' : ' '} ${opt.label}`}
-                    fg={isActive ? '#c0caf5' : '#a9b1d6'}
-                  />
-                  <text content={`  ${opt.description}`} fg="#565f89" />
+                  <text>
+                    <span fg={isActive ? '#c0caf5' : '#a9b1d6'}>{`  ${isActive ? '>' : ' '} ${opt.label.padEnd(30)}`}</span>
+                    <span fg="#565f89">{opt.description}</span>
+                  </text>
                 </box>
               );
             })}
@@ -328,7 +330,11 @@ export function ConnectSetup({
           </box>
         )}
       </box>
-      <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+
+      {/* Push footer to bottom */}
+      <box style={{ flexGrow: 1 }} />
+
+      <box style={{ height: 1, width: '100%' }}>
         <text content={'\u2500'.repeat(width)} fg="#292e42" />
       </box>
       <FooterRows rows={footerRows} fg="#565f89" />
