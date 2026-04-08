@@ -524,19 +524,28 @@ export function PrApp({
     if (handleListKey(key.name, selectedIndex, filteredPRs.length, listHeight, moveTo)) return true;
   });
 
-  // Determine if repo names need org prefix — only when multiple orgs present
-  const repoOwners = useMemo(() => {
-    const owners = new Set(prs.map((pr) => pr.repoOwner));
-    return owners;
+  // Determine which repo names are ambiguous (same name under different orgs)
+  const ambiguousRepoNames = useMemo(() => {
+    const nameToOwners = new Map<string, Set<string>>();
+    for (const pr of prs) {
+      const owners = nameToOwners.get(pr.repoName) ?? new Set();
+      owners.add(pr.repoOwner);
+      nameToOwners.set(pr.repoName, owners);
+    }
+    const ambiguous = new Set<string>();
+    for (const [name, owners] of nameToOwners) {
+      if (owners.size > 1) ambiguous.add(name);
+    }
+    return ambiguous;
   }, [prs]);
-  const needsOrgPrefix = repoOwners.size > 1;
+  const hasAnyAmbiguous = ambiguousRepoNames.size > 0;
 
   // Responsive column widths — collapse gracefully at narrow viewports
   const compact = width < 120;
   const veryCompact = width < 90;
   const authorCol = repoMode ? Math.min(20, Math.floor(width * 0.15)) : 0;
   const roleCol = repoMode ? 0 : 4;
-  const repoCol = repoMode ? 0 : Math.min(needsOrgPrefix ? 25 : 18, Math.floor(width * 0.2));
+  const repoCol = repoMode ? 0 : Math.min(hasAnyAmbiguous ? 25 : 18, Math.floor(width * 0.2));
   const updatedCol = veryCompact ? 8 : 12;
   const ciCol = veryCompact ? 8 : 12;
   const mergeCol = compact ? 3 : 11;
@@ -622,7 +631,7 @@ export function PrApp({
             const reviewColor = tableFocused ? rvw.fg : muteColor(rvw.fg);
 
             const prLabel = `#${pr.number} ${pr.title}`.slice(0, prCol - 1);
-            const repoLabel = (needsOrgPrefix ? `${pr.repoOwner}/${pr.repoName}` : pr.repoName).slice(
+            const repoLabel = (ambiguousRepoNames.has(pr.repoName) ? `${pr.repoOwner}/${pr.repoName}` : pr.repoName).slice(
               0,
               repoCol - 1
             );
