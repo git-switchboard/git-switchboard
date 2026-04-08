@@ -5,11 +5,11 @@ import { footerParts } from './view.js';
 import { useKeybinds } from './use-keybinds.js';
 import { buildFooterRows, FooterRows } from './footer.js';
 import { useNavigate, useHistory } from './tui-router.js';
-import { isConfigured, removeToken } from './token-store.js';
+import { removeToken } from './token-store.js';
 import { getTokenConfig } from './config.js';
 import { ALL_PROVIDERS } from './providers.js';
 import { CHECKMARK, CROSSMARK } from './unicode.js';
-import type { ConnectScreen } from './connect-router.js';
+import type { ConnectScreen } from './connect-types.js';
 import type { TokenStrategy } from './config.js';
 
 export function ConnectDetail({
@@ -91,7 +91,7 @@ export function ConnectDetail({
   return (
     <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
       <box style={{ height: 1, width: '100%' }}>
-        <text content={` ${displayName}`} fg="#7aa2f7" bold />
+        <text content={` ${displayName}`} fg="#7aa2f7" />
       </box>
       <box style={{ height: 1, width: '100%' }}>
         <text content={'\u2500'.repeat(width)} fg="#292e42" />

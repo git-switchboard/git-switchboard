@@ -5,10 +5,8 @@ import { TuiRouter } from './tui-router.js';
 import { defineCommand, defineView } from './view.js';
 import { UP_ARROW, DOWN_ARROW, RETURN_SYMBOL, LEFT_ARROW } from './unicode.js';
 
-export type ConnectScreen =
-  | { type: 'provider-list' }
-  | { type: 'provider-detail'; providerName: string }
-  | { type: 'setup'; providerName: string };
+import type { ConnectScreen } from './connect-types.js';
+export type { ConnectScreen } from './connect-types.js';
 
 export const CONNECT_COMMAND = defineCommand<ConnectScreen>()({
   name: 'connect',

@@ -8,7 +8,7 @@ import { useNavigate } from './tui-router.js';
 import { isConfigured } from './token-store.js';
 import { ALL_PROVIDERS } from './providers.js';
 import { CHECKMARK, CROSSMARK } from './unicode.js';
-import type { ConnectScreen } from './connect-router.js';
+import type { ConnectScreen } from './connect-types.js';
 
 export function ConnectList({ keybinds }: { keybinds: Record<string, Keybind> }) {
   const { width } = useTerminalDimensions();
@@ -45,7 +45,7 @@ export function ConnectList({ keybinds }: { keybinds: Record<string, Keybind> })
   return (
     <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
       <box style={{ height: 1, width: '100%' }}>
-        <text content=" Manage Connections" fg="#7aa2f7" bold />
+        <text content=" Manage Connections" fg="#7aa2f7" />
       </box>
       <box style={{ height: 1, width: '100%' }}>
         <text content={'\u2500'.repeat(width)} fg="#292e42" />

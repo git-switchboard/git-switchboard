@@ -226,7 +226,7 @@ export function ConnectSetup({
   return (
     <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
       <box style={{ height: 1, width: '100%' }}>
-        <text content={` Setup ${displayName}`} fg="#7aa2f7" bold />
+        <text content={` Setup ${displayName}`} fg="#7aa2f7" />
       </box>
       <box style={{ height: 1, width: '100%' }}>
         <text content={'\u2500'.repeat(width)} fg="#292e42" />
