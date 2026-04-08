@@ -15,7 +15,7 @@ import type {
   UserPullRequest,
 } from './types.js';
 
-function ghCliToken(): string | undefined {
+export function ghCliToken(): string | undefined {
   try {
     return (
       execSync('gh auth token', {
