@@ -57,7 +57,8 @@ export function ConnectList({ keybinds }: { keybinds: Record<string, Keybind> })
           const statusIcon = configured ? CHECKMARK : CROSSMARK;
           const statusColor = configured ? '#9ece6a' : '#565f89';
           const statusText = configured ? 'connected' : 'not configured';
-          const label = `${isActive ? '>' : ' '} ${provider.name}`;
+          const nameCol = 12;
+          const cursor = isActive ? '>' : ' ';
 
           return (
             <box
@@ -75,11 +76,10 @@ export function ConnectList({ keybinds }: { keybinds: Record<string, Keybind> })
                 }
               }}
             >
-              <text
-                content={` ${label}`}
-                fg={isActive ? '#c0caf5' : '#a9b1d6'}
-              />
-              <text content={`   ${statusIcon} ${statusText}`} fg={statusColor} />
+              <text>
+                <span fg={isActive ? '#c0caf5' : '#a9b1d6'}>{` ${cursor} ${provider.name.padEnd(nameCol)}`}</span>
+                <span fg={statusColor}>{`${statusIcon} ${statusText}`}</span>
+              </text>
             </box>
           );
         })}

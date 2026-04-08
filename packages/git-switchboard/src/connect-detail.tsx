@@ -98,8 +98,10 @@ export function ConnectDetail({
       </box>
       <box flexDirection="column" style={{ flexGrow: 1, paddingLeft: 2 }}>
         <box style={{ height: 1 }}>
-          <text content="  Status: " fg="#a9b1d6" />
-          <text content={`${statusIcon} ${statusText}`} fg={statusColor} />
+          <text>
+            <span fg="#a9b1d6">{"  Status: "}</span>
+            <span fg={statusColor}>{`${statusIcon} ${statusText}`}</span>
+          </text>
         </box>
         <box style={{ height: 1 }}>
           <text content={`  Settings: ${provider?.settingsUrl ?? ''}`} fg="#565f89" />
