@@ -1,0 +1,66 @@
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+
+const CONFIG_DIR = join(
+  process.env.XDG_CONFIG_HOME ?? join(process.env.HOME ?? '~', '.config'),
+  'git-switchboard'
+);
+
+const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
+const CREDENTIALS_DIR = join(CONFIG_DIR, 'credentials');
+
+export { CONFIG_DIR, CONFIG_FILE, CREDENTIALS_DIR };
+
+export type TokenStrategy = 'env' | 'encrypted' | 'password' | 'command';
+
+/** Token config: strategy key → value (env var name, file path, or command). Key order = priority. */
+export type TokenConfig = Partial<Record<TokenStrategy, string>>;
+
+export interface Config {
+  tokens?: Record<string, TokenConfig>;
+}
+
+let dirReady = false;
+
+async function ensureDirs(): Promise<void> {
+  if (dirReady) return;
+  await mkdir(CREDENTIALS_DIR, { recursive: true });
+  dirReady = true;
+}
+
+export async function readConfig(): Promise<Config> {
+  try {
+    const raw = await readFile(CONFIG_FILE, 'utf-8');
+    return JSON.parse(raw) as Config;
+  } catch {
+    return {};
+  }
+}
+
+export async function writeConfig(config: Config): Promise<void> {
+  await ensureDirs();
+  await writeFile(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n');
+}
+
+export async function getTokenConfig(provider: string): Promise<TokenConfig> {
+  const config = await readConfig();
+  return config.tokens?.[provider] ?? {};
+}
+
+export async function setTokenConfig(
+  provider: string,
+  tokenConfig: TokenConfig
+): Promise<void> {
+  const config = await readConfig();
+  config.tokens ??= {};
+  config.tokens[provider] = tokenConfig;
+  await writeConfig(config);
+}
+
+export async function removeTokenConfig(provider: string): Promise<void> {
+  const config = await readConfig();
+  if (config.tokens) {
+    delete config.tokens[provider];
+  }
+  await writeConfig(config);
+}
