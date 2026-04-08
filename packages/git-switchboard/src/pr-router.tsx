@@ -217,6 +217,12 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
 
     'pr-detail': defineView<PrScreen>()({
       keybinds: {
+        navigate: {
+          keys: ['up', 'k', 'down', 'j'],
+          label: 'j/k or Up/Down',
+          description: 'Navigate',
+          terminal: `[${UP_ARROW}${DOWN_ARROW}] Navigate`,
+        },
         select: {
           keys: ['return'],
           label: 'Enter',
