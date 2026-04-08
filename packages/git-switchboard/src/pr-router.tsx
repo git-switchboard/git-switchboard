@@ -375,6 +375,7 @@ function EditorModalOverlay({
         key.stopPropagation();
         return true;
       case 'escape':
+      case 'backspace':
       case 'q':
         setEditorModal(null);
         key.stopPropagation();
