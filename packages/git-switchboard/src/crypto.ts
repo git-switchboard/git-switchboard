@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { hostname, userInfo, homedir } from 'node:os';
-import { readFile, writeFile, chmod } from 'node:fs/promises';
+import { readFile, writeFile, chmod, mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
 const SALT = 'git-switchboard-v1';
 const ALGORITHM = 'aes-256-gcm';
@@ -77,6 +78,7 @@ export async function writeEncryptedFile(
   filePath: string,
   payload: EncryptedPayload
 ): Promise<void> {
+  await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, JSON.stringify(payload));
   try {
     await chmod(filePath, 0o600);
