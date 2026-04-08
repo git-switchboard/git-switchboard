@@ -433,6 +433,21 @@ const gitSwitchboard = cli('git-switchboard', {
           }
         },
       })
+      .command('reset-terminal', {
+        description: 'Reset terminal state (fix mouse mode, cursor, etc.)',
+        handler: async () => {
+          // Disable mouse tracking modes and restore cursor
+          process.stdout.write(
+            '\x1b[?1000l' + // disable normal mouse tracking
+            '\x1b[?1002l' + // disable button-event tracking
+            '\x1b[?1003l' + // disable any-event tracking
+            '\x1b[?1006l' + // disable SGR mouse mode
+            '\x1b[?25h' +   // show cursor
+            '\x1b[0m'       // reset text attributes
+          );
+          console.log('Terminal state reset.');
+        },
+      })
       .command('connect', {
         description: 'Manage provider token connections',
         builder: (c) =>
@@ -452,11 +467,19 @@ const gitSwitchboard = cli('git-switchboard', {
           const renderer = await createCliRenderer({ exitOnCtrlC: false });
           const root = createRoot(renderer);
 
+          const { promise, resolve: done } = Promise.withResolvers<void>();
+
           root.render(
             createElement(ConnectRouter, {
               initialProvider: args.provider ?? undefined,
+              onExit: () => {
+                try { renderer.destroy(); } catch { /* yoga crash */ }
+                done();
+              },
             }) as React.ReactNode
           );
+
+          await promise;
         },
       }),
   handler: async (args) => {

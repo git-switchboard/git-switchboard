@@ -10,6 +10,7 @@ import type { TokenSource } from './token-store.js';
 import { ALL_PROVIDERS } from './providers.js';
 import { CHECKMARK, CROSSMARK } from './unicode.js';
 import type { ConnectScreen } from './connect-types.js';
+import { useConnectExit } from './connect-router.js';
 
 function sourceDescription(source: TokenSource): { icon: string; text: string; color: string; canDisconnect: boolean } {
   if (!source) return { icon: CROSSMARK, text: 'not configured', color: '#f7768e', canDisconnect: false };
@@ -33,6 +34,7 @@ export function ConnectDetail({
   const { width } = useTerminalDimensions();
   const navigate = useNavigate<ConnectScreen>();
   const { goBack } = useHistory();
+  const onExit = useConnectExit();
   const [source, setSource] = useState<TokenSource>(null);
   const [whoami, setWhoami] = useState<string | null>(null);
   const [whoamiError, setWhoamiError] = useState<string | null>(null);
@@ -88,9 +90,7 @@ export function ConnectDetail({
       back: () => {
         goBack();
       },
-      quit: () => {
-        process.exit(0);
-      },
+      quit: () => onExit(),
     },
     {
       show: {

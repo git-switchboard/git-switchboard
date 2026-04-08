@@ -127,15 +127,26 @@ export const CONNECT_COMMAND = defineCommand<ConnectScreen>()({
   },
 });
 
-export function ConnectRouter({ initialProvider }: { initialProvider?: string }) {
+import { createContext, useContext } from 'react';
+
+const ConnectExitCtx = createContext<(() => void) | null>(null);
+
+export function useConnectExit(): () => void {
+  const onExit = useContext(ConnectExitCtx);
+  return onExit ?? (() => process.exit(0));
+}
+
+export function ConnectRouter({ initialProvider, onExit }: { initialProvider?: string; onExit?: () => void }) {
   const initialScreen: ConnectScreen = initialProvider
     ? { type: 'setup', providerName: initialProvider }
     : { type: 'provider-list' };
 
   return (
-    <TuiRouter<ConnectScreen>
-      views={CONNECT_COMMAND.views}
-      initialScreen={initialScreen}
-    />
+    <ConnectExitCtx.Provider value={onExit ?? null}>
+      <TuiRouter<ConnectScreen>
+        views={CONNECT_COMMAND.views}
+        initialScreen={initialScreen}
+      />
+    </ConnectExitCtx.Provider>
   );
 }

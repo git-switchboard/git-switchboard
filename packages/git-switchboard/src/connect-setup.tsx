@@ -9,6 +9,7 @@ import { storeToken, credentialPath } from './token-store.js';
 import { ALL_PROVIDERS } from './providers.js';
 import { CHECKMARK } from './unicode.js';
 import type { TokenStrategy } from './config.js';
+import { useConnectExit } from './connect-router.js';
 
 type Step = 'strategy' | 'input' | 'password' | 'confirm-password' | 'validating' | 'done';
 
@@ -37,6 +38,7 @@ export function ConnectSetup({
 }) {
   const { width } = useTerminalDimensions();
   const { goBack } = useHistory();
+  const onExit = useConnectExit();
   const provider = ALL_PROVIDERS.find((p) => p.name === providerName);
 
   const [step, setStep] = useState<Step>('strategy');
@@ -150,7 +152,7 @@ export function ConnectSetup({
       }
     },
     quit: () => {
-      process.exit(0);
+      onExit();
     },
   });
 

@@ -10,6 +10,7 @@ import type { TokenSource } from './token-store.js';
 import { ALL_PROVIDERS } from './providers.js';
 import { CHECKMARK, CROSSMARK } from './unicode.js';
 import type { ConnectScreen } from './connect-types.js';
+import { useConnectExit } from './connect-router.js';
 
 function sourceLabel(source: TokenSource): { icon: string; text: string; color: string } {
   if (!source) return { icon: CROSSMARK, text: 'not configured', color: '#565f89' };
@@ -26,6 +27,7 @@ function sourceLabel(source: TokenSource): { icon: string; text: string; color: 
 export function ConnectList({ keybinds }: { keybinds: Record<string, Keybind> }) {
   const { width } = useTerminalDimensions();
   const navigate = useNavigate<ConnectScreen>();
+  const onExit = useConnectExit();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [sources, setSources] = useState<Map<string, TokenSource>>(new Map());
 
@@ -47,9 +49,7 @@ export function ConnectList({ keybinds }: { keybinds: Record<string, Keybind> })
       const provider = ALL_PROVIDERS[selectedIndex];
       navigate({ type: 'provider-detail', providerName: provider.name });
     },
-    quit: () => {
-      process.exit(0);
-    },
+    quit: () => onExit(),
   });
 
   const parts = footerParts(keybinds);
