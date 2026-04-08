@@ -4,6 +4,7 @@ export const DOWN_ARROW = '\u2193';
 export const LEFT_ARROW = '\u2190';
 export const RETURN_SYMBOL = '\u23CE';
 export const ESC_SYMBOL = '\u241B';
+export const BACKSPACE_SYMBOL = '\u232B';
 
 // Status icons
 export const CHECKMARK = '\u2713';

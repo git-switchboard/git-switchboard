@@ -9,6 +9,92 @@ if (typeof (globalThis as { Bun?: unknown }).Bun === 'undefined') {
 
 import { cli } from 'cli-forge';
 
+type ExecSyncFn = (cmd: string, opts?: { stdio?: 'inherit' | 'pipe' | 'ignore'; cwd?: string }) => Buffer | string;
+
+async function handleWorktreeAction(
+  action: import('./types.js').WorktreeConflictAction,
+  execSync: ExecSyncFn,
+  resolveEditor: (flag?: string) => import('./editor.js').ResolvedEditor | null,
+  openInEditor: (editor: import('./editor.js').ResolvedEditor, dir: string) => void
+): Promise<void> {
+  switch (action.type) {
+    case 'open-editor': {
+      const editor = resolveEditor();
+      if (editor) {
+        openInEditor(editor, action.worktreePath);
+      } else {
+        console.log(`Worktree path: ${action.worktreePath}`);
+        console.log('No editor detected. Set $EDITOR or use --editor to specify one.');
+      }
+      break;
+    }
+    case 'checkout-new-branch': {
+      console.log(`Creating and switching to new branch: ${action.newBranchName}`);
+      try {
+        if (action.stashCurrentFirst) {
+          execSync(`git stash push -m "git-switchboard: before checkout to ${action.newBranchName}"`, { stdio: 'inherit' });
+        }
+        execSync(`git checkout -b ${action.newBranchName} ${action.fromBranch}`, { stdio: 'inherit' });
+      } catch {
+        process.exit(1);
+      }
+      break;
+    }
+    case 'move-worktree-to-new-branch': {
+      console.log(`Moving worktree to new branch: ${action.newBranchName}`);
+      try {
+        execSync(
+          `git -C "${action.worktreePath}" switch -c ${action.newBranchName} ${action.fromBranch}`,
+          { stdio: 'inherit' }
+        );
+      } catch {
+        process.exit(1);
+      }
+      // The target branch is now free — checkout in current worktree
+      console.log(`Switching to branch: ${action.thenCheckout}`);
+      try {
+        if (action.stashCurrentFirst) {
+          execSync(`git stash push -m "git-switchboard: before checkout to ${action.thenCheckout}"`, { stdio: 'inherit' });
+        }
+        execSync(`git checkout ${action.thenCheckout}`, { stdio: 'inherit' });
+      } catch {
+        process.exit(1);
+      }
+      break;
+    }
+    case 'move-worktree-to-existing-branch': {
+      // Optionally stash the other worktree before switching it
+      if (action.stashOtherFirst) {
+        console.log(`Stashing changes in worktree: ${action.worktreePath}`);
+        execSync(
+          `git -C "${action.worktreePath}" stash push -m "git-switchboard: before moving to ${action.targetBranch}"`,
+          { stdio: 'inherit' }
+        );
+      }
+      console.log(`Switching worktree to branch: ${action.targetBranch}`);
+      try {
+        execSync(
+          `git -C "${action.worktreePath}" switch ${action.targetBranch}`,
+          { stdio: 'inherit' }
+        );
+      } catch {
+        process.exit(1);
+      }
+      // The target branch is now free — checkout in current worktree
+      console.log(`Switching to branch: ${action.thenCheckout}`);
+      try {
+        if (action.stashCurrentFirst) {
+          execSync(`git stash push -m "git-switchboard: before checkout to ${action.thenCheckout}"`, { stdio: 'inherit' });
+        }
+        execSync(`git checkout ${action.thenCheckout}`, { stdio: 'inherit' });
+      } catch {
+        process.exit(1);
+      }
+      break;
+    }
+  }
+}
+
 const gitSwitchboard = cli('git-switchboard', {
   description: 'Interactive TUI for browsing and checking out git branches',
   builder: (args) =>
@@ -328,13 +414,20 @@ const gitSwitchboard = cli('git-switchboard', {
       getCurrentUserAliases,
       getRepoRemoteUrl,
       parseGitHubRemote,
+      getWorktrees,
+      getWorkingTreeDirtyFiles,
+      getWorktreeDirtyFiles,
+      branchExists,
     } = await import('./git.js');
     const { resolveGitHubToken, fetchOpenPRs } = await import('./github.js');
     const { execSync } = await import('node:child_process');
 
+    const { resolveEditor, openInEditor } = await import('./editor.js');
+
     const currentUser = getCurrentUser();
     const currentUserAliases = getCurrentUserAliases();
     const authorList = args.author ?? [];
+    const worktrees = getWorktrees();
 
     // Fetch initial branch data
     let branches: import('./types.js').BranchWithPR[] = getBranches(
@@ -367,6 +460,8 @@ const gitSwitchboard = cli('git-switchboard', {
     const renderer = await createCliRenderer({ exitOnCtrlC: false, useMouse: true });
 
     let selectedBranch: string | undefined;
+    let stashBeforeCheckout = false;
+    let worktreeAction: import('./types.js').WorktreeConflictAction | undefined;
     const { promise, resolve } = Promise.withResolvers<void>();
 
     const fetchBranchesWithPRs = (
@@ -384,11 +479,28 @@ const gitSwitchboard = cli('git-switchboard', {
       currentUserAliases,
       authorList,
       initialShowRemote: args.remote,
+      worktrees,
+      getWorkingTreeDirtyFiles,
+      getWorktreeDirtyFiles,
+      branchExists,
       fetchBranches: fetchBranchesWithPRs,
       onSelect: (branch: import('./types.js').BranchWithPR) => {
         selectedBranch = branch.isRemote
           ? branch.name.replace(/^origin\//, '')
           : branch.name;
+        renderer.destroy();
+        resolve();
+      },
+      onStashAndCheckout: (branch: import('./types.js').BranchWithPR) => {
+        selectedBranch = branch.isRemote
+          ? branch.name.replace(/^origin\//, '')
+          : branch.name;
+        stashBeforeCheckout = true;
+        renderer.destroy();
+        resolve();
+      },
+      onWorktreeAction: (action: import('./types.js').WorktreeConflictAction) => {
+        worktreeAction = action;
         renderer.destroy();
         resolve();
       },
@@ -403,9 +515,14 @@ const gitSwitchboard = cli('git-switchboard', {
     // Wait for the user to select a branch or exit
     await promise;
 
-    if (selectedBranch) {
+    if (worktreeAction) {
+      await handleWorktreeAction(worktreeAction, execSync, resolveEditor, openInEditor);
+    } else if (selectedBranch) {
       console.log(`Switching to branch: ${selectedBranch}`);
       try {
+        if (stashBeforeCheckout) {
+          execSync(`git stash push -m "git-switchboard: before checkout to ${selectedBranch}"`, { stdio: 'inherit' });
+        }
         execSync(`git checkout ${selectedBranch}`, { stdio: 'inherit' });
       } catch {
         process.exit(1);
