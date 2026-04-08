@@ -106,12 +106,6 @@ export function ConnectSetup({
         selectedStrategy === 'password' ? passwordValue : undefined
       );
 
-      // For env/command, store just the config pointer
-      if (selectedStrategy === 'env' || selectedStrategy === 'command') {
-        const { setTokenConfig } = await import('./config.js');
-        await setTokenConfig(providerName, { [selectedStrategy]: inputValue });
-      }
-
       setValidatedName(displayName);
       setStep('done');
     } catch (err) {
@@ -201,7 +195,6 @@ export function ConnectSetup({
         if (confirmPasswordValue !== passwordValue) {
           setError('Passwords do not match');
           setConfirmPasswordValue('');
-          setStep('password');
           return true;
         }
         void handleValidateAndSave();

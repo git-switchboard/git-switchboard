@@ -26,9 +26,6 @@ export interface ProviderDef {
   settingsUrl: string;
 }
 
-/** Strategies in the order they appear in the docs. */
-export const STRATEGY_ORDER: TokenStrategy[] = ['env', 'encrypted', 'password', 'command'];
-
 export interface ResolveOptions {
   /** Value from CLI flag (highest priority). */
   flagValue?: string;
@@ -64,7 +61,13 @@ export async function resolveToken(
     }
   }
 
-  // 3. Provider-specific fallback
+  // 3. Provider's default env vars
+  for (const envVar of provider.envVars) {
+    const val = process.env[envVar];
+    if (val) return val;
+  }
+
+  // 4. Provider-specific fallback
   if (provider.fallback) {
     const token = provider.fallback();
     if (token) return token;
