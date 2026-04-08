@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { hostname, userInfo } from 'node:os';
+import { hostname, userInfo, homedir } from 'node:os';
 import { readFile, writeFile, chmod } from 'node:fs/promises';
 
 const SALT = 'git-switchboard-v1';
@@ -10,9 +10,18 @@ function deriveKey(input: string): Buffer {
   return createHash('sha256').update(input).digest();
 }
 
+/** Best-effort username — falls back to homedir basename in containers without passwd entries. */
+function safeUsername(): string {
+  try {
+    return userInfo().username;
+  } catch {
+    return homedir().split(/[\\/]/).pop() ?? 'unknown';
+  }
+}
+
 /** Machine-specific key: hash of hostname + username + salt. */
 export function machineKey(): Buffer {
-  return deriveKey(`${hostname()}:${userInfo().username}:${SALT}`);
+  return deriveKey(`${hostname()}:${safeUsername()}:${SALT}`);
 }
 
 /** Password-derived key. */
@@ -63,13 +72,17 @@ export function decrypt(payload: EncryptedPayload, key: Buffer): string {
   return plaintext;
 }
 
-/** Write encrypted payload to file with 0600 permissions. */
+/** Write encrypted payload to file with 0600 permissions (best-effort on Windows). */
 export async function writeEncryptedFile(
   filePath: string,
   payload: EncryptedPayload
 ): Promise<void> {
   await writeFile(filePath, JSON.stringify(payload));
-  await chmod(filePath, 0o600);
+  try {
+    await chmod(filePath, 0o600);
+  } catch {
+    // chmod is a no-op or unsupported on some platforms (e.g., Windows NTFS)
+  }
 }
 
 /** Read encrypted payload from file. */

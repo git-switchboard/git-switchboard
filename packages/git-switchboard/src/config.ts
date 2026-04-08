@@ -1,10 +1,15 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 
-const CONFIG_DIR = join(
-  process.env.XDG_CONFIG_HOME ?? join(process.env.HOME ?? '~', '.config'),
-  'git-switchboard'
-);
+function resolveConfigBase(): string {
+  // XDG on Linux/macOS, APPDATA on Windows, fallback to ~/.config
+  if (process.env.XDG_CONFIG_HOME) return process.env.XDG_CONFIG_HOME;
+  if (process.platform === 'win32' && process.env.APPDATA) return process.env.APPDATA;
+  return join(homedir(), '.config');
+}
+
+const CONFIG_DIR = join(resolveConfigBase(), 'git-switchboard');
 
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 const CREDENTIALS_DIR = join(CONFIG_DIR, 'credentials');
