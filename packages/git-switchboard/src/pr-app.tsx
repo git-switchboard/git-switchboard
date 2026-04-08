@@ -7,7 +7,6 @@ import { footerParts } from './view.js';
 import type { ViewProps } from './view.js';
 import { useNavigate } from './tui-router.js';
 import type { PrScreen } from './store.js';
-import { rateLimit } from './github.js';
 import { ScrollList, handleListKey } from './scroll-list.js';
 import type { LocalRepo } from './scanner.js';
 import type {
@@ -174,6 +173,7 @@ interface PrAppProps extends ViewProps {
   ciCache: Map<string, CIInfo>;
   reviewCache: Map<string, ReviewInfo>;
   mergeableCache: Record<string, MergeableStatus>;
+  linearCache: Map<string, import('./types.js').LinearIssue>;
   repoMode: string | null;
   refreshing: boolean;
   /** Fetch CI + review for a PR. Resolves when caches are updated. */
@@ -190,6 +190,7 @@ export function PrApp({
   ciCache,
   reviewCache,
   mergeableCache,
+  linearCache,
   repoMode,
   refreshing,
   onFetchCI,
@@ -240,11 +241,13 @@ export function PrApp({
     const result = searchQuery
       ? prs.filter((pr) => {
           const q = searchQuery.toLowerCase();
+          const linearIssue = linearCache.get(`${pr.repoId}#${pr.number}`);
           return (
             pr.title.toLowerCase().includes(q) ||
             pr.repoId.includes(q) ||
             pr.headRef.toLowerCase().includes(q) ||
-            pr.author.toLowerCase().includes(q)
+            pr.author.toLowerCase().includes(q) ||
+            (linearIssue?.identifier.toLowerCase().includes(q) ?? false)
           );
         })
       : [...prs];
@@ -282,7 +285,7 @@ export function PrApp({
       return 0;
     });
     return result;
-  }, [prs, searchQuery, reviewCache, ciCache, mergeableCache, sortLayers]);
+  }, [prs, searchQuery, reviewCache, ciCache, mergeableCache, linearCache, sortLayers]);
 
   const repoMatchMap = useMemo(() => {
     const map = new Map<string, LocalRepo[]>();
@@ -297,6 +300,11 @@ export function PrApp({
     return map;
   }, [prs, localRepos]);
 
+  const hasLinear = useMemo(
+    () => filteredPRs.some((pr) => linearCache.has(`${pr.repoId}#${pr.number}`)),
+    [filteredPRs, linearCache]
+  );
+
   const hasFailedChecks = useMemo(() => {
     const selectedPR = filteredPRs[selectedIndex];
     const selectedKey = selectedPR ? `${selectedPR.repoId}#${selectedPR.number}` : '';
@@ -306,10 +314,7 @@ export function PrApp({
 
   const footerRows = useMemo(() => {
     const parts = footerParts(keybinds, { retryChecks: hasFailedChecks });
-    const quota = rateLimit.current
-      ? `API: ${rateLimit.current.remaining}/${rateLimit.current.limit}`
-      : undefined;
-    return buildFooterRows(parts, width, quota);
+    return buildFooterRows(parts, width);
   }, [hasFailedChecks, width, keybinds]);
 
   // 4 chrome rows (header, spacer, column headers, footer) + 2 padding rows
@@ -515,9 +520,10 @@ export function PrApp({
   const ciCol = 12;
   const mergeCol = 11;
   const reviewCol = 15;
+  const linearCol = hasLinear ? 12 : 0;
   const prCol = Math.max(
     20,
-    width - authorCol - roleCol - repoCol - updatedCol - ciCol - mergeCol - reviewCol - 6
+    width - authorCol - roleCol - repoCol - updatedCol - ciCol - mergeCol - reviewCol - linearCol - 6
   );
 
   const sortHeader = (label: string, field: SortField, colWidth: number): string => {
@@ -552,7 +558,7 @@ export function PrApp({
       {/* Column headers */}
       <box style={{ height: 1, width: '100%' }}>
         <text
-          content={` ${repoMode ? 'Author'.padEnd(authorCol) : ''.padEnd(roleCol)}${sortHeader('PR', 'number', prCol)}${repoMode ? '' : sortHeader('Repo', 'repo', repoCol)}${sortHeader('Updated', 'updated', updatedCol)}${sortHeader('CI', 'ci', ciCol)}${sortHeader('', 'merge', mergeCol)}${sortHeader('Review', 'review', reviewCol)}`}
+          content={` ${repoMode ? 'Author'.padEnd(authorCol) : ''.padEnd(roleCol)}${sortHeader('PR', 'number', prCol)}${repoMode ? '' : sortHeader('Repo', 'repo', repoCol)}${sortHeader('Updated', 'updated', updatedCol)}${sortHeader('CI', 'ci', ciCol)}${sortHeader('', 'merge', mergeCol)}${hasLinear ? 'Linear'.padEnd(linearCol) : ''}${sortHeader('Review', 'review', reviewCol)}`}
           fg={tableFocused ? '#bb9af7' : muteColor('#bb9af7')}
         />
       </box>
@@ -578,6 +584,8 @@ export function PrApp({
             const ci = ciCache.get(prKey);
             const ciStatus = ciSummary(ci, SPINNER_FRAMES[spinnerFrame]);
             const review = reviewCache.get(prKey);
+            const linearIssue = linearCache.get(prKey);
+            const linearText = linearIssue ? linearIssue.identifier : (hasLinear ? '-' : '');
             const rvw = reviewLabel(review?.status);
             const merge = mergeLabel(mergeableCache[prKey]);
             const roleIcon = roleIndicator(pr.role);
@@ -629,6 +637,11 @@ export function PrApp({
                   <span fg={mergeColor}>
                     {merge.text.slice(0, mergeCol - 1).padEnd(mergeCol)}
                   </span>
+                  {hasLinear && (
+                    <span fg={tableFocused ? '#bb9af7' : muteColor('#bb9af7')}>
+                      {linearText.slice(0, linearCol - 1).padEnd(linearCol)}
+                    </span>
+                  )}
                   <span fg={reviewColor}>
                     {rvw.text.slice(0, reviewCol - 1).padEnd(reviewCol)}
                   </span>

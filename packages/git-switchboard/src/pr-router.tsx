@@ -12,6 +12,7 @@ import { useStore } from 'zustand';
 import { PrApp } from './pr-app.js';
 import { PrDetail } from './pr-detail.js';
 import { ClonePrompt } from './clone-prompt.js';
+import { ProviderStatusModal } from './provider-status.js';
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
 import { sendNotification } from './notify.js';
 import { checkIsClean } from './scanner.js';
@@ -71,8 +72,11 @@ function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
   const repoMode = useStore(store, (s) => s.repoMode);
   const refreshing = useStore(store, (s) => s.refreshing);
 
+  const linearCache = useStore(store, (s) => s.linearCache);
+
   const ciMap = useMemo(() => new Map(Object.entries(ciCache)), [ciCache]);
   const reviewMap = useMemo(() => new Map(Object.entries(reviewCache)), [reviewCache]);
+  const linearMap = useMemo(() => new Map(Object.entries(linearCache)), [linearCache]);
 
   return (
     <PrApp
@@ -82,6 +86,7 @@ function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
       ciCache={ciMap}
       reviewCache={reviewMap}
       mergeableCache={mergeableCache}
+      linearCache={linearMap}
       repoMode={repoMode}
       refreshing={refreshing}
       onFetchCI={async (pr) => store.getState().fetchDetailsForPR(pr)}
@@ -104,6 +109,7 @@ function PrDetailScreen({
   const { prepareEditorOpen, getMatchesForPR } = usePrInfra();
   const ciCache = useStore(store, (s) => s.ciCache);
   const reviewCache = useStore(store, (s) => s.reviewCache);
+  const linearCache = useStore(store, (s) => s.linearCache);
   const ciLoading = useStore(store, (s) => s.ciLoading);
   const repoScanDone = useStore(store, (s) => s.repoScanDone);
   const watchedPRs = useStore(store, (s) => s.watchedPRs);
@@ -111,6 +117,7 @@ function PrDetailScreen({
   const { pr, matches } = screen;
   const prKey = `${pr.repoId}#${pr.number}`;
   const currentMatches = repoScanDone || matches.length === 0 ? getMatchesForPR(pr) : matches;
+  const linearIssue = linearCache[prKey] ?? null;
 
   return (
     <PrDetail
@@ -118,6 +125,7 @@ function PrDetailScreen({
       pr={pr}
       ci={ciCache[prKey] ?? null}
       review={reviewCache[prKey] ?? null}
+      linearIssue={linearIssue}
       ciLoading={ciLoading}
       matches={currentMatches}
       watched={watchedPRs.has(prKey)}
@@ -200,6 +208,7 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           terminal: '[^R]efresh all',
         },
         sort: { keys: ['s'], label: 's', description: 'Open sort modal', terminal: '[s]ort' },
+        providerStatus: { keys: ['p'], label: 'p', description: 'Provider status', terminal: '[p]roviders' },
         search: { keys: [{ raw: '/' }], label: '/', description: 'Search', terminal: '[/] Search' },
         quit: { keys: ['q', 'escape'], label: 'q or Esc', description: 'Quit', terminal: '[q]uit' },
       },
@@ -238,6 +247,7 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           description: 'Toggle watch mode',
           terminal: '[w]atch',
         },
+        providerStatus: { keys: ['p'], label: 'p', description: 'Provider status', terminal: '[p]roviders' },
         back: {
           keys: ['escape', 'backspace', 'left'],
           label: 'Left, Backspace or Esc',
@@ -424,6 +434,16 @@ export function PrRouter({ store }: PrRouterProps) {
 
   const { width, height } = useTerminalDimensions();
   const [editorModal, setEditorModal] = useState<EditorModalState | null>(null);
+  const [showProviderStatus, setShowProviderStatus] = useState(false);
+
+  // ─── Provider status keybind ────────────────────────────────────
+  useKeyboard((key) => {
+    if (showProviderStatus) return; // modal handles its own keys
+    if (key.raw === 'p') {
+      setShowProviderStatus(true);
+      return true;
+    }
+  });
 
   // ─── Watch polling ──────────────────────────────────────────────
   const storeRef = useRef(store);
@@ -516,13 +536,26 @@ export function PrRouter({ store }: PrRouterProps) {
     />
   );
 
+  const combinedOverlay = (
+    <>
+      {editorModalOverlay}
+      {showProviderStatus && (
+        <ProviderStatusModal
+          width={width}
+          height={height}
+          onClose={() => setShowProviderStatus(false)}
+        />
+      )}
+    </>
+  );
+
   return (
     <PrStoreCtx.Provider value={store}>
       <PrInfraCtx.Provider value={infra}>
         <TuiRouter<PrScreen>
           views={PR_COMMAND.views}
           initialScreen={{ type: 'pr-list' }}
-          overlay={editorModalOverlay}
+          overlay={combinedOverlay}
         />
       </PrInfraCtx.Provider>
     </PrStoreCtx.Provider>
