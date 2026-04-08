@@ -56,55 +56,50 @@ export function ConnectList({ keybinds }: { keybinds: Record<string, Keybind> })
   const rows = buildFooterRows(parts, width);
 
   return (
-    <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
+    <box flexDirection="column" style={{ width: '100%', height: '100%', padding: 1 }}>
+      {/* Header */}
       <box style={{ height: 1, width: '100%' }}>
         <text content=" Manage Connections" fg="#7aa2f7" />
       </box>
-      {/* Push content to vertical center */}
+
+      <box style={{ height: 1 }} />
+
+      {/* Provider list */}
+      {ALL_PROVIDERS.map((provider, index) => {
+        const isActive = index === selectedIndex;
+        const source = sources.get(provider.name) ?? null;
+        const { icon, text, color } = sourceLabel(source);
+        const nameCol = 12;
+        const cursor = isActive ? '>' : ' ';
+
+        return (
+          <box
+            key={provider.name}
+            style={{
+              height: 1,
+              width: '100%',
+              backgroundColor: isActive ? '#292e42' : undefined,
+            }}
+            onMouseDown={() => {
+              if (isActive) {
+                navigate({ type: 'provider-detail', providerName: provider.name });
+              } else {
+                setSelectedIndex(index);
+              }
+            }}
+          >
+            <text>
+              <span fg={isActive ? '#c0caf5' : '#a9b1d6'}>{` ${cursor} ${provider.name.padEnd(nameCol)}`}</span>
+              <span fg={color}>{`${icon} ${text}`}</span>
+            </text>
+          </box>
+        );
+      })}
+
+      {/* Fill remaining space */}
       <box style={{ flexGrow: 1 }} />
 
-      <box style={{ height: 1, width: '100%' }}>
-        <text content={'\u2500'.repeat(width)} fg="#292e42" />
-      </box>
-      <box flexDirection="column">
-        {ALL_PROVIDERS.map((provider, index) => {
-          const isActive = index === selectedIndex;
-          const source = sources.get(provider.name) ?? null;
-          const { icon, text, color } = sourceLabel(source);
-          const nameCol = 12;
-          const cursor = isActive ? '>' : ' ';
-
-          return (
-            <box
-              key={provider.name}
-              style={{
-                height: 1,
-                width: '100%',
-                backgroundColor: isActive ? '#292e42' : undefined,
-              }}
-              onMouseDown={() => {
-                if (isActive) {
-                  navigate({ type: 'provider-detail', providerName: provider.name });
-                } else {
-                  setSelectedIndex(index);
-                }
-              }}
-            >
-              <text>
-                <span fg={isActive ? '#c0caf5' : '#a9b1d6'}>{` ${cursor} ${provider.name.padEnd(nameCol)}`}</span>
-                <span fg={color}>{`${icon} ${text}`}</span>
-              </text>
-            </box>
-          );
-        })}
-      </box>
-
-      {/* Push footer to bottom */}
-      <box style={{ flexGrow: 1 }} />
-
-      <box style={{ height: 1, width: '100%' }}>
-        <text content={'\u2500'.repeat(width)} fg="#292e42" />
-      </box>
+      {/* Footer */}
       <FooterRows rows={rows} fg="#565f89" />
     </box>
   );

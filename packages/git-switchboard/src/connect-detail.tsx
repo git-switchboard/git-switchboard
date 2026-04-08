@@ -48,7 +48,6 @@ export function ConnectDetail({
       const resolved = await resolveTokenSource(provider);
       setSource(resolved);
 
-      // Validate the token if one resolved
       if (resolved) {
         try {
           const token = await resolveToken(provider);
@@ -109,77 +108,64 @@ export function ConnectDetail({
   const rows = buildFooterRows(parts, width);
 
   const displayName = provider?.name ?? providerName;
+  const settingsUrl = provider?.settingsUrl ?? '';
   const whoamiLine = whoami
     ? `${CHECKMARK} Authenticated as ${whoami}`
     : whoamiError
       ? `${CROSSMARK} ${whoamiError}`
       : source
         ? 'Validating...'
-        : null;
-
-  const settingsUrl = provider?.settingsUrl ?? '';
+        : 'unknown';
 
   return (
-    <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-      {/* Push content to vertical center */}
-      <box style={{ flexGrow: 1 }} />
-
-      {/* Provider card */}
-      <box flexDirection="column" style={{ width: '100%' }}>
-        <box style={{ height: 1, width: '100%' }}>
-          <text content={` ${displayName}`} fg="#7aa2f7" />
-        </box>
-        <box style={{ height: 1, width: '100%' }}>
-          <text content={'\u2500'.repeat(width)} fg="#292e42" />
-        </box>
-
-        {/* Status */}
-        <box style={{ height: 1 }}>
-          <text>
-            <span fg="#565f89">{"  Status      "}</span>
-            <span fg={color}>{`${icon} ${text}`}</span>
-          </text>
-        </box>
-
-        {/* Identity */}
-        <box style={{ height: 1 }}>
-          <text>
-            <span fg="#565f89">{"  Identity    "}</span>
-            <span fg={whoami ? '#9ece6a' : whoamiError ? '#f7768e' : '#565f89'}>
-              {whoamiLine ?? 'unknown'}
-            </span>
-          </text>
-        </box>
-
-        {/* Settings URL */}
-        <box style={{ height: 1 }}>
-          <text>
-            <span fg="#565f89">{"  Settings    "}</span>
-            <span fg="#7aa2f7">{settingsUrl}</span>
-          </text>
-        </box>
-
-        {/* Disconnect confirmation */}
-        {confirming && (
-          <>
-            <box style={{ height: 1 }} />
-            <box style={{ height: 1 }}>
-              <text content={`  Remove ${displayName} token?  [y]es / [n]o`} fg="#f7768e" />
-            </box>
-          </>
-        )}
-
-        <box style={{ height: 1, width: '100%' }}>
-          <text content={'\u2500'.repeat(width)} fg="#292e42" />
-        </box>
-      </box>
-
-      {/* Push footer to bottom */}
-      <box style={{ flexGrow: 1 }} />
-
+    <box flexDirection="column" style={{ width: '100%', height: '100%', padding: 1 }}>
+      {/* Header */}
       <box style={{ height: 1, width: '100%' }}>
-        <text content={'\u2500'.repeat(width)} fg="#292e42" />
+        <text content={` ${displayName}`} fg="#7aa2f7" />
       </box>
+
+      <box style={{ height: 1 }} />
+
+      {/* Status */}
+      <box style={{ height: 1 }}>
+        <text>
+          <span fg="#565f89">{"  Status      "}</span>
+          <span fg={color}>{`${icon} ${text}`}</span>
+        </text>
+      </box>
+
+      {/* Identity */}
+      <box style={{ height: 1 }}>
+        <text>
+          <span fg="#565f89">{"  Identity    "}</span>
+          <span fg={whoami ? '#9ece6a' : whoamiError ? '#f7768e' : '#565f89'}>
+            {whoamiLine}
+          </span>
+        </text>
+      </box>
+
+      {/* Settings URL */}
+      <box style={{ height: 1 }}>
+        <text>
+          <span fg="#565f89">{"  Settings    "}</span>
+          <span fg="#7aa2f7">{settingsUrl}</span>
+        </text>
+      </box>
+
+      {/* Disconnect confirmation */}
+      {confirming && (
+        <>
+          <box style={{ height: 1 }} />
+          <box style={{ height: 1 }}>
+            <text content={`  Remove ${displayName} token?  [y]es / [n]o`} fg="#f7768e" />
+          </box>
+        </>
+      )}
+
+      {/* Fill remaining space */}
+      <box style={{ flexGrow: 1 }} />
+
+      {/* Footer */}
       <FooterRows rows={rows} fg="#565f89" />
     </box>
   );

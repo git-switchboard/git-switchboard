@@ -219,16 +219,14 @@ export function ConnectSetup({
   const displayName = provider?.name ?? providerName;
 
   return (
-    <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-      {/* Push content to vertical center */}
-      <box style={{ flexGrow: 1 }} />
-
+    <box flexDirection="column" style={{ width: '100%', height: '100%', padding: 1 }}>
+      {/* Header */}
       <box style={{ height: 1, width: '100%' }}>
         <text content={` Setup ${displayName}`} fg="#7aa2f7" />
       </box>
-      <box style={{ height: 1, width: '100%' }}>
-        <text content={'\u2500'.repeat(width)} fg="#292e42" />
-      </box>
+
+      <box style={{ height: 1 }} />
+
       <box flexDirection="column">
         {error && (
           <box style={{ height: 1 }}>
@@ -331,12 +329,10 @@ export function ConnectSetup({
         )}
       </box>
 
-      {/* Push footer to bottom */}
+      {/* Fill remaining space */}
       <box style={{ flexGrow: 1 }} />
 
-      <box style={{ height: 1, width: '100%' }}>
-        <text content={'\u2500'.repeat(width)} fg="#292e42" />
-      </box>
+      {/* Footer */}
       <FooterRows rows={footerRows} fg="#565f89" />
     </box>
   );
