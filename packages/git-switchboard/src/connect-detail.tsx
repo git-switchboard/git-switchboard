@@ -5,7 +5,7 @@ import { footerParts } from './view.js';
 import { useKeybinds } from './use-keybinds.js';
 import { buildFooterRows, FooterRows } from './footer.js';
 import { useNavigate, useHistory } from './tui-router.js';
-import { removeToken, resolveTokenSource } from './token-store.js';
+import { removeToken, resolveToken, resolveTokenSource } from './token-store.js';
 import type { TokenSource } from './token-store.js';
 import { ALL_PROVIDERS } from './providers.js';
 import { CHECKMARK, CROSSMARK } from './unicode.js';
@@ -34,16 +34,30 @@ export function ConnectDetail({
   const navigate = useNavigate<ConnectScreen>();
   const { goBack } = useHistory();
   const [source, setSource] = useState<TokenSource>(null);
+  const [whoami, setWhoami] = useState<string | null>(null);
+  const [whoamiError, setWhoamiError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
   const provider = ALL_PROVIDERS.find((p) => p.name === providerName);
 
   useEffect(() => {
     void (async () => {
-      const resolved = await resolveTokenSource(
-        ALL_PROVIDERS.find((p) => p.name === providerName)!
-      );
+      if (!provider) return;
+      const resolved = await resolveTokenSource(provider);
       setSource(resolved);
+
+      // Validate the token if one resolved
+      if (resolved) {
+        try {
+          const token = await resolveToken(provider);
+          if (token) {
+            const displayName = await provider.validate(token);
+            setWhoami(displayName);
+          }
+        } catch (err) {
+          setWhoamiError(err instanceof Error ? err.message : 'validation failed');
+        }
+      }
     })();
   }, [providerName]);
 
@@ -63,6 +77,8 @@ export function ConnectDetail({
         void (async () => {
           await removeToken(providerName);
           setSource(null);
+          setWhoami(null);
+          setWhoamiError(null);
           setConfirming(false);
         })();
       },
@@ -93,6 +109,13 @@ export function ConnectDetail({
   const rows = buildFooterRows(parts, width);
 
   const displayName = provider?.name ?? providerName;
+  const whoamiLine = whoami
+    ? `${CHECKMARK} Authenticated as ${whoami}`
+    : whoamiError
+      ? `${CROSSMARK} ${whoamiError}`
+      : source
+        ? 'Validating...'
+        : null;
 
   return (
     <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
@@ -102,23 +125,31 @@ export function ConnectDetail({
       <box style={{ height: 1, width: '100%' }}>
         <text content={'\u2500'.repeat(width)} fg="#292e42" />
       </box>
-      <box flexDirection="column" style={{ flexGrow: 1, paddingLeft: 2 }}>
+      <box flexDirection="column" style={{ flexGrow: 1 }}>
         <box style={{ height: 1 }}>
           <text>
             <span fg="#a9b1d6">{"  Status: "}</span>
             <span fg={color}>{`${icon} ${text}`}</span>
           </text>
         </box>
+        {whoamiLine && (
+          <box style={{ height: 1 }}>
+            <text
+              content={`  ${whoamiLine}`}
+              fg={whoami ? '#9ece6a' : whoamiError ? '#f7768e' : '#e0af68'}
+            />
+          </box>
+        )}
         <box style={{ height: 1 }}>
           <text content={`  Settings: ${provider?.settingsUrl ?? ''}`} fg="#565f89" />
         </box>
         {confirming && (
-          <box style={{ height: 2, marginTop: 1 }}>
+          <box style={{ height: 1, marginTop: 1 }}>
             <text content={`  Remove ${displayName} token?`} fg="#f7768e" />
           </box>
         )}
       </box>
-      <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+      <box style={{ height: 1, width: '100%' }}>
         <text content={'\u2500'.repeat(width)} fg="#292e42" />
       </box>
       <FooterRows rows={rows} fg="#565f89" />
