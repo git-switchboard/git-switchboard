@@ -324,6 +324,7 @@ export function PrDetail({
   // Fires first (LIFO) — handles check action modal and page/home/end navigation.
   useKeyboard((key) => {
     if (modal) {
+      key.stopPropagation();
       const actions = getCheckActions(modal.check);
       switch (key.name) {
         case 'up':

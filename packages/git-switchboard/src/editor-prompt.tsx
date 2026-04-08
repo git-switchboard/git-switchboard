@@ -22,24 +22,25 @@ export function EditorPrompt({
     Math.max(0, Math.min(idx, editors.length - 1));
 
   useKeyboard((key) => {
+    key.stopPropagation();
     switch (key.name) {
       case "up":
       case "k":
         setSelectedIndex((i) => clampIndex(i - 1));
-        return true;
+        break;
       case "down":
       case "j":
         setSelectedIndex((i) => clampIndex(i + 1));
-        return true;
+        break;
       case "return": {
         const editor = editors[selectedIndex];
         if (!editor.disabled) onSelect(editor);
-        return true;
+        break;
       }
       case "escape":
       case "q":
         onCancel();
-        return true;
+        break;
     }
   });
 

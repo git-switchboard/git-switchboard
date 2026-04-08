@@ -26,15 +26,14 @@ export function ProviderStatusModal({
   onClose: () => void;
 }) {
   useKeyboard((key) => {
+    key.stopPropagation();
     if (
       key.name === 'escape' ||
       key.raw === 'p' ||
       key.name === 'q'
     ) {
       onClose();
-      return true;
     }
-    return true; // consume all keys while modal is open
   });
 
   const modalWidth = Math.min(50, width - 4);

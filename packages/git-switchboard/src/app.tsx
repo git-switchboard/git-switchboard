@@ -162,6 +162,7 @@ export function App({
   // Fires first (LIFO) — handles search text input and page/home/end navigation.
   useKeyboard((key) => {
     if (searchMode) {
+      key.stopPropagation();
       const shouldCommit =
         key.name === 'return' || key.name === 'tab' ||
         key.name === 'up' || key.name === 'down' || key.raw === '\t';

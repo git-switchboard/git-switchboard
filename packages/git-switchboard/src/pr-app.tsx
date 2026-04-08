@@ -477,6 +477,7 @@ export function PrApp({
   // Fires first (LIFO) — handles sort modal, search text input, and page/home/end navigation.
   useKeyboard((key) => {
     if (sortModal) {
+      key.stopPropagation();
       switch (key.name) {
         case 'up':
         case 'k':
@@ -503,6 +504,7 @@ export function PrApp({
     }
 
     if (searchMode) {
+      key.stopPropagation();
       const shouldCommit =
         key.name === 'return' || key.name === 'tab' ||
         key.name === 'up' || key.name === 'down' || key.raw === '\t';

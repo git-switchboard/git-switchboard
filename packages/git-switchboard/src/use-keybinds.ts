@@ -61,7 +61,10 @@ export function useKeybinds<TKeybinds extends Record<string, Keybind>>(
       if (!handler) continue;
 
       const result = handler(input);
-      if (result !== false) return true;
+      if (result !== false) {
+        key.stopPropagation();
+        return true;
+      }
     }
   });
 }

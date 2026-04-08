@@ -159,6 +159,9 @@ export function ConnectSetup({
 
   // Text input handler for input/password steps
   useKeyboard((key) => {
+    if (step === 'input' || step === 'password' || step === 'confirm-password') {
+      key.stopPropagation();
+    }
     if (step === 'input') {
       if (key.name === 'return' && inputValue.length > 0) {
         if (selectedStrategy === 'password') {

@@ -354,6 +354,7 @@ function EditorModalOverlay({
       case 'up':
       case 'k':
         setEditorModal({ pr, matches, selectedIndex: Math.max(0, selectedIndex - 1) });
+        key.stopPropagation();
         return true;
       case 'down':
       case 'j':
@@ -362,13 +363,16 @@ function EditorModalOverlay({
           matches,
           selectedIndex: Math.min(installedEditors.length - 1, selectedIndex + 1),
         });
+        key.stopPropagation();
         return true;
       case 'return':
         void confirm();
+        key.stopPropagation();
         return true;
       case 'escape':
       case 'q':
         setEditorModal(null);
+        key.stopPropagation();
         return true;
     }
     return false;
