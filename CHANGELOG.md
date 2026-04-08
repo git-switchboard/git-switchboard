@@ -1,3 +1,20 @@
+## 0.1.0 (2026-04-08)
+
+### 🚀 Features
+
+- add config module for ~/.config/git-switchboard ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- **git-switchboard:** worktree conflict resolution, dirty-checkout guards, and branch validation ([#10](https://github.com/git-switchboard/git-switchboard/pull/10))
+
+### 🩹 Fixes
+
+- guard select action against firing during search/sort modal ([2915fa8](https://github.com/git-switchboard/git-switchboard/commit/2915fa8))
+- **docs-site:** docs 404 for guide/pr-workflow by adding workflow pages to prerender routes ([#9](https://github.com/git-switchboard/git-switchboard/pull/9))
+
+### ❤️ Thank You
+
+- Claude
+- Craigory Coppola @AgentEnder
+
 ## 0.0.2 (2026-04-07)
 
 ### 🚀 Features
