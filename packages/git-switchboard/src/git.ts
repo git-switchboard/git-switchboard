@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import type { BranchInfo } from "./types.js";
+import type { BranchInfo, WorktreeInfo } from "./types.js";
 
 const FORMAT =
   "%(refname:short)%09%(authorname)%09%(committerdate:iso-strict)%09%(committerdate:relative)%09%(upstream:short)";
@@ -85,6 +85,83 @@ export function parseGitHubRemote(
   if (httpsMatch) return { owner: httpsMatch[1], repo: httpsMatch[2] };
 
   return undefined;
+}
+
+export function getWorkingTreeDirtyFiles(): string[] {
+  try {
+    const output = execSync("git status --porcelain", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return output.trim().split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export function getWorktreeDirtyFiles(worktreePath: string): string[] {
+  try {
+    const output = execSync(`git -C "${worktreePath}" status --porcelain`, {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return output.trim().split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export function branchExists(name: string): boolean {
+  try {
+    execSync(`git rev-parse --verify refs/heads/${name}`, {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getWorktrees(): WorktreeInfo[] {
+  try {
+    const output = execSync("git worktree list --porcelain", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const worktrees: WorktreeInfo[] = [];
+    let currentPath: string | undefined;
+    let currentBranch: string | undefined;
+
+    for (const line of output.split("\n")) {
+      if (line.startsWith("worktree ")) {
+        if (currentPath !== undefined) {
+          worktrees.push({
+            path: currentPath,
+            branch: currentBranch,
+            isMain: worktrees.length === 0,
+          });
+        }
+        currentPath = line.slice("worktree ".length).trim();
+        currentBranch = undefined;
+      } else if (line.startsWith("branch ")) {
+        currentBranch = line
+          .slice("branch ".length)
+          .trim()
+          .replace(/^refs\/heads\//, "");
+      }
+    }
+    if (currentPath !== undefined) {
+      worktrees.push({
+        path: currentPath,
+        branch: currentBranch,
+        isMain: worktrees.length === 0,
+      });
+    }
+    return worktrees;
+  } catch {
+    return [];
+  }
 }
 
 export function getBranches(includeRemote: boolean): BranchInfo[] {

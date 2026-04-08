@@ -87,6 +87,37 @@ export interface BranchWithPR extends BranchInfo {
 
 export type AuthorFilterMode = "all" | "me" | "list";
 
+export interface WorktreeInfo {
+  /** Absolute path to the worktree */
+  path: string;
+  /** Currently checked-out branch name (without refs/heads/ prefix), or undefined for detached HEAD */
+  branch: string | undefined;
+  /** True if this is the main (primary) worktree */
+  isMain: boolean;
+}
+
+export type WorktreeConflictAction =
+  | { type: 'open-editor'; worktreePath: string }
+  | { type: 'checkout-new-branch'; newBranchName: string; fromBranch: string; stashCurrentFirst: boolean }
+  | {
+      type: 'move-worktree-to-new-branch';
+      worktreePath: string;
+      newBranchName: string;
+      fromBranch: string;
+      /** Branch to checkout in the current worktree after the move. */
+      thenCheckout: string;
+      stashCurrentFirst: boolean;
+    }
+  | {
+      type: 'move-worktree-to-existing-branch';
+      worktreePath: string;
+      targetBranch: string;
+      /** Branch to checkout in the current worktree after the move. */
+      thenCheckout: string;
+      stashOtherFirst: boolean;
+      stashCurrentFirst: boolean;
+    };
+
 export interface AppState {
   branches: BranchWithPR[];
   showRemote: boolean;

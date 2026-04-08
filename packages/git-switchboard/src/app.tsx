@@ -3,11 +3,12 @@ import { useCallback, useMemo, useState } from 'react';
 import { useKeybinds } from './use-keybinds.js';
 import { muteColor } from './colors.js';
 import { ScrollList, handleListKey } from './scroll-list.js';
-import type { AuthorFilterMode, BranchWithPR } from './types.js';
+import type { AuthorFilterMode, BranchWithPR, WorktreeInfo } from './types.js';
 import { footerParts } from './view.js';
 import { ELLIPSIS, RETURN_SYMBOL } from './unicode.js';
 import type { ViewProps } from './view.js';
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
+import { useNavigate } from './tui-router.js';
 
 /** Truncate string to fit width, adding ellipsis if needed */
 function fit(str: string, width: number): string {
@@ -22,6 +23,8 @@ interface AppProps extends ViewProps {
   currentUserAliases: string[];
   authorList: string[];
   initialShowRemote: boolean;
+  worktrees: WorktreeInfo[];
+  getWorkingTreeDirtyFiles: () => string[];
   onSelect: (branch: BranchWithPR) => void;
   onExit: () => void;
   fetchBranches: (includeRemote: boolean) => BranchWithPR[];
@@ -33,12 +36,19 @@ export function App({
   currentUserAliases,
   authorList,
   initialShowRemote,
+  worktrees,
+  getWorkingTreeDirtyFiles,
   onSelect,
   onExit,
   fetchBranches,
   keybinds,
 }: AppProps) {
   useExitOnCtrlC();
+  const navigate = useNavigate<
+    | { type: 'branch-picker' }
+    | { type: 'worktree-conflict'; branch: BranchWithPR; worktreePath: string }
+    | { type: 'dirty-checkout'; branch: BranchWithPR; dirtyFiles: string[] }
+  >();
   const { width, height } = useTerminalDimensions();
   const [branches, setBranches] = useState(initialBranches);
   const [showRemote, setShowRemote] = useState(initialShowRemote);
@@ -104,7 +114,23 @@ export function App({
     },
     select: () => {
       const branch = filteredBranches[selectedIndex];
-      if (branch) onSelect(branch);
+      if (!branch) return;
+      const resolvedName = branch.isRemote
+        ? branch.name.replace(/^origin\//, '')
+        : branch.name;
+      const conflictWorktree = branch.isCurrent
+        ? undefined
+        : worktrees.find((wt) => wt.branch === resolvedName);
+      if (conflictWorktree) {
+        navigate({ type: 'worktree-conflict', branch, worktreePath: conflictWorktree.path });
+      } else {
+        const dirtyFiles = getWorkingTreeDirtyFiles();
+        if (dirtyFiles.length > 0) {
+          navigate({ type: 'dirty-checkout', branch, dirtyFiles });
+        } else {
+          onSelect(branch);
+        }
+      }
     },
     toggleRemote: () => {
       const newShowRemote = !showRemote;
