@@ -26,20 +26,20 @@ export function EditorPrompt({
       case "up":
       case "k":
         setSelectedIndex((i) => clampIndex(i - 1));
-        break;
+        return true;
       case "down":
       case "j":
         setSelectedIndex((i) => clampIndex(i + 1));
-        break;
+        return true;
       case "return": {
         const editor = editors[selectedIndex];
         if (!editor.disabled) onSelect(editor);
-        break;
+        return true;
       }
       case "escape":
       case "q":
         onCancel();
-        break;
+        return true;
     }
   });
 
