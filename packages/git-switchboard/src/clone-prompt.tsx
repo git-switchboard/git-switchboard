@@ -85,7 +85,7 @@ export function ClonePrompt({
       setWorktreePath((p) => p.slice(0, -1));
       return true;
     }
-    if (key.raw && key.raw.length === 1 && key.raw >= ' ') {
+    if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
       setWorktreePath((p) => p + key.raw);
       return true;
     }

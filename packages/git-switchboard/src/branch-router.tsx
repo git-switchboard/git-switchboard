@@ -1,7 +1,9 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useState } from 'react';
+import { useTerminalDimensions } from '@opentui/react';
 import { App } from './app.js';
 import { WorktreeConflict } from './worktree-conflict.js';
 import { DirtyCheckout } from './dirty-checkout.js';
+import { ProviderStatusModal } from './provider-status.js';
 import { TuiRouter, useNavigate } from './tui-router.js';
 import { defineCommand, defineView } from './view.js';
 import type { BranchWithPR, WorktreeConflictAction, WorktreeInfo } from './types.js';
@@ -47,6 +49,7 @@ export interface BranchRouterProps {
   onStashAndCheckout: (branch: BranchWithPR) => void;
   onWorktreeAction: (action: WorktreeConflictAction) => void;
   onExit: () => void;
+  onProviderStatus?: () => void;
   fetchBranches: (includeRemote: boolean) => BranchWithPR[];
 }
 
@@ -200,6 +203,7 @@ export const BRANCH_COMMAND = defineCommand<BranchScreen>()({
           description: 'Cycle author filter',
           terminal: '[a]uthor',
         },
+        providerStatus: { keys: ['p'], label: 'p', description: 'Provider status', terminal: '[p]roviders' },
         search: { keys: [{ raw: '/' }], label: '/', description: 'Search', terminal: '[/] Search' },
         quit: { keys: ['q', 'escape'], label: 'q or Esc', description: 'Quit', terminal: '[q]uit' },
       },
@@ -270,11 +274,25 @@ export const BRANCH_COMMAND = defineCommand<BranchScreen>()({
 // ─── BranchRouter ─────────────────────────────────────────────────────────────
 
 export function BranchRouter(props: BranchRouterProps) {
+  const [showProviderStatus, setShowProviderStatus] = useState(false);
+  const { width, height } = useTerminalDimensions();
+
+  const overlay = showProviderStatus ? (
+    <ProviderStatusModal
+      width={width}
+      height={height}
+      onClose={() => setShowProviderStatus(false)}
+    />
+  ) : undefined;
+
+  const ctxValue = { ...props, onProviderStatus: () => setShowProviderStatus(true) };
+
   return (
-    <BranchCtx.Provider value={props}>
+    <BranchCtx.Provider value={ctxValue}>
       <TuiRouter<BranchScreen>
         views={BRANCH_COMMAND.views}
         initialScreen={{ type: 'branch-picker' }}
+        overlay={overlay}
       />
     </BranchCtx.Provider>
   );

@@ -54,6 +54,7 @@ function createStoreInitialState(prs: UserPullRequest[]) {
     ciCache: new Map<string, CIInfo>(),
     reviewCache: new Map<string, ReviewInfo>(),
     mergeableCache: new Map<string, MergeableStatus>(),
+    linearCache: new Map<string, import('./types.js').LinearIssue>(),
     repoMode: null,
     token: 'test-token',
     copyToClipboard: async () => true,

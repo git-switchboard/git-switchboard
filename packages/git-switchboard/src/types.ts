@@ -83,6 +83,7 @@ export interface ReviewInfo {
 
 export interface BranchWithPR extends BranchInfo {
   pr?: PullRequestInfo;
+  linearIssue?: LinearIssue;
 }
 
 export type AuthorFilterMode = "all" | "me" | "list";
@@ -126,4 +127,38 @@ export interface AppState {
   selectedIndex: number;
   currentUser: string;
   authorList: string[];
+}
+
+// ─── Linear ─────────────────────────────────────────────────────
+
+export interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  status: string;
+  priority: number;
+  assignee: string | null;
+  url: string;
+  teamKey: string;
+}
+
+export interface LinearAttachment {
+  issueId: string;
+  issueIdentifier: string;
+  url: string;
+}
+
+export interface LinearData {
+  /** identifier → issue (e.g., "ENG-123" → LinearIssue) */
+  issues: Map<string, LinearIssue>;
+  /** GitHub PR URL → Linear issue identifier */
+  attachments: Map<string, string>;
+}
+
+export interface ProviderRateLimit {
+  provider: string;
+  remaining: number;
+  limit: number;
+  used: number;
+  resetAt: Date;
 }

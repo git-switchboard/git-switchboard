@@ -7,7 +7,6 @@ import { footerParts } from './view.js';
 import type { ViewProps } from './view.js';
 import { useNavigate } from './tui-router.js';
 import type { PrScreen } from './store.js';
-import { rateLimit } from './github.js';
 import { ScrollList, handleListKey } from './scroll-list.js';
 import type { LocalRepo } from './scanner.js';
 import type {
@@ -145,16 +144,28 @@ function roleIndicator(role: PRRole): { text: string; fg: string } {
   }
 }
 
-function mergeLabel(status: MergeableStatus | undefined): { text: string; fg: string } {
+function mergeLabel(status: MergeableStatus | undefined, compact: boolean): { text: string; fg: string } {
   if (status === 'CONFLICTING') {
-    return { text: `${CROSSMARK} Conflict`, fg: '#f7768e' };
+    return { text: compact ? CROSSMARK : `${CROSSMARK} Conflict`, fg: '#f7768e' };
   }
   return { text: '', fg: '#565f89' };
 }
 
-function reviewLabel(status: ReviewStatus | undefined): { text: string; fg: string } {
+function reviewLabel(status: ReviewStatus | undefined, compact: boolean): { text: string; fg: string } {
   if (status == null) {
     return { text: ELLIPSIS, fg: '#565f89' };
+  }
+  if (compact) {
+    switch (status) {
+      case 'approved':
+        return { text: CHECKMARK, fg: '#9ece6a' };
+      case 'changes-requested':
+        return { text: CROSSMARK, fg: '#f7768e' };
+      case 're-review-needed':
+        return { text: '~', fg: '#e0af68' };
+      default:
+        return { text: ELLIPSIS, fg: '#565f89' };
+    }
   }
   switch (status) {
     case 'approved':
@@ -174,6 +185,9 @@ interface PrAppProps extends ViewProps {
   ciCache: Map<string, CIInfo>;
   reviewCache: Map<string, ReviewInfo>;
   mergeableCache: Record<string, MergeableStatus>;
+  linearCache: Map<string, import('./types.js').LinearIssue>;
+  /** When true, a parent modal overlay is active — skip keybind processing. */
+  modalActive?: boolean;
   repoMode: string | null;
   refreshing: boolean;
   /** Fetch CI + review for a PR. Resolves when caches are updated. */
@@ -190,6 +204,8 @@ export function PrApp({
   ciCache,
   reviewCache,
   mergeableCache,
+  linearCache,
+  modalActive = false,
   repoMode,
   refreshing,
   onFetchCI,
@@ -240,11 +256,13 @@ export function PrApp({
     const result = searchQuery
       ? prs.filter((pr) => {
           const q = searchQuery.toLowerCase();
+          const linearIssue = linearCache.get(`${pr.repoId}#${pr.number}`);
           return (
             pr.title.toLowerCase().includes(q) ||
             pr.repoId.includes(q) ||
             pr.headRef.toLowerCase().includes(q) ||
-            pr.author.toLowerCase().includes(q)
+            pr.author.toLowerCase().includes(q) ||
+            (linearIssue?.identifier.toLowerCase().includes(q) ?? false)
           );
         })
       : [...prs];
@@ -282,7 +300,7 @@ export function PrApp({
       return 0;
     });
     return result;
-  }, [prs, searchQuery, reviewCache, ciCache, mergeableCache, sortLayers]);
+  }, [prs, searchQuery, reviewCache, ciCache, mergeableCache, linearCache, sortLayers]);
 
   const repoMatchMap = useMemo(() => {
     const map = new Map<string, LocalRepo[]>();
@@ -297,6 +315,11 @@ export function PrApp({
     return map;
   }, [prs, localRepos]);
 
+  const hasLinear = useMemo(
+    () => filteredPRs.some((pr) => linearCache.has(`${pr.repoId}#${pr.number}`)),
+    [filteredPRs, linearCache]
+  );
+
   const hasFailedChecks = useMemo(() => {
     const selectedPR = filteredPRs[selectedIndex];
     const selectedKey = selectedPR ? `${selectedPR.repoId}#${selectedPR.number}` : '';
@@ -306,10 +329,7 @@ export function PrApp({
 
   const footerRows = useMemo(() => {
     const parts = footerParts(keybinds, { retryChecks: hasFailedChecks });
-    const quota = rateLimit.current
-      ? `API: ${rateLimit.current.remaining}/${rateLimit.current.limit}`
-      : undefined;
-    return buildFooterRows(parts, width, quota);
+    return buildFooterRows(parts, width);
   }, [hasFailedChecks, width, keybinds]);
 
   // 4 chrome rows (header, spacer, column headers, footer) + 2 padding rows
@@ -424,11 +444,12 @@ export function PrApp({
 
   useKeybinds(keybinds, {
     navigate: (key) => {
+      if (modalActive) return false;
       if (key.name === 'up' || key.name === 'k') moveTo(selectedIndex - 1);
       else moveTo(selectedIndex + 1);
     },
     select: () => {
-      if (searchMode || sortModal) return;
+      if (modalActive || searchMode || sortModal) return;
       const pr = filteredPRs[selectedIndex];
       if (pr) {
         const matches = repoMatchMap.get(`${pr.repoId}#${pr.number}`) ?? [];
@@ -436,10 +457,12 @@ export function PrApp({
       }
     },
     fetchCI: () => {
+      if (modalActive) return false;
       const pr = filteredPRs[selectedIndex];
       if (pr) { onFetchCI(pr).then(() => forceRender((n) => n + 1)); }
     },
     retryChecks: () => {
+      if (modalActive) return false;
       const pr = filteredPRs[selectedIndex];
       if (pr) {
         onRetryChecks(pr).then((msg) => {
@@ -449,17 +472,19 @@ export function PrApp({
       }
     },
     refreshAll: () => {
+      if (modalActive) return false;
       if (refreshing) { queuedRefreshCountRef.current += 1; }
       else { refreshCurrentChunk(); }
     },
-    sort: () => setSortModal({ selectedIndex: 0 }),
-    search: () => setSearchMode(true),
-    quit: () => onExit(),
+    sort: () => { if (modalActive) return false; setSortModal({ selectedIndex: 0 }); },
+    search: () => { if (modalActive) return false; setSearchMode(true); },
+    quit: () => { if (modalActive) return false; onExit(); },
   }, { show: { retryChecks: hasFailedChecks } });
 
   // Fires first (LIFO) — handles sort modal, search text input, and page/home/end navigation.
   useKeyboard((key) => {
     if (sortModal) {
+      key.stopPropagation();
       switch (key.name) {
         case 'up':
         case 'k':
@@ -486,6 +511,7 @@ export function PrApp({
     }
 
     if (searchMode) {
+      key.stopPropagation();
       const shouldCommit =
         key.name === 'return' || key.name === 'tab' ||
         key.name === 'up' || key.name === 'down' || key.raw === '\t';
@@ -496,7 +522,7 @@ export function PrApp({
         setSearchMode(false);
       } else if (key.name === 'backspace') {
         setSearchQuery((q) => q.slice(0, -1));
-      } else if (key.raw && key.raw.length === 1 && key.raw >= ' ') {
+      } else if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
         setSearchQuery((q) => q + key.raw);
         setSelectedIndex(0);
         setScrollOffset(0);
@@ -507,17 +533,36 @@ export function PrApp({
     if (handleListKey(key.name, selectedIndex, filteredPRs.length, listHeight, moveTo)) return true;
   });
 
-  // Column widths — repo mode replaces role+repo with author
+  // Determine which repo names are ambiguous (same name under different orgs)
+  const ambiguousRepoNames = useMemo(() => {
+    const nameToOwners = new Map<string, Set<string>>();
+    for (const pr of prs) {
+      const owners = nameToOwners.get(pr.repoName) ?? new Set();
+      owners.add(pr.repoOwner);
+      nameToOwners.set(pr.repoName, owners);
+    }
+    const ambiguous = new Set<string>();
+    for (const [name, owners] of nameToOwners) {
+      if (owners.size > 1) ambiguous.add(name);
+    }
+    return ambiguous;
+  }, [prs]);
+  const hasAnyAmbiguous = ambiguousRepoNames.size > 0;
+
+  // Responsive column widths — collapse gracefully at narrow viewports
+  const compact = width < 120;
+  const veryCompact = width < 90;
   const authorCol = repoMode ? Math.min(20, Math.floor(width * 0.15)) : 0;
   const roleCol = repoMode ? 0 : 4;
-  const repoCol = repoMode ? 0 : Math.min(25, Math.floor(width * 0.2));
-  const updatedCol = 12;
-  const ciCol = 12;
-  const mergeCol = 11;
-  const reviewCol = 15;
+  const repoCol = repoMode ? 0 : Math.min(hasAnyAmbiguous ? 25 : 18, Math.floor(width * 0.2));
+  const updatedCol = veryCompact ? 8 : 12;
+  const ciCol = veryCompact ? 8 : 12;
+  const mergeCol = compact ? 3 : 11;
+  const reviewCol = compact ? 3 : 15;
+  const linearCol = hasLinear ? (compact ? 10 : 12) : 0;
   const prCol = Math.max(
     20,
-    width - authorCol - roleCol - repoCol - updatedCol - ciCol - mergeCol - reviewCol - 6
+    width - authorCol - roleCol - repoCol - updatedCol - ciCol - mergeCol - reviewCol - linearCol - 6
   );
 
   const sortHeader = (label: string, field: SortField, colWidth: number): string => {
@@ -552,7 +597,7 @@ export function PrApp({
       {/* Column headers */}
       <box style={{ height: 1, width: '100%' }}>
         <text
-          content={` ${repoMode ? 'Author'.padEnd(authorCol) : ''.padEnd(roleCol)}${sortHeader('PR', 'number', prCol)}${repoMode ? '' : sortHeader('Repo', 'repo', repoCol)}${sortHeader('Updated', 'updated', updatedCol)}${sortHeader('CI', 'ci', ciCol)}${sortHeader('', 'merge', mergeCol)}${sortHeader('Review', 'review', reviewCol)}`}
+          content={` ${repoMode ? 'Author'.padEnd(authorCol) : ''.padEnd(roleCol)}${sortHeader('PR', 'number', prCol)}${repoMode ? '' : sortHeader('Repo', 'repo', repoCol)}${sortHeader(veryCompact ? 'Upd' : 'Updated', 'updated', updatedCol)}${sortHeader('CI', 'ci', ciCol)}${sortHeader(compact ? '' : '', 'merge', mergeCol)}${hasLinear ? (compact ? 'Lin' : 'Linear').padEnd(linearCol) : ''}${sortHeader(compact ? 'Rv' : 'Review', 'review', reviewCol)}`}
           fg={tableFocused ? '#bb9af7' : muteColor('#bb9af7')}
         />
       </box>
@@ -578,8 +623,10 @@ export function PrApp({
             const ci = ciCache.get(prKey);
             const ciStatus = ciSummary(ci, SPINNER_FRAMES[spinnerFrame]);
             const review = reviewCache.get(prKey);
-            const rvw = reviewLabel(review?.status);
-            const merge = mergeLabel(mergeableCache[prKey]);
+            const linearIssue = linearCache.get(prKey);
+            const linearText = linearIssue ? linearIssue.identifier : (hasLinear ? '-' : '');
+            const rvw = reviewLabel(review?.status, compact);
+            const merge = mergeLabel(mergeableCache[prKey], compact);
             const roleIcon = roleIndicator(pr.role);
             const authorColor = tableFocused ? '#bb9af7' : muteColor('#bb9af7');
             const roleColor = tableFocused ? roleIcon.fg : muteColor(roleIcon.fg);
@@ -593,7 +640,7 @@ export function PrApp({
             const reviewColor = tableFocused ? rvw.fg : muteColor(rvw.fg);
 
             const prLabel = `#${pr.number} ${pr.title}`.slice(0, prCol - 1);
-            const repoLabel = `${pr.repoOwner}/${pr.repoName}`.slice(
+            const repoLabel = (ambiguousRepoNames.has(pr.repoName) ? `${pr.repoOwner}/${pr.repoName}` : pr.repoName).slice(
               0,
               repoCol - 1
             );
@@ -629,6 +676,11 @@ export function PrApp({
                   <span fg={mergeColor}>
                     {merge.text.slice(0, mergeCol - 1).padEnd(mergeCol)}
                   </span>
+                  {hasLinear && (
+                    <span fg={tableFocused ? '#bb9af7' : muteColor('#bb9af7')}>
+                      {linearText.slice(0, linearCol - 1).padEnd(linearCol)}
+                    </span>
+                  )}
                   <span fg={reviewColor}>
                     {rvw.text.slice(0, reviewCol - 1).padEnd(reviewCol)}
                   </span>

@@ -12,6 +12,7 @@ import { useStore } from 'zustand';
 import { PrApp } from './pr-app.js';
 import { PrDetail } from './pr-detail.js';
 import { ClonePrompt } from './clone-prompt.js';
+import { ProviderStatusModal } from './provider-status.js';
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
 import { sendNotification } from './notify.js';
 import { checkIsClean } from './scanner.js';
@@ -49,6 +50,8 @@ interface PrInfraCtxValue {
   prepareEditorOpen: (pr: UserPullRequest, matches: LocalRepo[]) => Promise<LocalRepo[] | null>;
   getMatchesForPR: (pr: UserPullRequest, repos?: readonly LocalRepo[]) => LocalRepo[];
   setEditorModal: (state: EditorModalState | null) => void;
+  /** True when any modal overlay is active — views should skip keybind processing. */
+  modalActive: boolean;
 }
 
 const PrInfraCtx = createContext<PrInfraCtxValue | null>(null);
@@ -63,6 +66,7 @@ function usePrInfra(): PrInfraCtxValue {
 
 function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
   const store = usePrStoreApi();
+  const { modalActive } = usePrInfra();
   const prs = useStore(store, (s) => s.prs);
   const localRepos = useStore(store, (s) => s.localRepos);
   const ciCache = useStore(store, (s) => s.ciCache);
@@ -71,17 +75,22 @@ function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
   const repoMode = useStore(store, (s) => s.repoMode);
   const refreshing = useStore(store, (s) => s.refreshing);
 
+  const linearCache = useStore(store, (s) => s.linearCache);
+
   const ciMap = useMemo(() => new Map(Object.entries(ciCache)), [ciCache]);
   const reviewMap = useMemo(() => new Map(Object.entries(reviewCache)), [reviewCache]);
+  const linearMap = useMemo(() => new Map(Object.entries(linearCache)), [linearCache]);
 
   return (
     <PrApp
       keybinds={keybinds}
+      modalActive={modalActive}
       prs={prs}
       localRepos={localRepos}
       ciCache={ciMap}
       reviewCache={reviewMap}
       mergeableCache={mergeableCache}
+      linearCache={linearMap}
       repoMode={repoMode}
       refreshing={refreshing}
       onFetchCI={async (pr) => store.getState().fetchDetailsForPR(pr)}
@@ -101,9 +110,10 @@ function PrDetailScreen({
   keybinds: Record<string, Keybind>;
 }) {
   const store = usePrStoreApi();
-  const { prepareEditorOpen, getMatchesForPR } = usePrInfra();
+  const { prepareEditorOpen, getMatchesForPR, modalActive } = usePrInfra();
   const ciCache = useStore(store, (s) => s.ciCache);
   const reviewCache = useStore(store, (s) => s.reviewCache);
+  const linearCache = useStore(store, (s) => s.linearCache);
   const ciLoading = useStore(store, (s) => s.ciLoading);
   const repoScanDone = useStore(store, (s) => s.repoScanDone);
   const watchedPRs = useStore(store, (s) => s.watchedPRs);
@@ -111,13 +121,16 @@ function PrDetailScreen({
   const { pr, matches } = screen;
   const prKey = `${pr.repoId}#${pr.number}`;
   const currentMatches = repoScanDone || matches.length === 0 ? getMatchesForPR(pr) : matches;
+  const linearIssue = linearCache[prKey] ?? null;
 
   return (
     <PrDetail
       keybinds={keybinds}
+      modalActive={modalActive}
       pr={pr}
       ci={ciCache[prKey] ?? null}
       review={reviewCache[prKey] ?? null}
+      linearIssue={linearIssue}
       ciLoading={ciLoading}
       matches={currentMatches}
       watched={watchedPRs.has(prKey)}
@@ -200,6 +213,7 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           terminal: '[^R]efresh all',
         },
         sort: { keys: ['s'], label: 's', description: 'Open sort modal', terminal: '[s]ort' },
+        providerStatus: { keys: ['p'], label: 'p', description: 'Provider status', terminal: '[p]roviders' },
         search: { keys: [{ raw: '/' }], label: '/', description: 'Search', terminal: '[/] Search' },
         quit: { keys: ['q', 'escape'], label: 'q or Esc', description: 'Quit', terminal: '[q]uit' },
       },
@@ -208,6 +222,12 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
 
     'pr-detail': defineView<PrScreen>()({
       keybinds: {
+        navigate: {
+          keys: ['up', 'k', 'down', 'j'],
+          label: 'j/k or Up/Down',
+          description: 'Navigate',
+          terminal: `[${UP_ARROW}${DOWN_ARROW}] Navigate`,
+        },
         select: {
           keys: ['return'],
           label: 'Enter',
@@ -238,6 +258,7 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           description: 'Toggle watch mode',
           terminal: '[w]atch',
         },
+        providerStatus: { keys: ['p'], label: 'p', description: 'Provider status', terminal: '[p]roviders' },
         back: {
           keys: ['escape', 'backspace', 'left'],
           label: 'Left, Backspace or Esc',
@@ -338,6 +359,7 @@ function EditorModalOverlay({
       case 'up':
       case 'k':
         setEditorModal({ pr, matches, selectedIndex: Math.max(0, selectedIndex - 1) });
+        key.stopPropagation();
         return true;
       case 'down':
       case 'j':
@@ -346,13 +368,17 @@ function EditorModalOverlay({
           matches,
           selectedIndex: Math.min(installedEditors.length - 1, selectedIndex + 1),
         });
+        key.stopPropagation();
         return true;
       case 'return':
         void confirm();
+        key.stopPropagation();
         return true;
       case 'escape':
+      case 'backspace':
       case 'q':
         setEditorModal(null);
+        key.stopPropagation();
         return true;
     }
     return false;
@@ -424,6 +450,23 @@ export function PrRouter({ store }: PrRouterProps) {
 
   const { width, height } = useTerminalDimensions();
   const [editorModal, setEditorModal] = useState<EditorModalState | null>(null);
+  const [showProviderStatus, setShowProviderStatus] = useState(false);
+
+  // ─── Global keybind guard ────────────────────────────────────────
+  // PrRouter is the top-level parent — its handler fires FIRST (FIFO).
+  // When a modal is active, consume all keys here so child views don't process them.
+  // The modal overlay handles its own keys via its own useKeyboard.
+  useKeyboard((key) => {
+    if (editorModal || showProviderStatus) {
+      // Don't stopPropagation — let the modal overlay's handler still fire.
+      // Instead, we rely on child views checking modalActive via context.
+    }
+    if (!editorModal && !showProviderStatus && key.raw === 'p') {
+      setShowProviderStatus(true);
+      key.stopPropagation();
+      return true;
+    }
+  });
 
   // ─── Watch polling ──────────────────────────────────────────────
   const storeRef = useRef(store);
@@ -498,9 +541,10 @@ export function PrRouter({ store }: PrRouterProps) {
   );
 
   // ─── Infra context value ────────────────────────────────────────
+  const modalActive = !!editorModal || showProviderStatus;
   const infra = useMemo<PrInfraCtxValue>(
-    () => ({ prepareEditorOpen, getMatchesForPR, setEditorModal }),
-    [prepareEditorOpen, getMatchesForPR]
+    () => ({ prepareEditorOpen, getMatchesForPR, setEditorModal, modalActive }),
+    [prepareEditorOpen, getMatchesForPR, modalActive]
   );
 
   // ─── Editor modal overlay ───────────────────────────────────────
@@ -516,13 +560,26 @@ export function PrRouter({ store }: PrRouterProps) {
     />
   );
 
+  const combinedOverlay = (
+    <>
+      {editorModalOverlay}
+      {showProviderStatus && (
+        <ProviderStatusModal
+          width={width}
+          height={height}
+          onClose={() => setShowProviderStatus(false)}
+        />
+      )}
+    </>
+  );
+
   return (
     <PrStoreCtx.Provider value={store}>
       <PrInfraCtx.Provider value={infra}>
         <TuiRouter<PrScreen>
           views={PR_COMMAND.views}
           initialScreen={{ type: 'pr-list' }}
-          overlay={editorModalOverlay}
+          overlay={combinedOverlay}
         />
       </PrInfraCtx.Provider>
     </PrStoreCtx.Provider>

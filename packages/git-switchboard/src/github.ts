@@ -8,6 +8,7 @@ import type {
   CIInfo,
   CIStatus,
   MergeableStatus,
+  ProviderRateLimit,
   PullRequestInfo,
   ReviewInfo,
   ReviewStatus,
@@ -15,7 +16,7 @@ import type {
   UserPullRequest,
 } from './types.js';
 
-function ghCliToken(): string | undefined {
+export function ghCliToken(): string | undefined {
   try {
     return (
       execSync('gh auth token', {
@@ -28,15 +29,8 @@ function ghCliToken(): string | undefined {
   }
 }
 
-export interface RateLimitInfo {
-  remaining: number;
-  limit: number;
-  used: number;
-  resetAt: Date;
-}
-
 /** Shared mutable rate limit state, updated on every API response */
-export const rateLimit: { current: RateLimitInfo | null } = { current: null };
+export const rateLimit: { current: ProviderRateLimit | null } = { current: null };
 
 /** Create an Octokit instance that tracks rate limit from response headers */
 export function createOctokit(token: string): Octokit {
@@ -49,6 +43,7 @@ export function createOctokit(token: string): Octokit {
     const reset = h['x-ratelimit-reset'];
     if (remaining && limit) {
       rateLimit.current = {
+        provider: 'github',
         remaining: Number(remaining),
         limit: Number(limit),
         used: Number(used ?? 0),

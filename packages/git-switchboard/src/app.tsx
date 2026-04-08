@@ -27,6 +27,7 @@ interface AppProps extends ViewProps {
   getWorkingTreeDirtyFiles: () => string[];
   onSelect: (branch: BranchWithPR) => void;
   onExit: () => void;
+  onProviderStatus?: () => void;
   fetchBranches: (includeRemote: boolean) => BranchWithPR[];
 }
 
@@ -40,6 +41,7 @@ export function App({
   getWorkingTreeDirtyFiles,
   onSelect,
   onExit,
+  onProviderStatus,
   fetchBranches,
   keybinds,
 }: AppProps) {
@@ -82,7 +84,11 @@ export function App({
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      result = result.filter((b) => b.name.toLowerCase().includes(q));
+      result = result.filter(
+        (b) =>
+          b.name.toLowerCase().includes(q) ||
+          (b.linearIssue?.identifier.toLowerCase().includes(q) ?? false)
+      );
     }
 
     return result;
@@ -148,6 +154,7 @@ export function App({
       setSelectedIndex(0);
       setScrollOffset(0);
     },
+    providerStatus: () => onProviderStatus?.(),
     search: () => setSearchMode(true),
     quit: () => onExit(),
   });
@@ -155,6 +162,7 @@ export function App({
   // Fires first (LIFO) — handles search text input and page/home/end navigation.
   useKeyboard((key) => {
     if (searchMode) {
+      key.stopPropagation();
       const shouldCommit =
         key.name === 'return' || key.name === 'tab' ||
         key.name === 'up' || key.name === 'down' || key.raw === '\t';
@@ -165,7 +173,7 @@ export function App({
         setSearchMode(false);
       } else if (key.name === 'backspace') {
         setSearchQuery((q) => q.slice(0, -1));
-      } else if (key.raw && key.raw.length === 1 && key.raw >= ' ') {
+      } else if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
         setSearchQuery((q) => q + key.raw);
         setSelectedIndex(0);
         setScrollOffset(0);
@@ -186,8 +194,10 @@ export function App({
   const prCol = 16;
   const authorCol = 18;
   const dateCol = 18;
+  const hasLinear = filteredBranches.some((b) => b.linearIssue);
+  const linearCol = hasLinear ? 12 : 0;
   // 2 chars for marker, 3 chars for gaps between columns, 2 for leading space
-  const branchCol = Math.max(12, width - prCol - authorCol - dateCol - 7);
+  const branchCol = Math.max(12, width - prCol - authorCol - dateCol - linearCol - 7);
 
   const visibleBranches = filteredBranches.slice(
     scrollOffset,
@@ -224,7 +234,7 @@ export function App({
           content={`   ${fit('Branch', branchCol)} ${fit(
             'Author',
             authorCol
-          )} ${fit('Updated', dateCol)} ${fit('PR', prCol)}`}
+          )} ${fit('Updated', dateCol)} ${hasLinear ? fit('Linear', linearCol) : ''}${fit('PR', prCol)}`}
           fg={tableFocused ? '#bb9af7' : muteColor('#bb9af7')}
         />
       </box>
@@ -256,6 +266,8 @@ export function App({
             ? `#${branch.pr.number} ${branch.pr.draft ? 'Draft' : 'Open'}`
             : '-';
 
+          const linearText = branch.linearIssue ? branch.linearIssue.identifier : (hasLinear ? '-' : '');
+
           const line =
             marker +
             fit(branch.name, branchCol) +
@@ -264,6 +276,7 @@ export function App({
             ' ' +
             fit(branch.relativeDate, dateCol) +
             ' ' +
+            (hasLinear ? fit(linearText, linearCol) : '') +
             fit(prText, prCol);
 
           return (

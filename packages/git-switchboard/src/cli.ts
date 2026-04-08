@@ -175,14 +175,21 @@ const gitSwitchboard = cli('git-switchboard', {
             './notify.js'
           );
 
-          // 1. Resolve token
-          const token = resolveGitHubToken(args['github-token']);
+          // 1. Resolve token (TokenStore first, then legacy fallbacks)
+          const { resolveToken } = await import('./token-store.js');
+          const { GITHUB_PROVIDER, LINEAR_PROVIDER } = await import('./providers.js');
+          const { fetchLinearData, readCachedLinearSnapshot, resolveLinearIssue } = await import('./linear.js');
+          const token =
+            (await resolveToken(GITHUB_PROVIDER, { flagValue: args['github-token'] })) ??
+            resolveGitHubToken(args['github-token']);
           if (!token) {
             console.error(
-              'GitHub token required. Set GH_TOKEN, GITHUB_TOKEN, or use --github-token'
+              'GitHub token required. Set GH_TOKEN, GITHUB_TOKEN, or use --github-token, or run `git-switchboard connect`'
             );
             process.exit(1);
           }
+
+          const linearToken = await resolveToken(LINEAR_PROVIDER);
 
           // Handle Ctrl+C cleanly — bypass React unmount to avoid yoga WASM crash
           const sigintHandler = () => {
@@ -235,6 +242,14 @@ const gitSwitchboard = cli('git-switchboard', {
             renderLoading();
             return [];
           });
+
+          const linearPromise = linearToken
+            ? (async () => {
+                const cached = await readCachedLinearSnapshot(linearToken);
+                if (cached && !cached.isStale) return cached.data;
+                return fetchLinearData(linearToken).catch(() => cached?.data ?? null);
+              })()
+            : Promise.resolve(null);
 
           // Check for cached PR data for instant startup, including stale snapshots.
           const cachedPRs = await readCachedPRsSnapshot(token, repoMode ?? undefined);
@@ -298,6 +313,21 @@ const gitSwitchboard = cli('git-switchboard', {
               import('./store.js').PrRouterResult | null
             >();
 
+          const linearData = await linearPromise;
+          const linearCache = new Map<string, import('./types.js').LinearIssue>();
+          if (linearData) {
+            for (const pr of prs) {
+              const issue = resolveLinearIssue(
+                linearData,
+                pr.headRef,
+                pr.title,
+                undefined, // body not available in list query
+                pr.url
+              );
+              if (issue) linearCache.set(`${pr.repoId}#${pr.number}`, issue);
+            }
+          }
+
           const initialLocalRepos = scanDone ? await scanPromise : [];
 
           const store = createPrStore({
@@ -307,6 +337,7 @@ const gitSwitchboard = cli('git-switchboard', {
             ciCache,
             reviewCache,
             mergeableCache,
+            linearCache,
             repoMode,
             token,
             copyToClipboard,
@@ -401,6 +432,55 @@ const gitSwitchboard = cli('git-switchboard', {
             console.log(`Worktree created at: ${absPath}`);
           }
         },
+      })
+      .command('reset-terminal', {
+        description: 'Reset terminal state (fix mouse mode, cursor, etc.)',
+        handler: async () => {
+          // Disable mouse tracking modes and restore cursor
+          process.stdout.write(
+            '\x1b[?1000l' + // disable normal mouse tracking
+            '\x1b[?1002l' + // disable button-event tracking
+            '\x1b[?1003l' + // disable any-event tracking
+            '\x1b[?1006l' + // disable SGR mouse mode
+            '\x1b[?25h' +   // show cursor
+            '\x1b[0m'       // reset text attributes
+          );
+          console.log('Terminal state reset.');
+        },
+      })
+      .command('connect', {
+        description: 'Manage provider token connections',
+        builder: (c) =>
+          c.option('provider', {
+            type: 'string',
+            description: 'Provider to configure (github, linear)',
+          }),
+        handler: async (args) => {
+          const { createCliRenderer } = await import('@opentui/core');
+          const { createRoot } = await import('@opentui/react');
+          const React = await import('react');
+          const { createElement } = React;
+          const { ConnectRouter } = await import('./connect-router.js');
+
+          process.on('SIGINT', () => process.exit(0));
+
+          const renderer = await createCliRenderer({ exitOnCtrlC: false });
+          const root = createRoot(renderer);
+
+          const { promise, resolve: done } = Promise.withResolvers<void>();
+
+          root.render(
+            createElement(ConnectRouter, {
+              initialProvider: args.provider ?? undefined,
+              onExit: () => {
+                try { renderer.destroy(); } catch { /* yoga crash */ }
+                done();
+              },
+            }) as React.ReactNode
+          );
+
+          await promise;
+        },
       }),
   handler: async (args) => {
     const { createCliRenderer } = await import('@opentui/core');
@@ -436,7 +516,11 @@ const gitSwitchboard = cli('git-switchboard', {
 
     // Enrich with PR data if possible
     if (!args['no-pr']) {
-      const token = resolveGitHubToken(args['github-token']);
+      const { resolveToken } = await import('./token-store.js');
+      const { GITHUB_PROVIDER, LINEAR_PROVIDER } = await import('./providers.js');
+      const token =
+        (await resolveToken(GITHUB_PROVIDER, { flagValue: args['github-token'] })) ??
+        resolveGitHubToken(args['github-token']);
       if (token) {
         const remoteUrl = getRepoRemoteUrl();
         if (remoteUrl) {
@@ -449,6 +533,30 @@ const gitSwitchboard = cli('git-switchboard', {
                 prMap.get(b.name) ?? prMap.get(b.name.replace(/^origin\//, '')),
             }));
           }
+        }
+      }
+
+      // Enrich with Linear data if possible
+      const linearToken = await resolveToken(LINEAR_PROVIDER);
+      if (linearToken) {
+        try {
+          const { fetchLinearData, readCachedLinearSnapshot, matchBranchesToLinear } = await import('./linear.js');
+          const cached = await readCachedLinearSnapshot(linearToken);
+          const linearData = cached && !cached.isStale
+            ? cached.data
+            : await fetchLinearData(linearToken).catch(() => cached?.data ?? null);
+          if (linearData) {
+            const linearMap = matchBranchesToLinear(
+              branches.map((b) => b.name),
+              linearData
+            );
+            branches = branches.map((b) => ({
+              ...b,
+              linearIssue: linearMap.get(b.name),
+            }));
+          }
+        } catch {
+          // Linear enrichment is optional — don't block on failure
         }
       }
     }

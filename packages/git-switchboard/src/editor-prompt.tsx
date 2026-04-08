@@ -22,6 +22,7 @@ export function EditorPrompt({
     Math.max(0, Math.min(idx, editors.length - 1));
 
   useKeyboard((key) => {
+    key.stopPropagation();
     switch (key.name) {
       case "up":
       case "k":

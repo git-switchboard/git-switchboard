@@ -15,6 +15,7 @@ import type {
   MergeableStatus,
   ReviewInfo,
   CheckRun,
+  LinearIssue,
 } from './types.js';
 import type { LocalRepo } from './scanner.js';
 import type { ResolvedEditor, EditorInfo } from './editor.js';
@@ -39,6 +40,7 @@ export interface PrStore {
   ciCache: Record<string, CIInfo>;
   reviewCache: Record<string, ReviewInfo>;
   mergeableCache: Record<string, MergeableStatus>;
+  linearCache: Record<string, LinearIssue>;
   watchedPRs: Set<string>;
 
   // ─── UI state ─────────────────────────────────────────────────
@@ -75,6 +77,7 @@ export interface PrStore {
   openInBrowser: (url: string) => void;
   showStatus: (text: string) => void;
   clearStatus: () => void;
+  setLinearCache: (cache: Record<string, LinearIssue>) => void;
 }
 
 interface PrStoreDeps {
@@ -123,6 +126,7 @@ export const createPrStore = (initial: {
   ciCache: Map<string, CIInfo>;
   reviewCache: Map<string, ReviewInfo>;
   mergeableCache: Map<string, MergeableStatus>;
+  linearCache: Map<string, LinearIssue>;
   repoMode: string | null;
   token: string;
   copyToClipboard: (text: string) => Promise<boolean>;
@@ -330,6 +334,7 @@ export const createPrStore = (initial: {
     ciCache: Object.fromEntries(initial.ciCache),
     reviewCache: Object.fromEntries(initial.reviewCache),
     mergeableCache: Object.fromEntries(initial.mergeableCache),
+    linearCache: Object.fromEntries(initial.linearCache),
     watchedPRs: new Set(),
 
     // ─── UI state ───────────────────────────────────────────────
@@ -508,6 +513,7 @@ export const createPrStore = (initial: {
 
     showStatus: (text) => set({ statusText: text }),
     clearStatus: () => set({ statusText: '' }),
+    setLinearCache: (cache) => set({ linearCache: cache }),
   };
     })(),
   }));
