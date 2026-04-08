@@ -177,7 +177,8 @@ const gitSwitchboard = cli('git-switchboard', {
 
           // 1. Resolve token (TokenStore first, then legacy fallbacks)
           const { resolveToken } = await import('./token-store.js');
-          const { GITHUB_PROVIDER } = await import('./providers.js');
+          const { GITHUB_PROVIDER, LINEAR_PROVIDER } = await import('./providers.js');
+          const { fetchLinearData, readCachedLinearSnapshot, resolveLinearIssue } = await import('./linear.js');
           const token =
             (await resolveToken(GITHUB_PROVIDER, { flagValue: args['github-token'] })) ??
             resolveGitHubToken(args['github-token']);
@@ -187,6 +188,8 @@ const gitSwitchboard = cli('git-switchboard', {
             );
             process.exit(1);
           }
+
+          const linearToken = await resolveToken(LINEAR_PROVIDER);
 
           // Handle Ctrl+C cleanly — bypass React unmount to avoid yoga WASM crash
           const sigintHandler = () => {
@@ -239,6 +242,14 @@ const gitSwitchboard = cli('git-switchboard', {
             renderLoading();
             return [];
           });
+
+          const linearPromise = linearToken
+            ? (async () => {
+                const cached = await readCachedLinearSnapshot(linearToken);
+                if (cached && !cached.isStale) return cached.data;
+                return fetchLinearData(linearToken).catch(() => cached?.data ?? null);
+              })()
+            : Promise.resolve(null);
 
           // Check for cached PR data for instant startup, including stale snapshots.
           const cachedPRs = await readCachedPRsSnapshot(token, repoMode ?? undefined);
@@ -302,6 +313,21 @@ const gitSwitchboard = cli('git-switchboard', {
               import('./store.js').PrRouterResult | null
             >();
 
+          const linearData = await linearPromise;
+          const linearCache = new Map<string, import('./types.js').LinearIssue>();
+          if (linearData) {
+            for (const pr of prs) {
+              const issue = resolveLinearIssue(
+                linearData,
+                pr.headRef,
+                pr.title,
+                undefined, // body not available in list query
+                pr.url
+              );
+              if (issue) linearCache.set(`${pr.repoId}#${pr.number}`, issue);
+            }
+          }
+
           const initialLocalRepos = scanDone ? await scanPromise : [];
 
           const store = createPrStore({
@@ -311,7 +337,7 @@ const gitSwitchboard = cli('git-switchboard', {
             ciCache,
             reviewCache,
             mergeableCache,
-            linearCache: new Map(),
+            linearCache,
             repoMode,
             token,
             copyToClipboard,
@@ -468,7 +494,7 @@ const gitSwitchboard = cli('git-switchboard', {
     // Enrich with PR data if possible
     if (!args['no-pr']) {
       const { resolveToken } = await import('./token-store.js');
-      const { GITHUB_PROVIDER } = await import('./providers.js');
+      const { GITHUB_PROVIDER, LINEAR_PROVIDER } = await import('./providers.js');
       const token =
         (await resolveToken(GITHUB_PROVIDER, { flagValue: args['github-token'] })) ??
         resolveGitHubToken(args['github-token']);
@@ -484,6 +510,30 @@ const gitSwitchboard = cli('git-switchboard', {
                 prMap.get(b.name) ?? prMap.get(b.name.replace(/^origin\//, '')),
             }));
           }
+        }
+      }
+
+      // Enrich with Linear data if possible
+      const linearToken = await resolveToken(LINEAR_PROVIDER);
+      if (linearToken) {
+        try {
+          const { fetchLinearData, readCachedLinearSnapshot, matchBranchesToLinear } = await import('./linear.js');
+          const cached = await readCachedLinearSnapshot(linearToken);
+          const linearData = cached && !cached.isStale
+            ? cached.data
+            : await fetchLinearData(linearToken).catch(() => cached?.data ?? null);
+          if (linearData) {
+            const linearMap = matchBranchesToLinear(
+              branches.map((b) => b.name),
+              linearData
+            );
+            branches = branches.map((b) => ({
+              ...b,
+              linearIssue: linearMap.get(b.name),
+            }));
+          }
+        } catch {
+          // Linear enrichment is optional — don't block on failure
         }
       }
     }
