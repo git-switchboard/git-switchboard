@@ -120,6 +120,8 @@ interface PrDetailProps extends ViewProps {
   ci: CIInfo | null;
   review: ReviewInfo | null;
   linearIssue: LinearIssue | null;
+  /** When true, a parent modal overlay is active — skip keybind processing. */
+  modalActive?: boolean;
   ciLoading: boolean;
   matches: LocalRepo[];
   watched: boolean;
@@ -144,6 +146,7 @@ export function PrDetail({
   ci,
   review,
   linearIssue,
+  modalActive = false,
   ciLoading,
   matches,
   watched,
@@ -286,10 +289,12 @@ export function PrDetail({
 
   useKeybinds(keybinds, {
     navigate: (key) => {
+      if (modalActive || modal) return false;
       if (key.name === 'up' || key.name === 'k') moveTo(selectedIndex - 1);
       else moveTo(selectedIndex + 1);
     },
     select: () => {
+      if (modalActive || modal) return false;
       if (selectedIndex === 0) {
         void handleOpenInEditor();
       } else if (selectedIndex === 1) {
@@ -303,6 +308,7 @@ export function PrDetail({
       }
     },
     copyLogs: () => {
+      if (modalActive || modal) return false;
       if (selectedIndex >= ACTION_COUNT) {
         const check = checks[selectedIndex - ACTION_COUNT];
         if (check) {
@@ -311,18 +317,20 @@ export function PrDetail({
         }
       }
     },
-    refresh: () => onRefreshCI(),
+    refresh: () => { if (modalActive || modal) return false; onRefreshCI(); },
     retry: () => {
+      if (modalActive || modal) return false;
       showStatus('Retrying failed checks...');
       onRetryChecks().then((msg) => showStatus(msg));
     },
-    watch: () => onWatch(),
-    back: () => goBack(),
-    quit: () => onExit(),
+    watch: () => { if (modalActive || modal) return false; onWatch(); },
+    back: () => { if (modalActive || modal) return false; goBack(); },
+    quit: () => { if (modalActive || modal) return false; onExit(); },
   });
 
-  // Fires first (LIFO) — handles check action modal and page/home/end navigation.
+  // Handles check action modal and page/home/end navigation.
   useKeyboard((key) => {
+    if (modalActive) return;
     if (modal) {
       key.stopPropagation();
       const actions = getCheckActions(modal.check);

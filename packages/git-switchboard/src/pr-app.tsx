@@ -186,6 +186,8 @@ interface PrAppProps extends ViewProps {
   reviewCache: Map<string, ReviewInfo>;
   mergeableCache: Record<string, MergeableStatus>;
   linearCache: Map<string, import('./types.js').LinearIssue>;
+  /** When true, a parent modal overlay is active — skip keybind processing. */
+  modalActive?: boolean;
   repoMode: string | null;
   refreshing: boolean;
   /** Fetch CI + review for a PR. Resolves when caches are updated. */
@@ -203,6 +205,7 @@ export function PrApp({
   reviewCache,
   mergeableCache,
   linearCache,
+  modalActive = false,
   repoMode,
   refreshing,
   onFetchCI,
@@ -441,11 +444,12 @@ export function PrApp({
 
   useKeybinds(keybinds, {
     navigate: (key) => {
+      if (modalActive) return false;
       if (key.name === 'up' || key.name === 'k') moveTo(selectedIndex - 1);
       else moveTo(selectedIndex + 1);
     },
     select: () => {
-      if (searchMode || sortModal) return;
+      if (modalActive || searchMode || sortModal) return;
       const pr = filteredPRs[selectedIndex];
       if (pr) {
         const matches = repoMatchMap.get(`${pr.repoId}#${pr.number}`) ?? [];
@@ -453,10 +457,12 @@ export function PrApp({
       }
     },
     fetchCI: () => {
+      if (modalActive) return false;
       const pr = filteredPRs[selectedIndex];
       if (pr) { onFetchCI(pr).then(() => forceRender((n) => n + 1)); }
     },
     retryChecks: () => {
+      if (modalActive) return false;
       const pr = filteredPRs[selectedIndex];
       if (pr) {
         onRetryChecks(pr).then((msg) => {
@@ -466,12 +472,13 @@ export function PrApp({
       }
     },
     refreshAll: () => {
+      if (modalActive) return false;
       if (refreshing) { queuedRefreshCountRef.current += 1; }
       else { refreshCurrentChunk(); }
     },
-    sort: () => setSortModal({ selectedIndex: 0 }),
-    search: () => setSearchMode(true),
-    quit: () => onExit(),
+    sort: () => { if (modalActive) return false; setSortModal({ selectedIndex: 0 }); },
+    search: () => { if (modalActive) return false; setSearchMode(true); },
+    quit: () => { if (modalActive) return false; onExit(); },
   }, { show: { retryChecks: hasFailedChecks } });
 
   // Fires first (LIFO) — handles sort modal, search text input, and page/home/end navigation.
