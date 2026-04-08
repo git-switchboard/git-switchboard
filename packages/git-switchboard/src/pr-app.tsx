@@ -144,16 +144,28 @@ function roleIndicator(role: PRRole): { text: string; fg: string } {
   }
 }
 
-function mergeLabel(status: MergeableStatus | undefined): { text: string; fg: string } {
+function mergeLabel(status: MergeableStatus | undefined, compact: boolean): { text: string; fg: string } {
   if (status === 'CONFLICTING') {
-    return { text: `${CROSSMARK} Conflict`, fg: '#f7768e' };
+    return { text: compact ? CROSSMARK : `${CROSSMARK} Conflict`, fg: '#f7768e' };
   }
   return { text: '', fg: '#565f89' };
 }
 
-function reviewLabel(status: ReviewStatus | undefined): { text: string; fg: string } {
+function reviewLabel(status: ReviewStatus | undefined, compact: boolean): { text: string; fg: string } {
   if (status == null) {
     return { text: ELLIPSIS, fg: '#565f89' };
+  }
+  if (compact) {
+    switch (status) {
+      case 'approved':
+        return { text: CHECKMARK, fg: '#9ece6a' };
+      case 'changes-requested':
+        return { text: CROSSMARK, fg: '#f7768e' };
+      case 're-review-needed':
+        return { text: '~', fg: '#e0af68' };
+      default:
+        return { text: ELLIPSIS, fg: '#565f89' };
+    }
   }
   switch (status) {
     case 'approved':
@@ -512,15 +524,24 @@ export function PrApp({
     if (handleListKey(key.name, selectedIndex, filteredPRs.length, listHeight, moveTo)) return true;
   });
 
-  // Column widths — repo mode replaces role+repo with author
+  // Determine if repo names need org prefix — only when multiple orgs present
+  const repoOwners = useMemo(() => {
+    const owners = new Set(prs.map((pr) => pr.repoOwner));
+    return owners;
+  }, [prs]);
+  const needsOrgPrefix = repoOwners.size > 1;
+
+  // Responsive column widths — collapse gracefully at narrow viewports
+  const compact = width < 120;
+  const veryCompact = width < 90;
   const authorCol = repoMode ? Math.min(20, Math.floor(width * 0.15)) : 0;
   const roleCol = repoMode ? 0 : 4;
-  const repoCol = repoMode ? 0 : Math.min(25, Math.floor(width * 0.2));
-  const updatedCol = 12;
-  const ciCol = 12;
-  const mergeCol = 11;
-  const reviewCol = 15;
-  const linearCol = hasLinear ? 12 : 0;
+  const repoCol = repoMode ? 0 : Math.min(needsOrgPrefix ? 25 : 18, Math.floor(width * 0.2));
+  const updatedCol = veryCompact ? 8 : 12;
+  const ciCol = veryCompact ? 8 : 12;
+  const mergeCol = compact ? 3 : 11;
+  const reviewCol = compact ? 3 : 15;
+  const linearCol = hasLinear ? (compact ? 10 : 12) : 0;
   const prCol = Math.max(
     20,
     width - authorCol - roleCol - repoCol - updatedCol - ciCol - mergeCol - reviewCol - linearCol - 6
@@ -558,7 +579,7 @@ export function PrApp({
       {/* Column headers */}
       <box style={{ height: 1, width: '100%' }}>
         <text
-          content={` ${repoMode ? 'Author'.padEnd(authorCol) : ''.padEnd(roleCol)}${sortHeader('PR', 'number', prCol)}${repoMode ? '' : sortHeader('Repo', 'repo', repoCol)}${sortHeader('Updated', 'updated', updatedCol)}${sortHeader('CI', 'ci', ciCol)}${sortHeader('', 'merge', mergeCol)}${hasLinear ? 'Linear'.padEnd(linearCol) : ''}${sortHeader('Review', 'review', reviewCol)}`}
+          content={` ${repoMode ? 'Author'.padEnd(authorCol) : ''.padEnd(roleCol)}${sortHeader('PR', 'number', prCol)}${repoMode ? '' : sortHeader('Repo', 'repo', repoCol)}${sortHeader(veryCompact ? 'Upd' : 'Updated', 'updated', updatedCol)}${sortHeader('CI', 'ci', ciCol)}${sortHeader(compact ? '' : '', 'merge', mergeCol)}${hasLinear ? (compact ? 'Lin' : 'Linear').padEnd(linearCol) : ''}${sortHeader(compact ? 'Rv' : 'Review', 'review', reviewCol)}`}
           fg={tableFocused ? '#bb9af7' : muteColor('#bb9af7')}
         />
       </box>
@@ -586,8 +607,8 @@ export function PrApp({
             const review = reviewCache.get(prKey);
             const linearIssue = linearCache.get(prKey);
             const linearText = linearIssue ? linearIssue.identifier : (hasLinear ? '-' : '');
-            const rvw = reviewLabel(review?.status);
-            const merge = mergeLabel(mergeableCache[prKey]);
+            const rvw = reviewLabel(review?.status, compact);
+            const merge = mergeLabel(mergeableCache[prKey], compact);
             const roleIcon = roleIndicator(pr.role);
             const authorColor = tableFocused ? '#bb9af7' : muteColor('#bb9af7');
             const roleColor = tableFocused ? roleIcon.fg : muteColor(roleIcon.fg);
@@ -601,7 +622,7 @@ export function PrApp({
             const reviewColor = tableFocused ? rvw.fg : muteColor(rvw.fg);
 
             const prLabel = `#${pr.number} ${pr.title}`.slice(0, prCol - 1);
-            const repoLabel = `${pr.repoOwner}/${pr.repoName}`.slice(
+            const repoLabel = (needsOrgPrefix ? `${pr.repoOwner}/${pr.repoName}` : pr.repoName).slice(
               0,
               repoCol - 1
             );
