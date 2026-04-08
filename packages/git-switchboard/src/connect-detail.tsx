@@ -117,38 +117,66 @@ export function ConnectDetail({
         ? 'Validating...'
         : null;
 
+  const settingsUrl = provider?.settingsUrl ?? '';
+
   return (
     <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-      <box style={{ height: 1, width: '100%' }}>
-        <text content={` ${displayName}`} fg="#7aa2f7" />
-      </box>
-      <box style={{ height: 1, width: '100%' }}>
-        <text content={'\u2500'.repeat(width)} fg="#292e42" />
-      </box>
-      <box flexDirection="column" style={{ flexGrow: 1 }}>
+      {/* Push content to vertical center */}
+      <box style={{ flexGrow: 1 }} />
+
+      {/* Provider card */}
+      <box flexDirection="column" style={{ width: '100%' }}>
+        <box style={{ height: 1, width: '100%' }}>
+          <text content={` ${displayName}`} fg="#7aa2f7" />
+        </box>
+        <box style={{ height: 1, width: '100%' }}>
+          <text content={'\u2500'.repeat(width)} fg="#292e42" />
+        </box>
+
+        {/* Status */}
         <box style={{ height: 1 }}>
           <text>
-            <span fg="#a9b1d6">{"  Status: "}</span>
+            <span fg="#565f89">{"  Status      "}</span>
             <span fg={color}>{`${icon} ${text}`}</span>
           </text>
         </box>
-        {whoamiLine && (
-          <box style={{ height: 1 }}>
-            <text
-              content={`  ${whoamiLine}`}
-              fg={whoami ? '#9ece6a' : whoamiError ? '#f7768e' : '#e0af68'}
-            />
-          </box>
-        )}
+
+        {/* Identity */}
         <box style={{ height: 1 }}>
-          <text content={`  Settings: ${provider?.settingsUrl ?? ''}`} fg="#565f89" />
+          <text>
+            <span fg="#565f89">{"  Identity    "}</span>
+            <span fg={whoami ? '#9ece6a' : whoamiError ? '#f7768e' : '#565f89'}>
+              {whoamiLine ?? 'unknown'}
+            </span>
+          </text>
         </box>
+
+        {/* Settings URL */}
+        <box style={{ height: 1 }}>
+          <text>
+            <span fg="#565f89">{"  Settings    "}</span>
+            <span fg="#7aa2f7">{settingsUrl}</span>
+          </text>
+        </box>
+
+        {/* Disconnect confirmation */}
         {confirming && (
-          <box style={{ height: 1, marginTop: 1 }}>
-            <text content={`  Remove ${displayName} token?`} fg="#f7768e" />
-          </box>
+          <>
+            <box style={{ height: 1 }} />
+            <box style={{ height: 1 }}>
+              <text content={`  Remove ${displayName} token?  [y]es / [n]o`} fg="#f7768e" />
+            </box>
+          </>
         )}
+
+        <box style={{ height: 1, width: '100%' }}>
+          <text content={'\u2500'.repeat(width)} fg="#292e42" />
+        </box>
       </box>
+
+      {/* Push footer to bottom */}
+      <box style={{ flexGrow: 1 }} />
+
       <box style={{ height: 1, width: '100%' }}>
         <text content={'\u2500'.repeat(width)} fg="#292e42" />
       </box>

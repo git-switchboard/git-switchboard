@@ -60,10 +60,13 @@ export function ConnectList({ keybinds }: { keybinds: Record<string, Keybind> })
       <box style={{ height: 1, width: '100%' }}>
         <text content=" Manage Connections" fg="#7aa2f7" />
       </box>
+      {/* Push content to vertical center */}
+      <box style={{ flexGrow: 1 }} />
+
       <box style={{ height: 1, width: '100%' }}>
         <text content={'\u2500'.repeat(width)} fg="#292e42" />
       </box>
-      <box flexDirection="column" style={{ flexGrow: 1 }}>
+      <box flexDirection="column">
         {ALL_PROVIDERS.map((provider, index) => {
           const isActive = index === selectedIndex;
           const source = sources.get(provider.name) ?? null;
@@ -95,7 +98,11 @@ export function ConnectList({ keybinds }: { keybinds: Record<string, Keybind> })
           );
         })}
       </box>
-      <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+
+      {/* Push footer to bottom */}
+      <box style={{ flexGrow: 1 }} />
+
+      <box style={{ height: 1, width: '100%' }}>
         <text content={'\u2500'.repeat(width)} fg="#292e42" />
       </box>
       <FooterRows rows={rows} fg="#565f89" />
