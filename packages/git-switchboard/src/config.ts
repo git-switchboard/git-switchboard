@@ -25,12 +25,8 @@ export interface Config {
   tokens?: Record<string, TokenConfig>;
 }
 
-let dirReady = false;
-
 async function ensureDirs(): Promise<void> {
-  if (dirReady) return;
   await mkdir(CREDENTIALS_DIR, { recursive: true });
-  dirReady = true;
 }
 
 export async function readConfig(): Promise<Config> {
