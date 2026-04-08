@@ -5,6 +5,7 @@ import { footerParts } from './view.js';
 import { useKeybinds } from './use-keybinds.js';
 import { buildFooterRows, FooterRows } from './footer.js';
 import { useHistory } from './tui-router.js';
+import { usePaste } from './use-paste.js';
 import { storeToken, credentialPath } from './token-store.js';
 import { ALL_PROVIDERS } from './providers.js';
 import { CHECKMARK } from './unicode.js';
@@ -172,7 +173,7 @@ export function ConnectSetup({
         if (inputValue.length <= 1) setHasInput(false);
         return true;
       }
-      if (key.raw && key.raw.length === 1 && !key.ctrl) {
+      if (key.raw && key.raw.length >= 1 && !key.ctrl) {
         setInputValue((v) => v + key.raw);
         setHasInput(true);
         return true;
@@ -187,7 +188,7 @@ export function ConnectSetup({
         setPasswordValue((v) => v.slice(0, -1));
         return true;
       }
-      if (key.raw && key.raw.length === 1 && !key.ctrl) {
+      if (key.raw && key.raw.length >= 1 && !key.ctrl) {
         setPasswordValue((v) => v + key.raw);
         return true;
       }
@@ -206,12 +207,24 @@ export function ConnectSetup({
         setConfirmPasswordValue((v) => v.slice(0, -1));
         return true;
       }
-      if (key.raw && key.raw.length === 1 && !key.ctrl) {
+      if (key.raw && key.raw.length >= 1 && !key.ctrl) {
         setConfirmPasswordValue((v) => v + key.raw);
         return true;
       }
     }
     return false;
+  });
+
+  // Handle bracketed paste events
+  usePaste((text) => {
+    if (step === 'input') {
+      setInputValue((v) => v + text);
+      setHasInput(true);
+    } else if (step === 'password') {
+      setPasswordValue((v) => v + text);
+    } else if (step === 'confirm-password') {
+      setConfirmPasswordValue((v) => v + text);
+    }
   });
 
   const parts = footerParts(keybinds);

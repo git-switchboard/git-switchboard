@@ -501,7 +501,7 @@ export function PrApp({
         setSearchMode(false);
       } else if (key.name === 'backspace') {
         setSearchQuery((q) => q.slice(0, -1));
-      } else if (key.raw && key.raw.length === 1 && key.raw >= ' ') {
+      } else if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
         setSearchQuery((q) => q + key.raw);
         setSelectedIndex(0);
         setScrollOffset(0);
