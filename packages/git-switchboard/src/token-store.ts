@@ -76,6 +76,52 @@ export async function resolveToken(
   return undefined;
 }
 
+export type TokenSource =
+  | { type: 'config'; strategy: TokenStrategy; value: string }
+  | { type: 'env'; envVar: string }
+  | { type: 'fallback' }
+  | null;
+
+/**
+ * Resolve a token and report where it came from.
+ * Skips password strategy (requires prompt) — use for status display only.
+ */
+export async function resolveTokenSource(
+  provider: ProviderDef
+): Promise<TokenSource> {
+  // Config strategies
+  const tokenConfig = await getTokenConfig(provider.name);
+  const strategies = Object.keys(tokenConfig) as TokenStrategy[];
+
+  for (const strategy of strategies) {
+    const value = tokenConfig[strategy];
+    if (!value) continue;
+    if (strategy === 'password') {
+      // Can't prompt here — just report it's configured
+      return { type: 'config', strategy, value };
+    }
+    try {
+      const token = await executeStrategy(strategy, value, {});
+      if (token) return { type: 'config', strategy, value };
+    } catch {
+      // Strategy failed — try next
+    }
+  }
+
+  // Provider env vars
+  for (const envVar of provider.envVars) {
+    if (process.env[envVar]) return { type: 'env', envVar };
+  }
+
+  // Provider fallback
+  if (provider.fallback) {
+    const token = provider.fallback();
+    if (token) return { type: 'fallback' };
+  }
+
+  return null;
+}
+
 async function executeStrategy(
   strategy: TokenStrategy,
   value: string,

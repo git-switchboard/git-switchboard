@@ -5,12 +5,23 @@ import { footerParts } from './view.js';
 import { useKeybinds } from './use-keybinds.js';
 import { buildFooterRows, FooterRows } from './footer.js';
 import { useNavigate, useHistory } from './tui-router.js';
-import { removeToken } from './token-store.js';
-import { getTokenConfig } from './config.js';
+import { removeToken, resolveTokenSource } from './token-store.js';
+import type { TokenSource } from './token-store.js';
 import { ALL_PROVIDERS } from './providers.js';
 import { CHECKMARK, CROSSMARK } from './unicode.js';
 import type { ConnectScreen } from './connect-types.js';
-import type { TokenStrategy } from './config.js';
+
+function sourceDescription(source: TokenSource): { icon: string; text: string; color: string; canDisconnect: boolean } {
+  if (!source) return { icon: CROSSMARK, text: 'not configured', color: '#f7768e', canDisconnect: false };
+  switch (source.type) {
+    case 'config':
+      return { icon: CHECKMARK, text: `connected (${source.strategy})`, color: '#9ece6a', canDisconnect: true };
+    case 'env':
+      return { icon: CHECKMARK, text: `via env (${source.envVar})`, color: '#9ece6a', canDisconnect: false };
+    case 'fallback':
+      return { icon: CHECKMARK, text: 'via fallback (e.g., gh auth token)', color: '#9ece6a', canDisconnect: false };
+  }
+}
 
 export function ConnectDetail({
   providerName,
@@ -22,20 +33,21 @@ export function ConnectDetail({
   const { width } = useTerminalDimensions();
   const navigate = useNavigate<ConnectScreen>();
   const { goBack } = useHistory();
-  const [configured, setConfigured] = useState(false);
-  const [strategy, setStrategy] = useState<string | null>(null);
+  const [source, setSource] = useState<TokenSource>(null);
   const [confirming, setConfirming] = useState(false);
 
   const provider = ALL_PROVIDERS.find((p) => p.name === providerName);
 
   useEffect(() => {
     void (async () => {
-      const cfg = await getTokenConfig(providerName);
-      const strategies = Object.keys(cfg) as TokenStrategy[];
-      setConfigured(strategies.length > 0);
-      setStrategy(strategies[0] ?? null);
+      const resolved = await resolveTokenSource(
+        ALL_PROVIDERS.find((p) => p.name === providerName)!
+      );
+      setSource(resolved);
     })();
   }, [providerName]);
+
+  const { icon, text, color, canDisconnect } = sourceDescription(source);
 
   useKeybinds(
     keybinds,
@@ -44,14 +56,13 @@ export function ConnectDetail({
         navigate({ type: 'setup', providerName });
       },
       disconnect: () => {
-        if (!configured) return;
+        if (!canDisconnect) return;
         setConfirming(true);
       },
       confirmDisconnect: () => {
         void (async () => {
           await removeToken(providerName);
-          setConfigured(false);
-          setStrategy(null);
+          setSource(null);
           setConfirming(false);
         })();
       },
@@ -67,7 +78,7 @@ export function ConnectDetail({
     },
     {
       show: {
-        disconnect: configured && !confirming,
+        disconnect: canDisconnect && !confirming,
         confirmDisconnect: confirming,
         cancelDisconnect: confirming,
       },
@@ -75,18 +86,13 @@ export function ConnectDetail({
   );
 
   const parts = footerParts(keybinds, {
-    disconnect: configured && !confirming,
+    disconnect: canDisconnect && !confirming,
     confirmDisconnect: confirming,
     cancelDisconnect: confirming,
   });
   const rows = buildFooterRows(parts, width);
 
   const displayName = provider?.name ?? providerName;
-  const statusIcon = configured ? CHECKMARK : CROSSMARK;
-  const statusColor = configured ? '#9ece6a' : '#f7768e';
-  const statusText = configured
-    ? `connected (${strategy})`
-    : 'not configured';
 
   return (
     <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
@@ -100,7 +106,7 @@ export function ConnectDetail({
         <box style={{ height: 1 }}>
           <text>
             <span fg="#a9b1d6">{"  Status: "}</span>
-            <span fg={statusColor}>{`${statusIcon} ${statusText}`}</span>
+            <span fg={color}>{`${icon} ${text}`}</span>
           </text>
         </box>
         <box style={{ height: 1 }}>

@@ -5,23 +5,36 @@ import { footerParts } from './view.js';
 import { useKeybinds } from './use-keybinds.js';
 import { buildFooterRows, FooterRows } from './footer.js';
 import { useNavigate } from './tui-router.js';
-import { isConfigured } from './token-store.js';
+import { resolveTokenSource } from './token-store.js';
+import type { TokenSource } from './token-store.js';
 import { ALL_PROVIDERS } from './providers.js';
 import { CHECKMARK, CROSSMARK } from './unicode.js';
 import type { ConnectScreen } from './connect-types.js';
+
+function sourceLabel(source: TokenSource): { icon: string; text: string; color: string } {
+  if (!source) return { icon: CROSSMARK, text: 'not configured', color: '#565f89' };
+  switch (source.type) {
+    case 'config':
+      return { icon: CHECKMARK, text: `connected (${source.strategy})`, color: '#9ece6a' };
+    case 'env':
+      return { icon: CHECKMARK, text: `via ${source.envVar}`, color: '#9ece6a' };
+    case 'fallback':
+      return { icon: CHECKMARK, text: 'via fallback', color: '#9ece6a' };
+  }
+}
 
 export function ConnectList({ keybinds }: { keybinds: Record<string, Keybind> }) {
   const { width } = useTerminalDimensions();
   const navigate = useNavigate<ConnectScreen>();
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [statuses, setStatuses] = useState<Map<string, boolean>>(new Map());
+  const [sources, setSources] = useState<Map<string, TokenSource>>(new Map());
 
   useEffect(() => {
     void (async () => {
       const entries = await Promise.all(
-        ALL_PROVIDERS.map(async (p) => [p.name, await isConfigured(p.name)] as const)
+        ALL_PROVIDERS.map(async (p) => [p.name, await resolveTokenSource(p)] as const)
       );
-      setStatuses(new Map(entries));
+      setSources(new Map(entries));
     })();
   }, []);
 
@@ -53,10 +66,8 @@ export function ConnectList({ keybinds }: { keybinds: Record<string, Keybind> })
       <box flexDirection="column" style={{ flexGrow: 1 }}>
         {ALL_PROVIDERS.map((provider, index) => {
           const isActive = index === selectedIndex;
-          const configured = statuses.get(provider.name);
-          const statusIcon = configured ? CHECKMARK : CROSSMARK;
-          const statusColor = configured ? '#9ece6a' : '#565f89';
-          const statusText = configured ? 'connected' : 'not configured';
+          const source = sources.get(provider.name) ?? null;
+          const { icon, text, color } = sourceLabel(source);
           const nameCol = 12;
           const cursor = isActive ? '>' : ' ';
 
@@ -78,7 +89,7 @@ export function ConnectList({ keybinds }: { keybinds: Record<string, Keybind> })
             >
               <text>
                 <span fg={isActive ? '#c0caf5' : '#a9b1d6'}>{` ${cursor} ${provider.name.padEnd(nameCol)}`}</span>
-                <span fg={statusColor}>{`${statusIcon} ${statusText}`}</span>
+                <span fg={color}>{`${icon} ${text}`}</span>
               </text>
             </box>
           );
