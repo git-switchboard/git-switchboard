@@ -311,6 +311,7 @@ const gitSwitchboard = cli('git-switchboard', {
             ciCache,
             reviewCache,
             mergeableCache,
+            linearCache: new Map(),
             repoMode,
             token,
             copyToClipboard,
