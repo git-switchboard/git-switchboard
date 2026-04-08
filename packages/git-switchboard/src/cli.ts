@@ -175,11 +175,15 @@ const gitSwitchboard = cli('git-switchboard', {
             './notify.js'
           );
 
-          // 1. Resolve token
-          const token = resolveGitHubToken(args['github-token']);
+          // 1. Resolve token (TokenStore first, then legacy fallbacks)
+          const { resolveToken } = await import('./token-store.js');
+          const { GITHUB_PROVIDER } = await import('./providers.js');
+          const token =
+            (await resolveToken(GITHUB_PROVIDER, { flagValue: args['github-token'] })) ??
+            resolveGitHubToken(args['github-token']);
           if (!token) {
             console.error(
-              'GitHub token required. Set GH_TOKEN, GITHUB_TOKEN, or use --github-token'
+              'GitHub token required. Set GH_TOKEN, GITHUB_TOKEN, or use --github-token, or run `git-switchboard connect`'
             );
             process.exit(1);
           }
@@ -401,6 +405,32 @@ const gitSwitchboard = cli('git-switchboard', {
             console.log(`Worktree created at: ${absPath}`);
           }
         },
+      })
+      .command('connect', {
+        description: 'Manage provider token connections',
+        builder: (c) =>
+          c.option('provider', {
+            type: 'string',
+            description: 'Provider to configure (github, linear)',
+          }),
+        handler: async (args) => {
+          const { createCliRenderer } = await import('@opentui/core');
+          const { createRoot } = await import('@opentui/react');
+          const React = await import('react');
+          const { createElement } = React;
+          const { ConnectRouter } = await import('./connect-router.js');
+
+          process.on('SIGINT', () => process.exit(0));
+
+          const renderer = await createCliRenderer({ exitOnCtrlC: false });
+          const root = createRoot(renderer);
+
+          root.render(
+            createElement(ConnectRouter, {
+              initialProvider: args.provider ?? undefined,
+            }) as React.ReactNode
+          );
+        },
       }),
   handler: async (args) => {
     const { createCliRenderer } = await import('@opentui/core');
@@ -436,7 +466,11 @@ const gitSwitchboard = cli('git-switchboard', {
 
     // Enrich with PR data if possible
     if (!args['no-pr']) {
-      const token = resolveGitHubToken(args['github-token']);
+      const { resolveToken } = await import('./token-store.js');
+      const { GITHUB_PROVIDER } = await import('./providers.js');
+      const token =
+        (await resolveToken(GITHUB_PROVIDER, { flagValue: args['github-token'] })) ??
+        resolveGitHubToken(args['github-token']);
       if (token) {
         const remoteUrl = getRepoRemoteUrl();
         if (remoteUrl) {
