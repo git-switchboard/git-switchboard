@@ -849,7 +849,7 @@ export function PrApp({
               level: 'string-picker',
               fieldId: item.def.id,
               inputValue: current?.value ?? '',
-              mode: current?.mode ?? 'fuzzy',
+              mode: current?.mode ?? 'exact',
               selectedIndex: 0,
             });
           } else {
