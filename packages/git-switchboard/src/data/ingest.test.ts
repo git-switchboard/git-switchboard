@@ -106,6 +106,33 @@ describe('Ingester', () => {
 
       assert.equal(enriched.length, 1);
     });
+
+    it('re-emits pr:enriched on re-ingest with same enrichment data (fetchedAt differs)', () => {
+      const { bus, ingester } = createTestIngester();
+      const enriched: PR[] = [];
+
+      ingester.ingestPRs([makePR({
+        ci: { status: 'passing', checks: [], fetchedAt: 1000 },
+      })]);
+      bus.on('pr:enriched', (pr) => enriched.push(pr));
+      ingester.ingestPRs([makePR({
+        ci: { status: 'passing', checks: [], fetchedAt: 2000 },
+      })]);
+
+      assert.equal(enriched.length, 1);
+    });
+
+    it('preserves existing enrichment when re-ingested without it', () => {
+      const { stores, ingester } = createTestIngester();
+      const ci = { status: 'passing' as const, checks: [], fetchedAt: Date.now() };
+
+      ingester.ingestPRs([makePR({ ci })]);
+      ingester.ingestPRs([makePR({ title: 'Updated' })]);
+
+      const stored = stores.prs.get('acme/api#1');
+      assert.equal(stored?.ci?.status, 'passing');
+      assert.equal(stored?.title, 'Updated');
+    });
   });
 
   describe('ingestLinearData', () => {

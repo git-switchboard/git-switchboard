@@ -40,26 +40,33 @@ export function createIngester(
       for (const pr of prs) {
         const key = prKey(pr);
         const existing = stores.prs.get(key);
-        stores.prs.set(pr);
+
+        // If new PR lacks enrichment but existing has it, preserve it
+        const merged: PR = existing
+          ? {
+              ...pr,
+              ci: pr.ci ?? existing.ci,
+              review: pr.review ?? existing.review,
+              mergeable: pr.mergeable ?? existing.mergeable,
+            }
+          : pr;
+        stores.prs.set(merged);
 
         if (!existing) {
-          deferred.push({ event: 'pr:discovered', payload: pr });
+          deferred.push({ event: 'pr:discovered', payload: merged });
           continue;
         }
 
-        // Check if enrichment data (ci/review/mergeable) changed
-        const enrichmentChanged =
-          (pr.ci && pr.ci !== existing.ci && JSON.stringify(pr.ci) !== JSON.stringify(existing.ci)) ||
-          (pr.review && pr.review !== existing.review && JSON.stringify(pr.review) !== JSON.stringify(existing.review)) ||
-          (pr.mergeable && pr.mergeable !== existing.mergeable);
-        if (enrichmentChanged) {
-          deferred.push({ event: 'pr:enriched', payload: pr });
+        // If the incoming PR carries fresh enrichment data, always emit pr:enriched
+        // (fetchedAt changes on every fetch, so this captures "we verified it's current")
+        if (pr.ci || pr.review || pr.mergeable) {
+          deferred.push({ event: 'pr:enriched', payload: merged });
           continue;
         }
 
         // Check if basic (non-enrichment) fields changed
         if (hasChanged(existing, pr, PR_ENRICHMENT_KEYS)) {
-          deferred.push({ event: 'pr:discovered', payload: pr });
+          deferred.push({ event: 'pr:discovered', payload: merged });
         }
       }
 
