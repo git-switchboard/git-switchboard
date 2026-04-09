@@ -23,9 +23,17 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "-",
+      "d",
+      "e",
       "esbuild",
+      "n",
       "node-pty",
-      "nx"
+      "nx",
+      "o",
+      "p",
+      "t",
+      "y"
     ]
   }
 }
