@@ -143,11 +143,14 @@ export function createGithubFetcher(
           const result = await deps.fetchAllPRs!(repoMode);
           const prsWithEnrichment: PR[] = result.prs.map((pr) => {
             const key = `${pr.repoId}#${pr.number}`;
+            const existing = stores.prs.get(key);
             return {
               ...pr,
               ci: result.ciCache.get(key),
               review: result.reviewCache.get(key),
               mergeable: result.mergeableCache.get(key),
+              additions: existing?.additions,
+              deletions: existing?.deletions,
             };
           });
           ingester.ingestPRs(prsWithEnrichment);
