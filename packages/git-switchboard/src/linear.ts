@@ -225,9 +225,9 @@ const LINEAR_CACHE_MAX_AGE = 60 * 60 * 1000; // 1 hour
 
 // ─── Fetch issues by identifier ────────────────────────────────
 
-const ISSUES_BY_IDENTIFIER_QUERY = `
-  query IssuesByIdentifier($filter: IssueFilter) {
-    issues(filter: $filter) {
+const SEARCH_ISSUES_QUERY = `
+  query SearchIssues($term: String!) {
+    searchIssues(term: $term, first: 10) {
       nodes {
         id
         identifier
@@ -242,8 +242,8 @@ const ISSUES_BY_IDENTIFIER_QUERY = `
   }
 `;
 
-interface IssuesByIdentifierResponse {
-  issues: {
+interface SearchIssuesResponse {
+  searchIssues: {
     nodes: {
       id: string;
       identifier: string;
@@ -263,29 +263,34 @@ export async function fetchIssuesByIdentifier(
 ): Promise<LinearIssue[]> {
   if (identifiers.length === 0) return [];
 
-  // Linear's filter supports OR on identifier: { identifier: { in: [...] } }
-  // But identifier filtering isn't directly supported — use issue search instead
-  // Linear supports filtering by identifier with the `identifier` filter
-  const data = await linearGraphQL<IssuesByIdentifierResponse>(
-    token,
-    ISSUES_BY_IDENTIFIER_QUERY,
-    {
-      filter: {
-        identifier: { in: identifiers },
-      },
-    }
+  // Search each identifier individually — Linear's searchIssues takes a single term
+  // Batch them with Promise.allSettled to handle partial failures
+  const results = await Promise.allSettled(
+    identifiers.map(async (identifier) => {
+      const data = await linearGraphQL<SearchIssuesResponse>(
+        token,
+        SEARCH_ISSUES_QUERY,
+        { term: identifier }
+      );
+      // Filter to exact identifier match (search may return fuzzy results)
+      return data.searchIssues.nodes
+        .filter((node) => node.identifier === identifier)
+        .map((node) => ({
+          id: node.id,
+          identifier: node.identifier,
+          title: node.title,
+          status: node.state.name,
+          priority: node.priority,
+          assignee: node.assignee?.name ?? null,
+          url: node.url,
+          teamKey: node.team.key,
+        }));
+    })
   );
 
-  return data.issues.nodes.map((node) => ({
-    id: node.id,
-    identifier: node.identifier,
-    title: node.title,
-    status: node.state.name,
-    priority: node.priority,
-    assignee: node.assignee?.name ?? null,
-    url: node.url,
-    teamKey: node.team.key,
-  }));
+  return results
+    .filter((r): r is PromiseFulfilledResult<LinearIssue[]> => r.status === 'fulfilled')
+    .flatMap((r) => r.value);
 }
 
 // ─── Caching ───────────────────────────────────────────────────
