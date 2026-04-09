@@ -12,7 +12,7 @@
       "outputs": ["{projectRoot}/dist"]
     },
     "build:native": {
-      "command": "bun scripts/build-native.js",
+      "command": "bun scripts/build.ts native",
       "options": {
         "cwd": "{projectRoot}"
       },

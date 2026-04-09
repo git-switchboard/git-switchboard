@@ -13,9 +13,10 @@
     "moduleResolution": "bundler",
     "target": "ESNext",
     "lib": ["ESNext"],
-    "strict": true
+    "strict": true,
+    "types": ["bun"]
   },
-  "include": ["**/*.ts", "**/*.tsx"],
+  "include": ["scripts/**/*.ts"],
   "exclude": ["**/*.spec.ts", "**/*.test.ts"],
   "references": []
 }
