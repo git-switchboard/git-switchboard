@@ -7,6 +7,11 @@ const CACHE_DIR = join(
   'git-switchboard'
 );
 
+/** Returns the resolved cache directory path for git-switchboard. */
+export function cacheDir(): string {
+  return CACHE_DIR;
+}
+
 let dirReady = false;
 
 interface CacheEntry<T> {

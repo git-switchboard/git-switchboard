@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { describe, it } from 'node:test';
 import { createPrStore } from './store.js';
+import { createDataLayer } from './data/index.js';
+import type { PR } from './data/index.js';
 import type {
   CIInfo,
-  MergeableStatus,
-  ReviewInfo,
   UserPullRequest,
 } from './types.js';
 
-function createPR(overrides: Partial<UserPullRequest> = {}): UserPullRequest {
+function createPR(overrides: Partial<PR> = {}): PR {
   return {
     nodeId: 'PR_test_123',
     number: 123,
@@ -37,24 +37,15 @@ function createCIInfo(overrides: Partial<CIInfo> = {}): CIInfo {
   };
 }
 
-function createReviewInfo(overrides: Partial<ReviewInfo> = {}): ReviewInfo {
-  return {
-    status: 'approved',
-    reviewers: [],
-    fetchedAt: Date.now(),
-    ...overrides,
-  };
-}
-
-function createStoreInitialState(prs: UserPullRequest[]) {
-  return {
-    prs,
+function createStoreWithDataLayer(prs: PR[] = []) {
+  const dataLayer = createDataLayer();
+  if (prs.length > 0) {
+    dataLayer.ingest.ingestPRs(prs);
+  }
+  const store = createPrStore({
+    dataLayer,
     localRepos: [],
     repoScanDone: true,
-    ciCache: new Map<string, CIInfo>(),
-    reviewCache: new Map<string, ReviewInfo>(),
-    mergeableCache: new Map<string, MergeableStatus>(),
-    linearCache: new Map<string, import('./types.js').LinearIssue>(),
     repoMode: null,
     token: 'test-token',
     copyToClipboard: async () => true,
@@ -63,214 +54,96 @@ function createStoreInitialState(prs: UserPullRequest[]) {
     waitForLocalRepos: async () => [],
     editor: null,
     installedEditors: [],
-  };
+  });
+  return { store, dataLayer };
 }
 
-test('refreshAllPRs preserves the existing list when refresh fails', async () => {
-  const existingPR = createPR();
-  const prKey = `${existingPR.repoId}#${existingPR.number}`;
-  const existingCI = createCIInfo();
-  const existingReview = createReviewInfo();
-  const existingMergeable: MergeableStatus = 'MERGEABLE';
+describe('PrStore with DataLayer', () => {
+  it('initializes prs from DataLayer snapshot', () => {
+    const pr = createPR();
+    const { store } = createStoreWithDataLayer([pr]);
 
-  const store = createPrStore(
-    {
-      ...createStoreInitialState([existingPR]),
-      ciCache: new Map([[prKey, existingCI]]),
-      reviewCache: new Map([[prKey, existingReview]]),
-      mergeableCache: new Map([[prKey, existingMergeable]]),
-    },
-    {
-      fetchUserPRs: async () => {
-        throw new Error('network blew up');
+    const state = store.getState();
+    assert.equal(state.prs.length, 1);
+    assert.equal(state.prs[0].number, 123);
+  });
+
+  it('updates prs when DataLayer ingests new PRs', () => {
+    const { store, dataLayer } = createStoreWithDataLayer();
+
+    assert.equal(store.getState().prs.length, 0);
+
+    dataLayer.ingest.ingestPRs([createPR()]);
+
+    assert.equal(store.getState().prs.length, 1);
+  });
+
+  it('updates prs when PR is enriched via DataLayer', () => {
+    const pr = createPR();
+    const { store, dataLayer } = createStoreWithDataLayer([pr]);
+
+    assert.equal(store.getState().prs[0].ci, undefined);
+
+    const ci = createCIInfo();
+    dataLayer.ingest.ingestPRs([{ ...pr, ci }]);
+
+    assert.equal(store.getState().prs[0].ci?.status, 'passing');
+  });
+
+  it('refreshAllPRs preserves existing data on failure', async () => {
+    const pr = createPR();
+    const { dataLayer } = createStoreWithDataLayer([pr]);
+
+    const storeInstance = createPrStore(
+      {
+        dataLayer,
+        localRepos: [],
+        repoScanDone: true,
+        repoMode: null,
+        token: 'test-token',
+        copyToClipboard: async () => true,
+        onDone: () => {},
+        openEditorForPR: async () => 'ok',
+        waitForLocalRepos: async () => [],
+        editor: null,
+        installedEditors: [],
       },
-    }
-  );
+      {
+        fetchUserPRs: async () => {
+          throw new Error('network blew up');
+        },
+      }
+    );
 
-  await store.getState().refreshAllPRs();
+    await storeInstance.getState().refreshAllPRs();
 
-  const state = store.getState();
-  assert.equal(state.refreshing, false);
-  assert.deepEqual(state.prs, [existingPR]);
-  assert.deepEqual(state.ciCache, { [prKey]: existingCI });
-  assert.deepEqual(state.reviewCache, { [prKey]: existingReview });
-  assert.deepEqual(state.mergeableCache, { [prKey]: existingMergeable });
-});
-
-test('refreshAllPRs keeps existing enrichment when the refreshed PR list has no details yet', async () => {
-  const existingPR = createPR();
-  const prKey = `${existingPR.repoId}#${existingPR.number}`;
-  const existingCI = createCIInfo();
-  const existingReview = createReviewInfo();
-  const existingMergeable: MergeableStatus = 'MERGEABLE';
-
-  const store = createPrStore(
-    {
-      ...createStoreInitialState([existingPR]),
-      ciCache: new Map([[prKey, existingCI]]),
-      reviewCache: new Map([[prKey, existingReview]]),
-      mergeableCache: new Map([[prKey, existingMergeable]]),
-    },
-    {
-      fetchUserPRs: async () => ({
-        prs: [existingPR],
-        ciCache: new Map(),
-        reviewCache: new Map(),
-        mergeableCache: new Map(),
-      }),
-    }
-  );
-
-  await store.getState().refreshAllPRs();
-
-  const state = store.getState();
-  assert.deepEqual(state.prs, [existingPR]);
-  assert.deepEqual(state.ciCache, { [prKey]: existingCI });
-  assert.deepEqual(state.reviewCache, { [prKey]: existingReview });
-  assert.deepEqual(state.mergeableCache, { [prKey]: existingMergeable });
-});
-
-test('refreshPRs only refreshes the requested PR subset', async () => {
-  const firstPR = createPR();
-  const secondPR = createPR({
-    nodeId: 'PR_test_456',
-    number: 456,
-    title: 'Leave this PR alone',
-    headRef: 'feature/untouched',
-    url: 'https://github.com/acme/widgets/pull/456',
-  });
-  const firstKey = `${firstPR.repoId}#${firstPR.number}`;
-  const secondKey = `${secondPR.repoId}#${secondPR.number}`;
-
-  const firstCI = createCIInfo({ status: 'pending' });
-  const firstReview = createReviewInfo({ status: 'needs-review' });
-  const secondCI = createCIInfo({ status: 'passing' });
-  const secondReview = createReviewInfo({ status: 'approved' });
-
-  const refreshedCI = createCIInfo({ status: 'failing' });
-  const refreshedReview = createReviewInfo({ status: 'changes-requested' });
-  const refreshedMergeable: MergeableStatus = 'CONFLICTING';
-  const untouchedMergeable: MergeableStatus = 'MERGEABLE';
-  let batchCalls = 0;
-  let receivedPRs: UserPullRequest[] = [];
-  let persistedToken: string | undefined;
-  let persistedCiCache: Map<string, CIInfo> | undefined;
-
-  const store = createPrStore(
-    {
-      ...createStoreInitialState([firstPR, secondPR]),
-      ciCache: new Map([
-        [firstKey, firstCI],
-        [secondKey, secondCI],
-      ]),
-      reviewCache: new Map([
-        [firstKey, firstReview],
-        [secondKey, secondReview],
-      ]),
-      mergeableCache: new Map([
-        [firstKey, 'UNKNOWN'],
-        [secondKey, untouchedMergeable],
-      ]),
-    },
-    {
-      fetchPRDetailsBatch: async (token, prs) => {
-        batchCalls += 1;
-        assert.equal(token, 'test-token');
-        receivedPRs = [...prs];
-        return new Map([
-          [
-            firstKey,
-            {
-              ci: refreshedCI,
-              review: refreshedReview,
-              mergeable: refreshedMergeable,
-            },
-          ],
-        ]);
-      },
-      persistPRCache: (token, result) => {
-        persistedToken = token;
-        persistedCiCache = result.ciCache;
-      },
-    }
-  );
-
-  await store.getState().refreshPRs([firstPR]);
-  await new Promise((resolve) => setTimeout(resolve, 0));
-
-  const state = store.getState();
-  assert.equal(batchCalls, 1);
-  assert.deepEqual(receivedPRs, [firstPR]);
-  assert.equal(persistedToken, 'test-token');
-  assert.deepEqual(persistedCiCache, new Map([
-    [firstKey, refreshedCI],
-    [secondKey, secondCI],
-  ]));
-  assert.equal(state.refreshing, false);
-  assert.deepEqual(state.ciCache, {
-    [firstKey]: refreshedCI,
-    [secondKey]: secondCI,
-  });
-  assert.deepEqual(state.reviewCache, {
-    [firstKey]: refreshedReview,
-    [secondKey]: secondReview,
-  });
-  assert.deepEqual(state.mergeableCache, {
-    [firstKey]: refreshedMergeable,
-    [secondKey]: untouchedMergeable,
-  });
-});
-
-test('prefetchDetailsForPRs deduplicates in-flight deferred enrichment', async () => {
-  const existingPR = createPR();
-  const prKey = `${existingPR.repoId}#${existingPR.number}`;
-  const fetchedCI = createCIInfo({ status: 'pending' });
-  const fetchedReview = createReviewInfo({ status: 'changes-requested' });
-  const fetchedMergeable: MergeableStatus = 'CONFLICTING';
-
-  let fetchCalls = 0;
-  let resolveFetch:
-    | ((value: {
-        ci: CIInfo;
-        review: ReviewInfo;
-        mergeable: MergeableStatus;
-      }) => void)
-    | null = null;
-  const fetchPromise = new Promise<{
-    ci: CIInfo;
-    review: ReviewInfo;
-    mergeable: MergeableStatus;
-  }>((resolve) => {
-    resolveFetch = resolve;
+    const state = storeInstance.getState();
+    assert.equal(state.refreshing, false);
+    // PRs still in DataLayer — store snapshot preserved
+    assert.equal(state.prs.length, 1);
   });
 
-  const store = createPrStore(
-    {
-      ...createStoreInitialState([existingPR]),
-    },
-    {
-      fetchPRDetailsBatch: async () => {
-        fetchCalls += 1;
-        return new Map([[prKey, await fetchPromise]]);
-      },
-    }
-  );
+  it('prefetchDetails emits pr:fetchDetail events on DataLayer bus', () => {
+    const pr = createPR();
+    const { store, dataLayer } = createStoreWithDataLayer([pr]);
 
-  store.getState().prefetchDetailsForPRs([existingPR]);
-  store.getState().prefetchDetailsForPRs([existingPR]);
+    const fetches: { repoId: string; number: number }[] = [];
+    dataLayer.bus.on('pr:fetchDetail', (p) => fetches.push(p));
 
-  assert.equal(fetchCalls, 1);
+    store.getState().prefetchDetails([pr as UserPullRequest]);
 
-  resolveFetch?.({
-    ci: fetchedCI,
-    review: fetchedReview,
-    mergeable: fetchedMergeable,
+    assert.equal(fetches.length, 1);
+    assert.deepEqual(fetches[0], { repoId: 'acme/widgets', number: 123 });
   });
-  await fetchPromise;
-  await new Promise((resolve) => setTimeout(resolve, 0));
 
-  const state = store.getState();
-  assert.deepEqual(state.ciCache, { [prKey]: fetchedCI });
-  assert.deepEqual(state.reviewCache, { [prKey]: fetchedReview });
-  assert.deepEqual(state.mergeableCache, { [prKey]: fetchedMergeable });
+  it('destroy cleans up event subscriptions', () => {
+    const { store, dataLayer } = createStoreWithDataLayer();
+
+    store.getState().destroy();
+
+    // After destroy, ingesting shouldn't update the store
+    const prsBefore = store.getState().prs.length;
+    dataLayer.ingest.ingestPRs([createPR()]);
+    assert.equal(store.getState().prs.length, prsBefore);
+  });
 });

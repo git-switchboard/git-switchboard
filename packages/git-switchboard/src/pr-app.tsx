@@ -14,13 +14,13 @@ import type {
   CIInfo,
   MergeableStatus,
   PRRole,
-  ReviewInfo,
   ReviewStatus,
   SortDir,
   SortField,
   SortLayer,
   UserPullRequest,
 } from './types.js';
+import type { DataLayer, PR } from './data/index.js';
 import {
   CHECKMARK,
   CROSSMARK,
@@ -171,12 +171,9 @@ function reviewLabel(status: ReviewStatus | undefined, compact: boolean): { text
 }
 
 interface PrAppProps extends ViewProps {
-  prs: UserPullRequest[];
+  prs: PR[];
   localRepos: LocalRepo[];
-  ciCache: Map<string, CIInfo>;
-  reviewCache: Map<string, ReviewInfo>;
-  mergeableCache: Record<string, MergeableStatus>;
-  linearCache: Map<string, import('./types.js').LinearIssue>;
+  dataLayer: DataLayer;
   repoMode: string | null;
   refreshing: boolean;
   /** Persistent filter state from the store */
@@ -194,15 +191,13 @@ interface PrAppProps extends ViewProps {
   onRetryChecks: (pr: UserPullRequest) => Promise<string>;
   onRefreshAll: (prs: UserPullRequest[]) => Promise<void>;
   onExit: () => void;
+  storeStatusText?: string;
 }
 
 export function PrApp({
   prs,
   localRepos,
-  ciCache,
-  reviewCache,
-  mergeableCache,
-  linearCache,
+  dataLayer,
   repoMode,
   refreshing,
   searchQuery,
@@ -218,6 +213,7 @@ export function PrApp({
   onRetryChecks,
   onRefreshAll,
   onExit,
+  storeStatusText,
   keybinds,
 }: PrAppProps) {
   const navigate = useNavigate<PrScreen>();
@@ -228,7 +224,9 @@ export function PrApp({
   useFocusOwner('pr-search', searchMode);
   useFocusOwner('sort-modal', !!sortModal);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
-  const [statusText, setStatusText] = useState('');
+  const [localStatusText, setLocalStatusText] = useState('');
+  // Local status (from retry/copy actions) takes priority over store status (from error events)
+  const statusText = localStatusText || storeStatusText || '';
   const refreshSessionRef = useRef<{
     signature: string;
     refreshedKeys: Set<string>;
@@ -240,10 +238,10 @@ export function PrApp({
   // Animate spinner when any PR has pending checks or a refresh is in flight
   const hasPending = useMemo(
     () =>
-      [...ciCache.values()].some((ci) =>
-        ci.checks.some((c) => c.status !== 'completed')
+      prs.some((pr) =>
+        pr.ci?.checks.some((c) => c.status !== 'completed') ?? false
       ),
-    [ciCache]
+    [prs]
   );
   const animateSpinner = hasPending || refreshing;
 
@@ -259,7 +257,8 @@ export function PrApp({
     const result = searchQuery
       ? prs.filter((pr) => {
           const q = searchQuery.toLowerCase();
-          const linearIssue = linearCache.get(`${pr.repoId}#${pr.number}`);
+          const linearIssues = dataLayer.query.linearIssuesForPr(`${pr.repoId}#${pr.number}`);
+          const linearIssue = linearIssues[0];
           return (
             pr.title.toLowerCase().includes(q) ||
             pr.repoId.includes(q) ||
@@ -273,26 +272,24 @@ export function PrApp({
       for (const layer of sortLayers) {
         const dir = layer.dir === 'asc' ? 1 : -1;
         let cmp = 0;
-        const aKey = `${a.repoId}#${a.number}`;
-        const bKey = `${b.repoId}#${b.number}`;
         switch (layer.field) {
           case 'updated':
             cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
             break;
           case 'review':
-            cmp = reviewSortOrder(reviewCache.get(aKey)?.status)
-              - reviewSortOrder(reviewCache.get(bKey)?.status);
+            cmp = reviewSortOrder(a.review?.status)
+              - reviewSortOrder(b.review?.status);
             break;
           case 'ci':
-            cmp = ciSortOrder(ciCache.get(aKey)?.status)
-              - ciSortOrder(ciCache.get(bKey)?.status);
+            cmp = ciSortOrder(a.ci?.status)
+              - ciSortOrder(b.ci?.status);
             break;
           case 'repo':
             cmp = a.repoId.localeCompare(b.repoId);
             break;
           case 'merge':
-            cmp = mergeSortOrder(mergeableCache[aKey])
-              - mergeSortOrder(mergeableCache[bKey]);
+            cmp = mergeSortOrder(a.mergeable)
+              - mergeSortOrder(b.mergeable);
             break;
           case 'number':
             cmp = a.number - b.number;
@@ -303,7 +300,7 @@ export function PrApp({
       return 0;
     });
     return result;
-  }, [prs, searchQuery, reviewCache, ciCache, mergeableCache, linearCache, sortLayers]);
+  }, [prs, searchQuery, dataLayer, sortLayers]);
 
   const repoMatchMap = useMemo(() => {
     const map = new Map<string, LocalRepo[]>();
@@ -319,16 +316,14 @@ export function PrApp({
   }, [prs, localRepos]);
 
   const hasLinear = useMemo(
-    () => filteredPRs.some((pr) => linearCache.has(`${pr.repoId}#${pr.number}`)),
-    [filteredPRs, linearCache]
+    () => filteredPRs.some((pr) => dataLayer.query.linearIssuesForPr(`${pr.repoId}#${pr.number}`).length > 0),
+    [filteredPRs, dataLayer]
   );
 
   const hasFailedChecks = useMemo(() => {
     const selectedPR = filteredPRs[selectedIndex];
-    const selectedKey = selectedPR ? `${selectedPR.repoId}#${selectedPR.number}` : '';
-    const selectedCI = selectedKey ? ciCache.get(selectedKey) : undefined;
-    return selectedCI?.checks.some((c) => c.status === 'completed' && c.conclusion === 'failure') ?? false;
-  }, [filteredPRs, selectedIndex, ciCache]);
+    return selectedPR?.ci?.checks.some((c) => c.status === 'completed' && c.conclusion === 'failure') ?? false;
+  }, [filteredPRs, selectedIndex]);
 
   const footerRows = useMemo(() => {
     const parts = footerParts(keybinds, { retryChecks: hasFailedChecks });
@@ -359,10 +354,19 @@ export function PrApp({
     [filteredPRs, scrollOffset, listHeight]
   );
 
+  const prefetchedKeysRef = useRef(new Set<string>());
   useEffect(() => {
     if (prefetchedPRs.length === 0) return;
-    onPrefetchDetails(prefetchedPRs);
-  }, [prefetchedPRs, onPrefetchDetails, selectedIndex]);
+    const newPRs = prefetchedPRs.filter((pr) => {
+      const key = `${pr.repoId}#${pr.number}`;
+      return !prefetchedKeysRef.current.has(key);
+    });
+    if (newPRs.length === 0) return;
+    for (const pr of newPRs) {
+      prefetchedKeysRef.current.add(`${pr.repoId}#${pr.number}`);
+    }
+    onPrefetchDetails(newPRs);
+  }, [prefetchedPRs, onPrefetchDetails]);
 
   const refreshCurrentChunk = useCallback(() => {
     if (filteredPRs.length === 0) return;
@@ -462,8 +466,8 @@ export function PrApp({
       const pr = filteredPRs[selectedIndex];
       if (pr) {
         onRetryChecks(pr).then((msg) => {
-          setStatusText(msg);
-          setTimeout(() => setStatusText(''), 4000);
+          setLocalStatusText(msg);
+          setTimeout(() => setLocalStatusText(''), 4000);
         });
       }
     },
@@ -473,6 +477,7 @@ export function PrApp({
     },
     sort: () => setSortModal({ selectedIndex: 0 }),
     search: () => setSearchMode(true),
+    debug: () => navigate({ type: 'debug' }),
     quit: () => onExit(),
   }, { show: { retryChecks: hasFailedChecks } });
 
@@ -617,13 +622,12 @@ export function PrApp({
               : undefined;
 
             const prKey = `${pr.repoId}#${pr.number}`;
-            const ci = ciCache.get(prKey);
-            const ciStatus = ciSummary(ci, SPINNER_FRAMES[spinnerFrame]);
-            const review = reviewCache.get(prKey);
-            const linearIssue = linearCache.get(prKey);
+            const ciStatus = ciSummary(pr.ci, SPINNER_FRAMES[spinnerFrame]);
+            const linearIssues = dataLayer.query.linearIssuesForPr(prKey);
+            const linearIssue = linearIssues[0];
             const linearText = linearIssue ? linearIssue.identifier : (hasLinear ? '-' : '');
-            const rvw = reviewLabel(review?.status, compact);
-            const merge = mergeLabel(mergeableCache[prKey], compact);
+            const rvw = reviewLabel(pr.review?.status, compact);
+            const merge = mergeLabel(pr.mergeable, compact);
             const roleIcon = roleIndicator(pr.role);
             const authorColor = tableFocused ? '#bb9af7' : muteColor('#bb9af7');
             const roleColor = tableFocused ? roleIcon.fg : muteColor(roleIcon.fg);

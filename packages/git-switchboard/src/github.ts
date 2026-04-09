@@ -33,8 +33,15 @@ export function ghCliToken(): string | undefined {
 export const rateLimit: { current: ProviderRateLimit | null } = { current: null };
 
 /** Create an Octokit instance that tracks rate limit from response headers */
+const silentLogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+};
+
 export function createOctokit(token: string): Octokit {
-  const octokit = new Octokit({ auth: token });
+  const octokit = new Octokit({ auth: token, log: silentLogger });
   octokit.hook.after('request', (response) => {
     const h = response.headers as Record<string, string | undefined>;
     const remaining = h['x-ratelimit-remaining'];
@@ -501,18 +508,6 @@ export interface FetchUserPRsResult {
   mergeableCache: Map<string, MergeableStatus>;
 }
 
-function emptyPRDetails(): {
-  ci: CIInfo;
-  review: ReviewInfo;
-  mergeable: MergeableStatus;
-} {
-  return {
-    ci: { status: 'unknown', checks: [], fetchedAt: Date.now() },
-    review: { status: 'needs-review', reviewers: [], fetchedAt: Date.now() },
-    mergeable: 'UNKNOWN',
-  };
-}
-
 function buildUserPullRequest(
   node: PullRequestSearchNode,
   role: UserPullRequest['role']
@@ -629,9 +624,7 @@ export async function fetchUserPRs(
     writePRCache(token, result);
     return result;
   } catch (error) {
-    const message = `Failed to fetch PRs: ${describeApiError(error)}`;
-    console.error(message);
-    throw new Error(message, { cause: error });
+    throw new Error(`Failed to fetch PRs: ${describeApiError(error)}`, { cause: error });
   }
 }
 
@@ -680,9 +673,7 @@ export async function fetchRepoPRs(
     writePRCache(token, refreshed, repoFullName);
     return refreshed;
   } catch (error) {
-    const message = `Failed to fetch PRs for ${repoFullName}: ${describeApiError(error)}`;
-    console.error(message);
-    throw new Error(message, { cause: error });
+    throw new Error(`Failed to fetch PRs for ${repoFullName}: ${describeApiError(error)}`, { cause: error });
   }
 }
 
@@ -998,17 +989,7 @@ export async function fetchPRDetails(
   pullNumber: number
 ): Promise<{ ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus }> {
   const octokit = createOctokit(token);
-
-  try {
-    return await fetchPRDetailsWithOctokit(
-      octokit,
-      owner,
-      repo,
-      pullNumber
-    );
-  } catch {
-    return emptyPRDetails();
-  }
+  return fetchPRDetailsWithOctokit(octokit, owner, repo, pullNumber);
 }
 
 // ─── Legacy REST wrappers (kept for backward compat) ────────────

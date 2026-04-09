@@ -22,10 +22,12 @@ import type { PrScreen } from './store.js';
 import type { LocalRepo } from './scanner.js';
 import type { UserPullRequest } from './types.js';
 import type { EditorInfo, ResolvedEditor } from './editor.js';
+import type { DataLayer } from './data/index.js';
 import { defineCommand, defineView } from './view.js';
 import type { Keybind } from './view.js';
 import { UP_ARROW, DOWN_ARROW, RETURN_SYMBOL, LEFT_ARROW, ESC_SYMBOL } from './unicode.js';
 import { TuiRouter, useNavigate } from './tui-router.js';
+import { DebugView } from './debug-view.js';
 
 export type { PrRouterResult } from './store.js';
 
@@ -36,6 +38,16 @@ const PrStoreCtx = createContext<PrStoreApi | null>(null);
 function usePrStoreApi(): PrStoreApi {
   const ctx = useContext(PrStoreCtx);
   if (!ctx) throw new Error('usePrStoreApi must be used inside PrRouter');
+  return ctx;
+}
+
+// ─── DataLayer context ────────────────────────────────────────────────────────
+
+const DataLayerCtx = createContext<DataLayer | null>(null);
+
+export function useDataLayer(): DataLayer {
+  const ctx = useContext(DataLayerCtx);
+  if (!ctx) throw new Error('useDataLayer must be used inside PrRouter');
   return ctx;
 }
 
@@ -65,33 +77,23 @@ function usePrInfra(): PrInfraCtxValue {
 
 function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
   const store = usePrStoreApi();
+  const dataLayer = useDataLayer();
   const prs = useStore(store, (s) => s.prs);
   const localRepos = useStore(store, (s) => s.localRepos);
-  const ciCache = useStore(store, (s) => s.ciCache);
-  const reviewCache = useStore(store, (s) => s.reviewCache);
-  const mergeableCache = useStore(store, (s) => s.mergeableCache);
   const repoMode = useStore(store, (s) => s.repoMode);
   const refreshing = useStore(store, (s) => s.refreshing);
   const searchQuery = useStore(store, (s) => s.listSearchQuery);
   const sortLayers = useStore(store, (s) => s.listSortLayers);
   const selectedIndex = useStore(store, (s) => s.listSelectedIndex);
   const scrollOffset = useStore(store, (s) => s.listScrollOffset);
-
-  const linearCache = useStore(store, (s) => s.linearCache);
-
-  const ciMap = useMemo(() => new Map(Object.entries(ciCache)), [ciCache]);
-  const reviewMap = useMemo(() => new Map(Object.entries(reviewCache)), [reviewCache]);
-  const linearMap = useMemo(() => new Map(Object.entries(linearCache)), [linearCache]);
+  const storeStatusText = useStore(store, (s) => s.statusText);
 
   return (
     <PrApp
       keybinds={keybinds}
       prs={prs}
       localRepos={localRepos}
-      ciCache={ciMap}
-      reviewCache={reviewMap}
-      mergeableCache={mergeableCache}
-      linearCache={linearMap}
+      dataLayer={dataLayer}
       repoMode={repoMode}
       refreshing={refreshing}
       searchQuery={searchQuery}
@@ -102,10 +104,11 @@ function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
       setSelectedIndex={store.getState().setListSelectedIndex}
       scrollOffset={scrollOffset}
       setScrollOffset={store.getState().setListScrollOffset}
-      onFetchCI={async (pr) => store.getState().fetchDetailsForPR(pr)}
-      onPrefetchDetails={store.getState().prefetchDetailsForPRs}
+      storeStatusText={storeStatusText}
+      onFetchCI={async (pr) => store.getState().refreshCI(pr)}
+      onPrefetchDetails={store.getState().prefetchDetails}
       onRetryChecks={async (pr) => store.getState().retryChecks(pr)}
-      onRefreshAll={async (allPrs) => store.getState().refreshPRs(allPrs)}
+      onRefreshAll={async () => store.getState().refreshAllPRs()}
       onExit={() => store.getState().onDone(null)}
     />
   );
@@ -119,29 +122,32 @@ function PrDetailScreen({
   keybinds: Record<string, Keybind>;
 }) {
   const store = usePrStoreApi();
+  const dataLayer = useDataLayer();
   const { prepareEditorOpen, getMatchesForPR } = usePrInfra();
-  const ciCache = useStore(store, (s) => s.ciCache);
-  const reviewCache = useStore(store, (s) => s.reviewCache);
-  const linearCache = useStore(store, (s) => s.linearCache);
   const ciLoading = useStore(store, (s) => s.ciLoading);
   const repoScanDone = useStore(store, (s) => s.repoScanDone);
   const watchedPRs = useStore(store, (s) => s.watchedPRs);
+  // Subscribe to prs snapshot so we re-render when DataLayer entities update
+  const prs = useStore(store, (s) => s.prs);
 
   const { pr, matches } = screen;
-  const prKey = `${pr.repoId}#${pr.number}`;
+  const prEntityKey = `${pr.repoId}#${pr.number}`;
   const currentMatches = repoScanDone || matches.length === 0 ? getMatchesForPR(pr) : matches;
-  const linearIssue = linearCache[prKey] ?? null;
+  // Read fresh entity from the store snapshot (triggers re-render on pr:enriched)
+  const prEntity = prs.find((p) => `${p.repoId}#${p.number}` === prEntityKey);
+  const linearIssues = dataLayer.query.linearIssuesForPr(prEntityKey);
+  const linearIssue = linearIssues[0] ?? null;
 
   return (
     <PrDetail
       keybinds={keybinds}
       pr={pr}
-      ci={ciCache[prKey] ?? null}
-      review={reviewCache[prKey] ?? null}
+      ci={prEntity?.ci ?? null}
+      review={prEntity?.review ?? null}
       linearIssue={linearIssue}
       ciLoading={ciLoading}
       matches={currentMatches}
-      watched={watchedPRs.has(prKey)}
+      watched={watchedPRs.has(prEntityKey)}
       onPrepareEditorOpen={prepareEditorOpen}
       onRefreshCI={() => store.getState().refreshCI(pr)}
       onRetryChecks={async () => store.getState().retryChecks(pr)}
@@ -177,6 +183,18 @@ function ClonePromptScreen({
       onCreateWorktree={(path) =>
         store.getState().onDone({ selectedPR: pr, skipCheckout: false, newWorktreePath: path })
       }
+    />
+  );
+}
+
+function DebugScreen() {
+  const dataLayer = useDataLayer();
+  const navigate = useNavigate<PrScreen>();
+
+  return (
+    <DebugView
+      history={dataLayer.bus.history}
+      onExit={() => navigate({ type: 'pr-list' })}
     />
   );
 }
@@ -223,6 +241,7 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
         sort: { keys: ['s'], label: 's', description: 'Open sort modal', terminal: '[s]ort' },
         providerStatus: { keys: ['p'], label: 'p', description: 'Provider status', terminal: '[p]roviders' },
         search: { keys: [{ raw: '/' }], label: '/', description: 'Search', terminal: '[/] Search' },
+        debug: { keys: [{ raw: '~' }], label: '~', description: 'Debug event bus', terminal: '[~] Debug' },
         quit: { keys: ['q', 'escape'], label: 'q or Esc', description: 'Quit', terminal: '[q]uit' },
       },
       render: (_, keybinds) => <PrListScreen keybinds={keybinds} />,
@@ -267,6 +286,7 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           terminal: '[w]atch',
         },
         providerStatus: { keys: ['p'], label: 'p', description: 'Provider status', terminal: '[p]roviders' },
+        debug: { keys: [{ raw: '~' }], label: '~', description: 'Debug event bus', terminal: '[~] Debug' },
         back: {
           keys: ['escape', 'backspace', 'left'],
           label: 'Left, Backspace or Esc',
@@ -324,6 +344,11 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           keybinds={keybinds}
         />
       ),
+    }),
+
+    'debug': defineView<PrScreen>()({
+      keybinds: {},
+      render: () => <DebugScreen />,
     }),
   },
 });
@@ -448,9 +473,10 @@ function EditorModalOverlay({
 
 export interface PrRouterProps {
   store: PrStoreApi;
+  dataLayer: DataLayer;
 }
 
-export function PrRouter({ store }: PrRouterProps) {
+export function PrRouter({ store, dataLayer }: PrRouterProps) {
   useExitOnCtrlC();
 
   const localRepos = useStore(store, (s) => s.localRepos);
@@ -485,9 +511,9 @@ export function PrRouter({ store }: PrRouterProps) {
         if (!match) continue;
         const pr = s.prs.find((p) => p.repoId === match[1] && p.number === Number(match[2]));
         if (!pr) continue;
-        const oldCI = s.ciCache[key];
-        await s.fetchDetailsForPR(pr);
-        const newCI = storeRef.current.getState().ciCache[key];
+        const oldCI = s.dataLayer.stores.prs.get(key)?.ci;
+        await s.refreshCI(pr);
+        const newCI = s.dataLayer.stores.prs.get(key)?.ci;
         if (oldCI?.status === 'pending' && newCI && newCI.status !== 'pending' && newCI.status !== 'unknown') {
           const icon = newCI.status === 'passing' ? '\u2713' : '\u2717';
           sendNotification(
@@ -577,14 +603,16 @@ export function PrRouter({ store }: PrRouterProps) {
   );
 
   return (
-    <PrStoreCtx.Provider value={store}>
-      <PrInfraCtx.Provider value={infra}>
-        <TuiRouter<PrScreen>
-          views={PR_COMMAND.views}
-          initialScreen={{ type: 'pr-list' }}
-          overlay={combinedOverlay}
-        />
-      </PrInfraCtx.Provider>
-    </PrStoreCtx.Provider>
+    <DataLayerCtx.Provider value={dataLayer}>
+      <PrStoreCtx.Provider value={store}>
+        <PrInfraCtx.Provider value={infra}>
+          <TuiRouter<PrScreen>
+            views={PR_COMMAND.views}
+            initialScreen={{ type: 'pr-list' }}
+            overlay={combinedOverlay}
+          />
+        </PrInfraCtx.Provider>
+      </PrStoreCtx.Provider>
+    </DataLayerCtx.Provider>
   );
 }

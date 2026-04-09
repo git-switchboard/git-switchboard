@@ -319,6 +319,7 @@ export function PrDetail({
       onRetryChecks().then((msg) => showStatus(msg));
     },
     watch: () => onWatch(),
+    debug: () => navigate({ type: 'debug' }),
     back: () => goBack(),
     quit: () => onExit(),
   });
