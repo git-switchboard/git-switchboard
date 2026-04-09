@@ -134,7 +134,6 @@ function PrDetailScreen({
   const store = usePrStoreApi();
   const dataLayer = useDataLayer();
   const { prepareEditorOpen, getMatchesForPR } = usePrInfra();
-  const ciLoading = useStore(store, (s) => s.ciLoading);
   const repoScanDone = useStore(store, (s) => s.repoScanDone);
   const watchedPRs = useStore(store, (s) => s.watchedPRs);
   // Subscribe to prs snapshot so we re-render when DataLayer entities update
@@ -146,6 +145,7 @@ function PrDetailScreen({
   // Read fresh entity from the store snapshot (triggers re-render on pr:enriched)
   const prEntity = prs.find((p) => `${p.repoId}#${p.number}` === prEntityKey);
   const linearIssues = dataLayer.query.linearIssuesForPr(prEntityKey);
+  const ciLoading = dataLayer.loading.isPrLoading(prEntityKey);
 
   return (
     <PrDetail

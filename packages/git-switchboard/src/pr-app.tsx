@@ -57,8 +57,10 @@ const PREFETCH_BUFFER_ROWS = 5;
 
 function ciSummary(
   ci: CIInfo | undefined,
-  spinnerChar: string
+  spinnerChar: string,
+  loading?: boolean,
 ): { text: string; fg: string } {
+  if (loading && (!ci || ci.checks.length === 0)) return { text: spinnerChar, fg: '#e0af68' };
   if (!ci || ci.checks.length === 0) return { text: '?', fg: '#565f89' };
   const pass = ci.checks.filter(
     (c) =>
@@ -243,7 +245,8 @@ export function PrApp({
       ),
     [prs]
   );
-  const animateSpinner = hasPending || refreshing;
+  const hasLoadingEntities = dataLayer.loading.loadingPrKeys().size > 0 || dataLayer.loading.loadingLinearKeys().size > 0;
+  const animateSpinner = hasPending || refreshing || hasLoadingEntities;
 
   useEffect(() => {
     if (!animateSpinner) return;
@@ -622,10 +625,16 @@ export function PrApp({
               : undefined;
 
             const prKey = `${pr.repoId}#${pr.number}`;
-            const ciStatus = ciSummary(pr.ci, SPINNER_FRAMES[spinnerFrame]);
+            const prLoading = dataLayer.loading.isPrLoading(prKey);
+            const ciStatus = ciSummary(pr.ci, SPINNER_FRAMES[spinnerFrame], prLoading);
             const linearIssues = dataLayer.query.linearIssuesForPr(prKey);
             const linearIssue = linearIssues[0];
-            const linearText = linearIssue ? linearIssue.identifier : (hasLinear ? '-' : '');
+            const linearLoading = linearIssues.length === 0 && dataLayer.loading.loadingLinearKeys().size > 0;
+            const linearText = linearIssue
+              ? linearIssue.identifier
+              : linearLoading
+                ? SPINNER_FRAMES[spinnerFrame]
+                : (hasLinear ? '-' : '');
             const rvw = reviewLabel(pr.review?.status, compact);
             const merge = mergeLabel(pr.mergeable, compact);
             const roleIcon = roleIndicator(pr.role);

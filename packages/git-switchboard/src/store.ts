@@ -35,7 +35,6 @@ export interface PrStore {
   watchedPRs: Set<string>;
 
   // ─── UI state ─────────────────────────────────────────────────
-  ciLoading: boolean;
   refreshing: boolean;
   statusText: string;
 
@@ -126,6 +125,9 @@ export const createPrStore = (initial: {
 
     unsubs.push(dataLayer.bus.on('pr:discovered', refreshPrSnapshot));
     unsubs.push(dataLayer.bus.on('pr:enriched', refreshPrSnapshot));
+    // Re-render when loading state changes (fetch started/completed)
+    unsubs.push(dataLayer.bus.on('pr:fetchDetail', refreshPrSnapshot));
+    unsubs.push(dataLayer.bus.on('linear:issue:fetch', refreshPrSnapshot));
     // Re-render when relations change (e.g., Linear ticket linked to PR)
     // or new Linear issues arrive — PrApp reads these via query API during render
     unsubs.push(dataLayer.bus.on('relation:created', refreshPrSnapshot));
@@ -145,7 +147,6 @@ export const createPrStore = (initial: {
       watchedPRs: new Set(),
 
       // ─── UI state ───────────────────────────────────────────────
-      ciLoading: false,
       refreshing: false,
       statusText: '',
 
@@ -198,20 +199,6 @@ export const createPrStore = (initial: {
       },
 
       refreshCI: (pr) => {
-        const key = `${pr.repoId}#${pr.number}`;
-        set({ ciLoading: true });
-
-        // Listen for completion, then clear loading state
-        const cleanup = () => { offEnriched(); offError(); clearTimeout(timer); };
-        const done = () => { cleanup(); set({ ciLoading: false }); };
-        const offEnriched = dataLayer.bus.on('pr:enriched', (enriched) => {
-          if (`${enriched.repoId}#${enriched.number}` === key) done();
-        });
-        const offError = dataLayer.bus.on('error', (err) => {
-          if (err.source === 'pr:fetchDetail') done();
-        });
-        const timer = setTimeout(done, 15_000);
-
         dataLayer.bus.emit('pr:fetchDetail', {
           repoId: pr.repoId,
           number: pr.number,
