@@ -203,7 +203,8 @@ export const createPrStore = (initial: {
           if (dataLayer.loading.isPrLoading(key)) continue;
           const entity = dataLayer.stores.prs.get(key);
           // Skip if has fresh enrichment — check that CI was fetched after PR was last updated
-          if (entity?.ci && entity?.review) {
+          // Also require additions to be present (diff stats come from the detail query)
+          if (entity?.ci && entity?.review && entity?.additions != null) {
             const updatedAt = new Date(entity.updatedAt).getTime();
             if (entity.ci.fetchedAt >= updatedAt) continue;
           }
