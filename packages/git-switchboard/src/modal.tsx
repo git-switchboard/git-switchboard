@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 const MODAL_BG = '#1a1b26';
@@ -124,6 +125,38 @@ export function ModalRow({ label, fg, active, onMouseDown }: ModalRowProps) {
       onMouseDown={onMouseDown}
     >
       <text content={label} fg={fg} />
+    </box>
+  );
+}
+
+// ─── Text input with blinking cursor ────────────────────────────────────────
+
+interface ModalTextInputProps {
+  /** Label shown before the input field (e.g. " > " or " Name: ") */
+  prefix: string;
+  value: string;
+  /** Total width of the input field (underscores). Defaults to 30. */
+  fieldWidth?: number;
+}
+
+export function ModalTextInput({ prefix, value, fieldWidth = 30 }: ModalTextInputProps) {
+  const [cursorVisible, setCursorVisible] = useState(true);
+  useEffect(() => {
+    const interval = setInterval(() => setCursorVisible((v) => !v), 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  const remaining = Math.max(0, fieldWidth - value.length);
+  const cursor = cursorVisible ? '█' : '_';
+
+  return (
+    <box style={{ height: 1, width: '100%' }}>
+      <text>
+        <span fg="#565f89">{prefix}</span>
+        <span fg="#c0caf5">{value}</span>
+        <span fg={cursorVisible ? '#7aa2f7' : '#565f89'}>{cursor}</span>
+        <span fg="#292e42">{'_'.repeat(Math.max(0, remaining - 1))}</span>
+      </text>
     </box>
   );
 }

@@ -32,7 +32,7 @@ import type { DataLayer, PR } from './data/index.js';
 import type { PrColumnId } from './pr-columns.js';
 import { PR_COLUMN_DEFS, PR_VIEW_NAME } from './pr-columns.js';
 import { writeColumnConfig, readFilterPresets, writeFilterPresets } from './config.js';
-import { Modal, ModalRow } from './modal.js';
+import { Modal, ModalRow, ModalTextInput } from './modal.js';
 import {
   CHECKMARK,
   CROSSMARK,
@@ -1524,9 +1524,7 @@ export function PrApp({
             termWidth={width}
             termHeight={height}
           >
-            <box style={{ height: 1, width: '100%' }}>
-              <text content={` > ${filterModal.inputValue}_`} fg="#c0caf5" />
-            </box>
+            <ModalTextInput prefix=" > " value={filterModal.inputValue} fieldWidth={38} />
             {visibleSuggestions.map((val, vi) => {
               const actualIndex = scrollStart + vi;
               const isActive = actualIndex === si;
@@ -1585,9 +1583,7 @@ export function PrApp({
           termWidth={width}
           termHeight={height}
         >
-          <box style={{ height: 1, width: '100%' }}>
-            <text content={` Name: ${filterModal.inputValue}_`} fg="#c0caf5" />
-          </box>
+          <ModalTextInput prefix=" Name: " value={filterModal.inputValue} fieldWidth={36} />
         </Modal>
       )}
     </box>
