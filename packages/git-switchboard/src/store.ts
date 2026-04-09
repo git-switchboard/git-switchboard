@@ -10,8 +10,8 @@ import type {
 } from './types.js';
 import type { LocalRepo } from './scanner.js';
 import type { ResolvedEditor, EditorInfo } from './editor.js';
-import type { SortLayer } from './types.js';
-import { DEFAULT_SORT } from './types.js';
+import type { SortLayer, ColumnConfig, FilterState } from './types.js';
+import { DEFAULT_SORT, EMPTY_FILTERS } from './types.js';
 import type { DataLayer, PR } from './data/index.js';
 
 export type PrScreen =
@@ -41,10 +41,14 @@ export interface PrStore {
   // ─── PR list filter state (persists across navigation) ───────
   listSearchQuery: string;
   listSortLayers: SortLayer[];
+  listColumns: ColumnConfig[];
+  listFilters: FilterState;
   listSelectedIndex: number;
   listScrollOffset: number;
   setListSearchQuery: (query: string) => void;
   setListSortLayers: (layers: SortLayer[] | ((prev: SortLayer[]) => SortLayer[])) => void;
+  setListColumns: (columns: ColumnConfig[] | ((prev: ColumnConfig[]) => ColumnConfig[])) => void;
+  setListFilters: (filters: FilterState | ((prev: FilterState) => FilterState)) => void;
   setListSelectedIndex: (index: number) => void;
   setListScrollOffset: (offset: number) => void;
 
@@ -99,6 +103,7 @@ export const createPrStore = (initial: {
   repoScanDone: boolean;
   repoMode: string | null;
   token: string;
+  columns: ColumnConfig[];
   copyToClipboard: (text: string) => Promise<boolean>;
   onDone: (result: PrRouterResult | null) => void;
   openEditorForPR: (pr: UserPullRequest, repo: LocalRepo, skipCheckout: boolean) => Promise<string>;
@@ -153,12 +158,22 @@ export const createPrStore = (initial: {
       // ─── PR list filter state ─────────────────────────────────
       listSearchQuery: '',
       listSortLayers: DEFAULT_SORT,
+      listColumns: initial.columns,
+      listFilters: EMPTY_FILTERS,
       listSelectedIndex: 0,
       listScrollOffset: 0,
       setListSearchQuery: (query) => set({ listSearchQuery: query }),
       setListSortLayers: (layers) =>
         set((s) => ({
           listSortLayers: typeof layers === 'function' ? layers(s.listSortLayers) : layers,
+        })),
+      setListColumns: (columns) =>
+        set((s) => ({
+          listColumns: typeof columns === 'function' ? columns(s.listColumns) : columns,
+        })),
+      setListFilters: (filters) =>
+        set((s) => ({
+          listFilters: typeof filters === 'function' ? filters(s.listFilters) : filters,
         })),
       setListSelectedIndex: (index) => set({ listSelectedIndex: index }),
       setListScrollOffset: (offset) => set({ listScrollOffset: offset }),
