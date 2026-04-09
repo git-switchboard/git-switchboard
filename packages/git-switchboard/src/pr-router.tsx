@@ -84,6 +84,8 @@ function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
   const refreshing = useStore(store, (s) => s.refreshing);
   const searchQuery = useStore(store, (s) => s.listSearchQuery);
   const sortLayers = useStore(store, (s) => s.listSortLayers);
+  const columns = useStore(store, (s) => s.listColumns);
+  const filters = useStore(store, (s) => s.listFilters);
   const selectedIndex = useStore(store, (s) => s.listSelectedIndex);
   const scrollOffset = useStore(store, (s) => s.listScrollOffset);
   const storeStatusText = useStore(store, (s) => s.statusText);
@@ -100,6 +102,10 @@ function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
       setSearchQuery={store.getState().setListSearchQuery}
       sortLayers={sortLayers}
       setSortLayers={store.getState().setListSortLayers}
+      columns={columns}
+      setColumns={store.getState().setListColumns}
+      filters={filters}
+      setFilters={store.getState().setListFilters}
       selectedIndex={selectedIndex}
       setSelectedIndex={store.getState().setListSelectedIndex}
       scrollOffset={scrollOffset}
@@ -231,7 +237,7 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           terminal: `[${RETURN_SYMBOL}] Select`,
         },
         fetchCI: {
-          keys: ['c'],
+          keys: [{ raw: 'c' }],
           label: 'c',
           description: 'Fetch/refresh CI status',
           terminal: '[c] Fetch CI',
@@ -250,6 +256,8 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           terminal: '[^R]efresh all',
         },
         sort: { keys: ['s'], label: 's', description: 'Open sort modal', terminal: '[s]ort' },
+        columns: { keys: [{ raw: 'C' }], label: 'C', description: 'Configure columns', terminal: '[C]olumns' },
+        filter: { keys: ['f'], label: 'f', description: 'Open filter modal', terminal: '[f]ilter' },
         providerStatus: { keys: ['p'], label: 'p', description: 'Provider status', terminal: '[p]roviders' },
         search: { keys: [{ raw: '/' }], label: '/', description: 'Search', terminal: '[/] Search' },
         debug: { keys: [{ raw: '~' }], label: '~', description: 'Debug event bus', terminal: '[~] Debug' },
