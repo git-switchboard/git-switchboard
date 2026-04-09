@@ -282,6 +282,7 @@ interface ReviewNodeGraphInput {
 }
 
 interface PullRequestDetailsNodeInput {
+  body?: string | null;
   mergeable?: string | null;
   commits: {
     nodes?: Array<{
@@ -925,8 +926,7 @@ function buildPRDetailsFromNode(
   const review = computeReviewStatus(reviewNodes, lastCommitDate);
   const mergeable = (pr.mergeable ?? 'UNKNOWN') as MergeableStatus;
 
-  // body is available on the batch query node but not the single PR detail query
-  const body = 'body' in pr ? (pr as { body?: string }).body : undefined;
+  const body = pr.body ?? undefined;
 
   return { ci, review, mergeable, body };
 }
@@ -974,10 +974,10 @@ export async function fetchPRDetailsBatch(
     if (!node || node.__typename !== 'PullRequest') continue;
     const pr = prsByNodeId.get(node.id);
     if (!pr) continue;
-    detailsByKey.set(
-      `${pr.repoId}#${pr.number}`,
-      buildPRDetailsFromNode(node, pr.number)
-    );
+    const details = buildPRDetailsFromNode(node, pr.number);
+    // body comes from the GraphQL node directly (gql.tada types it)
+    details.body = node.body ?? undefined;
+    detailsByKey.set(`${pr.repoId}#${pr.number}`, details);
   }
 
   return detailsByKey;
