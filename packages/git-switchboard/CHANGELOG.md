@@ -1,3 +1,19 @@
+## 0.3.0 (2026-04-09)
+
+### 🚀 Features
+
+- reactive data layer, StatusContext CI checks, and filter system ([#12](https://github.com/git-switchboard/git-switchboard/pull/12))
+- add focus stack for scoped keyboard event handling ([0db3311](https://github.com/git-switchboard/git-switchboard/commit/0db3311))
+
+### 🩹 Fixes
+
+- scope keyboard handlers with focus stack ([f07ed2d](https://github.com/git-switchboard/git-switchboard/commit/f07ed2d))
+
+### ❤️ Thank You
+
+- Claude
+- Craigory Coppola @AgentEnder
+
 ## 0.2.0 (2026-04-09)
 
 ### 🚀 Features
