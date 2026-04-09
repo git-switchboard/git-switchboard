@@ -252,7 +252,7 @@ export const createPrStore = (initial: {
 
       retryCheck: async (pr, check) => {
         const { token } = get();
-        if (check.id <= 0) return 'Cannot retry this check';
+        if (check.appSlug !== 'github-actions' || check.id <= 0) return 'Cannot retry this check';
         try {
           await retryFailedJobsImpl(token, pr.repoOwner, pr.repoName, [check]);
           setTimeout(() => get().refreshCI(pr), 2000);

@@ -297,7 +297,8 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           keys: ['r'],
           label: 'r',
           description: 'Retry failed checks',
-          terminal: '[r]etry',
+          terminal: '[r]etry failed',
+          conditional: true,
         },
         watch: {
           keys: ['w'],
