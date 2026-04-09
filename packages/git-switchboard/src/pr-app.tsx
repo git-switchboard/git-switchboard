@@ -1338,6 +1338,7 @@ export function PrApp({
         <Modal
           title="Sort Order"
           hint="Enter/Space toggle | Esc close"
+          onClose={() => setSortModal(null)}
           width={46}
           height={sortItemCount + 1}
           termWidth={width}
@@ -1375,6 +1376,7 @@ export function PrApp({
         <Modal
           title="Columns"
           hint={columnModal.reordering ? '↑↓ move | Enter/Esc done' : 'Enter/Space toggle | r reorder | Esc close'}
+          onClose={() => closeColumnModal()}
           width={46}
           height={columnModal.reordering ? columns.length : colItemCount + 1}
           termWidth={width}
@@ -1433,8 +1435,9 @@ export function PrApp({
         <Modal
           title={activeFilterCount > 0 ? `Filters (${activeFilterCount} active)` : 'Filters'}
           hint="Enter/Space select | d delete preset | Esc close"
+          onClose={() => setFilterModal(null)}
           width={46}
-          height={filterFieldItems.length}
+          height={filterFieldItems.length + 1}
           termWidth={width}
           termHeight={height}
         >
@@ -1474,13 +1477,19 @@ export function PrApp({
               : item.type === 'preset' ? `preset-${item.index}`
               : item.type;
 
+            // Add spacer before first action row (clear/save/close)
+            const isFirstAction = (item.type === 'clear' || item.type === 'close') &&
+              (i === 0 || filterFieldItems[i - 1].type === 'field' || filterFieldItems[i - 1].type === 'preset');
+
             return (
-              <ModalRow
-                key={itemKey}
-                label={` ${isActive ? '>' : ' '} ${label}${valueText}`}
-                fg={fg}
-                active={isActive}
-              />
+              <box key={itemKey} flexDirection="column">
+                {isFirstAction && <box style={{ height: 1, width: '100%' }} />}
+                <ModalRow
+                  label={` ${isActive ? '>' : ' '} ${label}${valueText}`}
+                  fg={fg}
+                  active={isActive}
+                />
+              </box>
             );
           })}
         </Modal>
@@ -1500,6 +1509,7 @@ export function PrApp({
           <Modal
             title={`${fieldDef?.label ?? filterModal.fieldId} (${filterModal.mode})`}
             hint="Tab fuzzy/exact | Enter confirm | Esc back"
+            onClose={() => setFilterModal({ level: 'fields', selectedIndex: 0 })}
             width={46}
             height={maxVisible + 1}
             termWidth={width}
@@ -1529,6 +1539,7 @@ export function PrApp({
           <Modal
             title={fieldDef?.label ?? filterModal.fieldId}
             hint="Enter/Space toggle | Esc apply & back"
+            onClose={() => setFilterModal({ level: 'fields', selectedIndex: 0 })}
             width={46}
             height={options.length}
             termWidth={width}
@@ -1554,6 +1565,7 @@ export function PrApp({
       {filterModal?.level === 'save-preset' && (
         <Modal
           title="Save Filter Preset"
+          onClose={() => setFilterModal({ level: 'fields', selectedIndex: 0 })}
           hint="Enter save | Esc cancel"
           width={46}
           height={1}

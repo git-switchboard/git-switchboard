@@ -441,6 +441,7 @@ function EditorModalOverlay({
   return (
     <Modal
       title="Select editor"
+      onClose={() => setEditorModal(null)}
       hint={`[${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [Esc] Cancel`}
       width={Math.min(56, width - 8)}
       height={installedEditors.length}

@@ -12,6 +12,8 @@ interface ModalProps {
   termWidth: number;
   /** Terminal height for centering */
   termHeight: number;
+  /** Called when the backdrop is clicked (outside the modal). */
+  onClose?: () => void;
   children: ReactNode;
 }
 
@@ -37,6 +39,7 @@ export function Modal({
   height: contentRows,
   termWidth,
   termHeight,
+  onClose,
   children,
 }: ModalProps) {
   // Chrome: top pad(1) + title(1) + divider(1) + spacer(1) + [hint spacer(1) + hint(1)] + bottom pad(1)
@@ -45,16 +48,30 @@ export function Modal({
   const totalWidth = modalWidth + 2; // +2 for left/right padding
 
   return (
-    <box
-      style={{
-        position: 'absolute',
-        top: Math.max(0, Math.floor(termHeight / 2) - Math.floor(totalHeight / 2)),
-        left: Math.max(0, Math.floor(termWidth / 2) - Math.floor(totalWidth / 2)),
-        width: totalWidth,
-        height: totalHeight,
-        backgroundColor: MODAL_BG,
-      }}
-    >
+    <>
+      {/* Backdrop — click to dismiss */}
+      {onClose && (
+        <box
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: termWidth,
+            height: termHeight,
+          }}
+          onMouseDown={onClose}
+        />
+      )}
+      <box
+        style={{
+          position: 'absolute',
+          top: Math.max(0, Math.floor(termHeight / 2) - Math.floor(totalHeight / 2)),
+          left: Math.max(0, Math.floor(termWidth / 2) - Math.floor(totalWidth / 2)),
+          width: totalWidth,
+          height: totalHeight,
+          backgroundColor: MODAL_BG,
+        }}
+      >
       <box
         flexDirection="column"
         style={{ width: '100%', height: '100%', padding: 1 }}
@@ -84,6 +101,7 @@ export function Modal({
         )}
       </box>
     </box>
+    </>
   );
 }
 
