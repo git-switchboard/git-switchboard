@@ -58,6 +58,7 @@ export function createDataLayer(options: DataLayerOptions = {}): DataLayer {
   function destroy(): void {
     cleanupDiscovery();
     cleanupRelation();
+    persistence?.destroy();
   }
 
   return {

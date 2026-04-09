@@ -18,6 +18,8 @@ interface GithubFetcherDeps {
   ) => Promise<Map<string, { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string }>>;
   fetchAllPRs?: (repoMode: string | null) => Promise<FetchUserPRsResult>;
   batchDelayMs?: number;
+  /** Max PRs per GraphQL batch request (default 20) */
+  batchSize?: number;
   /** How long before a successfully-fetched PR can be re-fetched (default 30s) */
   cooldownMs?: number;
 }

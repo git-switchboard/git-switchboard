@@ -120,7 +120,7 @@ interface PrDetailProps extends ViewProps {
   pr: UserPullRequest;
   ci: CIInfo | null;
   review: ReviewInfo | null;
-  linearIssue: LinearIssue | null;
+  linearIssues: LinearIssue[];
   ciLoading: boolean;
   matches: LocalRepo[];
   watched: boolean;
@@ -144,7 +144,7 @@ export function PrDetail({
   pr,
   ci,
   review,
-  linearIssue,
+  linearIssues,
   ciLoading,
   matches,
   watched,
@@ -208,7 +208,8 @@ export function PrDetail({
 
   // Chrome: header(1) + meta(1) + spacer(1) + actions-header(1) + 2 actions(2) + spacer(1) +
   //         ci-header(1) + checks-header(1) + spacer(1) + reviewRows + spacer(1) + footer + padding(2) = 13 + reviewRows + footerHeight
-  const linearRowCount = linearIssue ? 4 : 0; // spacer + header + title + status
+  // Each linear issue: header(1) + title(1) + status(1). Plus spacer(1) if any exist.
+  const linearRowCount = linearIssues.length > 0 ? 1 + linearIssues.length * 3 : 0;
   const checkListHeight = Math.max(1, height - 13 - reviewRowCount - linearRowCount - footerHeight);
 
   const moveTo = useCallback(
@@ -573,22 +574,29 @@ export function PrDetail({
         </box>
       )}
 
-      {/* Linear ticket */}
-      {linearIssue && (
+      {/* Linear tickets */}
+      {linearIssues.length > 0 && (
         <>
           <box style={{ height: 1 }} />
-          <box style={{ height: 1, width: '100%' }}>
-            <text content={` Linear: ${linearIssue.identifier}`} fg="#bb9af7" />
-          </box>
-          <box style={{ height: 1, width: '100%' }}>
-            <text content={`  ${linearIssue.title}`} fg="#c0caf5" />
-          </box>
-          <box style={{ height: 1, width: '100%' }}>
-            <text
-              content={`  Status: ${linearIssue.status}  |  Priority: ${linearIssue.priority}${linearIssue.assignee ? `  |  Assignee: ${linearIssue.assignee}` : ''}`}
-              fg="#a9b1d6"
-            />
-          </box>
+          {linearIssues.map((issue) => (
+            <box key={issue.identifier} flexDirection="column">
+              <box style={{ height: 1, width: '100%' }}>
+                <text content={` Linear ${issue.identifier}: ${issue.title}`} fg="#bb9af7" />
+              </box>
+              <box style={{ height: 1, width: '100%' }}>
+                <text
+                  content={`    Status: ${issue.status}  |  Priority: ${issue.priority}${issue.assignee ? `  |  Assignee: ${issue.assignee}` : ''}`}
+                  fg="#a9b1d6"
+                />
+              </box>
+              <box
+                style={{ height: 1, width: '100%' }}
+                onMouseDown={() => onOpenUrl(issue.url)}
+              >
+                <text content={`    Open in Linear`} fg="#565f89" />
+              </box>
+            </box>
+          ))}
         </>
       )}
 

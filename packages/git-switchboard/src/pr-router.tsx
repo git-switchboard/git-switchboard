@@ -146,7 +146,6 @@ function PrDetailScreen({
   // Read fresh entity from the store snapshot (triggers re-render on pr:enriched)
   const prEntity = prs.find((p) => `${p.repoId}#${p.number}` === prEntityKey);
   const linearIssues = dataLayer.query.linearIssuesForPr(prEntityKey);
-  const linearIssue = linearIssues[0] ?? null;
 
   return (
     <PrDetail
@@ -154,7 +153,7 @@ function PrDetailScreen({
       pr={pr}
       ci={prEntity?.ci ?? null}
       review={prEntity?.review ?? null}
-      linearIssue={linearIssue}
+      linearIssues={linearIssues}
       ciLoading={ciLoading}
       matches={currentMatches}
       watched={watchedPRs.has(prEntityKey)}

@@ -24,6 +24,7 @@ interface CachePayload {
 export interface Persistence {
   persist(): Promise<void>;
   hydrate(): Promise<void>;
+  destroy(): void;
 }
 
 const CACHE_FILE = 'data-layer.json';
@@ -142,5 +143,29 @@ export function createPersistence(
     }
   }
 
-  return { persist, hydrate };
+  // Auto-persist on data changes (debounced)
+  let persistTimer: ReturnType<typeof setTimeout> | null = null;
+  const schedulePersist = () => {
+    if (persistTimer) return;
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      persist().catch(() => {});
+    }, 1000);
+  };
+
+  const unsubs = [
+    bus.on('pr:discovered', schedulePersist),
+    bus.on('pr:enriched', schedulePersist),
+    bus.on('linear:issue:discovered', schedulePersist),
+    bus.on('relation:created', schedulePersist),
+    bus.on('checkout:discovered', schedulePersist),
+    bus.on('branch:discovered', schedulePersist),
+  ];
+
+  function destroy(): void {
+    for (const unsub of unsubs) unsub();
+    if (persistTimer) clearTimeout(persistTimer);
+  }
+
+  return { persist, hydrate, destroy };
 }
