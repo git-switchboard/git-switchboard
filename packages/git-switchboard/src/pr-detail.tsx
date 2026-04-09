@@ -194,7 +194,9 @@ export function PrDetail({
     (a, b) => checkSortOrder(a) - checkSortOrder(b)
   );
 
-  const ACTION_COUNT = 2;
+  const FIXED_ACTION_COUNT = 2; // Open in editor, Open PR in browser
+  const LINEAR_ACTION_COUNT = linearIssues.length; // One "Open in Linear" per ticket
+  const ACTION_COUNT = FIXED_ACTION_COUNT + LINEAR_ACTION_COUNT;
   const totalItems = ACTION_COUNT + checks.length;
 
   const hasReviewers = review && review.reviewers.length > 0;
@@ -206,11 +208,11 @@ export function PrDetail({
   const footerRows = buildFooterRows(footerKeyParts, width);
   const footerHeight = statusText ? 1 : footerRows.length;
 
-  // Chrome: header(1) + meta(1) + spacer(1) + actions-header(1) + 2 actions(2) + spacer(1) +
-  //         ci-header(1) + checks-header(1) + spacer(1) + reviewRows + spacer(1) + footer + padding(2) = 13 + reviewRows + footerHeight
-  // Each linear issue: header(1) + title(1) + status(1). Plus spacer(1) if any exist.
-  const linearRowCount = linearIssues.length > 0 ? 1 + linearIssues.length * 3 : 0;
-  const checkListHeight = Math.max(1, height - 13 - reviewRowCount - linearRowCount - footerHeight);
+  // Chrome: header(1) + meta(1) + spacer(1) + actions-header(1) + ACTION_COUNT actions + spacer(1) +
+  //         linear-section + ci-header(1) + checks-header(1) + spacer(1) + reviewRows + spacer(1) + footer + padding(2)
+  // Linear section: spacer(1) + header(1) + per-issue: identifier(1) + status(1)
+  const linearSectionRows = linearIssues.length > 0 ? 2 + linearIssues.length * 2 : 0;
+  const checkListHeight = Math.max(1, height - 11 - ACTION_COUNT - linearSectionRows - reviewRowCount - footerHeight);
 
   const moveTo = useCallback(
     (newIndex: number) => {
@@ -297,6 +299,10 @@ export function PrDetail({
         void handleOpenInEditor();
       } else if (selectedIndex === 1) {
         onOpenUrl(pr.url);
+      } else if (selectedIndex < ACTION_COUNT) {
+        // Linear ticket action
+        const issue = linearIssues[selectedIndex - FIXED_ACTION_COUNT];
+        if (issue) onOpenUrl(issue.url);
       } else {
         const check = checks[selectedIndex - ACTION_COUNT];
         if (check) {
@@ -465,6 +471,38 @@ export function PrDetail({
         />
       </box>
 
+      {/* Linear tickets (selectable) */}
+      {linearIssues.length > 0 && linearIssues.map((issue, i) => {
+        const idx = FIXED_ACTION_COUNT + i;
+        const isSelected = selectedIndex === idx;
+        return (
+          <box key={issue.identifier} flexDirection="column">
+            <box
+              style={{
+                height: 1,
+                width: '100%',
+                backgroundColor: isSelected ? '#292e42' : undefined,
+              }}
+              onMouseDown={() => {
+                if (isSelected) onOpenUrl(issue.url);
+                else moveTo(idx);
+              }}
+            >
+              <text
+                content={`   > ${issue.identifier}: ${issue.title}`}
+                fg={isSelected ? '#bb9af7' : '#c0caf5'}
+              />
+            </box>
+            <box style={{ height: 1, width: '100%' }}>
+              <text
+                content={`     ${issue.status}${issue.assignee ? `  |  ${issue.assignee}` : ''}`}
+                fg="#565f89"
+              />
+            </box>
+          </box>
+        );
+      })}
+
       {/* Spacer */}
       <box style={{ height: 1 }} />
 
@@ -574,31 +612,6 @@ export function PrDetail({
         </box>
       )}
 
-      {/* Linear tickets */}
-      {linearIssues.length > 0 && (
-        <>
-          <box style={{ height: 1 }} />
-          {linearIssues.map((issue) => (
-            <box key={issue.identifier} flexDirection="column">
-              <box style={{ height: 1, width: '100%' }}>
-                <text content={` Linear ${issue.identifier}: ${issue.title}`} fg="#bb9af7" />
-              </box>
-              <box style={{ height: 1, width: '100%' }}>
-                <text
-                  content={`    Status: ${issue.status}  |  Priority: ${issue.priority}${issue.assignee ? `  |  Assignee: ${issue.assignee}` : ''}`}
-                  fg="#a9b1d6"
-                />
-              </box>
-              <box
-                style={{ height: 1, width: '100%' }}
-                onMouseDown={() => onOpenUrl(issue.url)}
-              >
-                <text content={`    Open in Linear`} fg="#565f89" />
-              </box>
-            </box>
-          ))}
-        </>
-      )}
 
       {/* Spacer */}
       <box style={{ height: 1 }} />
