@@ -18,7 +18,7 @@ brew install git-switchboard
 choco install git-switchboard
 ```
 
-## Install Script (macOS / Linux)
+## Install script (macOS / Linux)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/git-switchboard/git-switchboard/main/packaging/install.sh | sh
@@ -32,7 +32,7 @@ npx git-switchboard
 npm install -g git-switchboard
 ```
 
-## GitHub Releases
+## GitHub releases
 
 Download the latest binary for your platform from
 [GitHub Releases](https://github.com/git-switchboard/git-switchboard/releases).

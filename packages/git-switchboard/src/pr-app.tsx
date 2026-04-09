@@ -12,15 +12,27 @@ import { ScrollList, handleListKey } from './scroll-list.js';
 import type { LocalRepo } from './scanner.js';
 import type {
   CIInfo,
+  ColumnConfig,
+  FilterFieldDef,
+  FilterFieldId,
+  FilterPreset,
+  FilterState,
   MergeableStatus,
   PRRole,
-  ReviewInfo,
   ReviewStatus,
+  StringFilter,
+  StringMatchMode,
   SortDir,
   SortField,
   SortLayer,
   UserPullRequest,
 } from './types.js';
+import { cycleVisibility, EMPTY_FILTERS, FILTER_FIELD_DEFS } from './types.js';
+import type { DataLayer, PR } from './data/index.js';
+import type { PrColumnId } from './pr-columns.js';
+import { PR_COLUMN_DEFS, PR_VIEW_NAME } from './pr-columns.js';
+import { writeColumnConfig, readFilterPresets, writeFilterPresets } from './config.js';
+import { Modal, ModalRow, ModalTextInput } from './modal.js';
 import {
   CHECKMARK,
   CROSSMARK,
@@ -52,13 +64,30 @@ function fit(str: string, width: number): string {
   return str.slice(0, width - 1) + ELLIPSIS;
 }
 
+function formatDiffNum(n: number): string {
+  if (n >= 10000) return `${(n / 1000).toFixed(1)}k`.replace('.0k', 'k');
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`.replace('.0k', 'k');
+  return String(n);
+}
+
+function formatDiff(additions: number | undefined, deletions: number | undefined): { text: string; fg: string } {
+  if (additions == null && deletions == null) return { text: '', fg: '#565f89' };
+  const a = additions ?? 0;
+  const d = deletions ?? 0;
+  const text = `+${formatDiffNum(a)}/-${formatDiffNum(d)}`;
+  const fg = d === 0 ? '#9ece6a' : a === 0 ? '#f7768e' : '#c0caf5';
+  return { text, fg };
+}
+
 const SPINNER_FRAMES = ['|', '/', '-', '\\'];
 const PREFETCH_BUFFER_ROWS = 5;
 
 function ciSummary(
   ci: CIInfo | undefined,
-  spinnerChar: string
+  spinnerChar: string,
+  loading?: boolean,
 ): { text: string; fg: string } {
+  if (loading && (!ci || ci.checks.length === 0)) return { text: spinnerChar, fg: '#e0af68' };
   if (!ci || ci.checks.length === 0) return { text: '?', fg: '#565f89' };
   const pass = ci.checks.filter(
     (c) =>
@@ -89,6 +118,7 @@ const SORT_FIELDS: { field: SortField; label: string; defaultDir: SortDir }[] = 
   { field: 'ci', label: 'CI Status', defaultDir: 'asc' },
   { field: 'repo', label: 'Repository', defaultDir: 'asc' },
   { field: 'merge', label: 'Merge Status', defaultDir: 'asc' },
+  { field: 'diff', label: 'Diff Size', defaultDir: 'desc' },
   { field: 'number', label: 'PR Number', defaultDir: 'desc' },
 ];
 
@@ -170,13 +200,104 @@ function reviewLabel(status: ReviewStatus | undefined, compact: boolean): { text
   }
 }
 
+// ─── Column header labels and sort field mapping ────────────────────────────
+
+const SORTABLE_COLUMNS: Partial<Record<PrColumnId, SortField>> = {
+  number: 'number',
+  repo: 'repo',
+  updated: 'updated',
+  ci: 'ci',
+  merge: 'merge',
+  diff: 'diff',
+  review: 'review',
+};
+
+const COLUMN_HEADERS: Record<PrColumnId, (compact: boolean, veryCompact: boolean) => string> = {
+  role: () => '',
+  author: () => 'Author',
+  number: () => 'PR #',
+  title: () => 'PR',
+  repo: () => 'Repo',
+  updated: (_c, vc) => vc ? 'Upd' : 'Updated',
+  ci: () => 'CI',
+  merge: () => '',
+  diff: () => 'Diff',
+  linear: (c) => c ? 'Lin' : 'Linear',
+  review: (c) => c ? 'Rv' : 'Review',
+};
+
+// ─── Filter helpers ─────────────────────────────────────────────────────────
+
+function matchesStringFilter(value: string, filter: StringFilter): boolean {
+  if (filter.mode === 'exact') return value.toLowerCase() === filter.value.toLowerCase();
+  return value.toLowerCase().includes(filter.value.toLowerCase());
+}
+
+function applyFilters(pr: PR, filters: FilterState, dataLayer: DataLayer): boolean {
+  if (filters.org && !matchesStringFilter(pr.repoOwner, filters.org)) return false;
+  if (filters.repo && !matchesStringFilter(pr.repoId, filters.repo)) return false;
+  if (filters.author && !matchesStringFilter(pr.author, filters.author)) return false;
+  if (filters.linear) {
+    const linearIssues = dataLayer.query.linearIssuesForPr(`${pr.repoId}#${pr.number}`);
+    const linearIssue = linearIssues[0];
+    if (!linearIssue || !matchesStringFilter(linearIssue.identifier, filters.linear)) return false;
+  }
+  if (filters.role && filters.role.length > 0 && !filters.role.includes(pr.role)) return false;
+  if (filters.review && filters.review.length > 0) {
+    if (!pr.review?.status || !filters.review.includes(pr.review.status)) return false;
+  }
+  if (filters.ci && filters.ci.length > 0) {
+    if (!pr.ci?.status || !filters.ci.includes(pr.ci.status)) return false;
+  }
+  if (filters.merge && filters.merge.length > 0) {
+    if (!pr.mergeable || !filters.merge.includes(pr.mergeable)) return false;
+  }
+  return true;
+}
+
+// ─── Multiselect option definitions ─────────────────────────────────────────
+
+const MULTISELECT_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  role: [
+    { value: 'author', label: 'Author' },
+    { value: 'assigned', label: 'Assigned' },
+    { value: 'both', label: 'Both' },
+  ],
+  review: [
+    { value: 'approved', label: 'Approved' },
+    { value: 'changes-requested', label: 'Changes Requested' },
+    { value: 're-review-needed', label: 'Re-review Needed' },
+    { value: 'needs-review', label: 'Needs Review' },
+    { value: 'commented', label: 'Commented' },
+    { value: 'dismissed', label: 'Dismissed' },
+  ],
+  ci: [
+    { value: 'passing', label: 'Passing' },
+    { value: 'failing', label: 'Failing' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'mixed', label: 'Mixed' },
+    { value: 'unknown', label: 'Unknown' },
+  ],
+  merge: [
+    { value: 'MERGEABLE', label: 'Mergeable' },
+    { value: 'CONFLICTING', label: 'Conflicting' },
+    { value: 'UNKNOWN', label: 'Unknown' },
+  ],
+};
+
+// ─── Filter modal menu item type ────────────────────────────────────────────
+
+type FilterMenuItem =
+  | { type: 'preset'; index: number; preset: FilterPreset }
+  | { type: 'field'; def: FilterFieldDef }
+  | { type: 'clear' }
+  | { type: 'save' }
+  | { type: 'close' };
+
 interface PrAppProps extends ViewProps {
-  prs: UserPullRequest[];
+  prs: PR[];
   localRepos: LocalRepo[];
-  ciCache: Map<string, CIInfo>;
-  reviewCache: Map<string, ReviewInfo>;
-  mergeableCache: Record<string, MergeableStatus>;
-  linearCache: Map<string, import('./types.js').LinearIssue>;
+  dataLayer: DataLayer;
   repoMode: string | null;
   refreshing: boolean;
   /** Persistent filter state from the store */
@@ -184,31 +305,37 @@ interface PrAppProps extends ViewProps {
   setSearchQuery: (query: string) => void;
   sortLayers: SortLayer[];
   setSortLayers: (layers: SortLayer[] | ((prev: SortLayer[]) => SortLayer[])) => void;
+  columns: ColumnConfig[];
+  setColumns: (columns: ColumnConfig[] | ((prev: ColumnConfig[]) => ColumnConfig[])) => void;
+  filters: FilterState;
+  setFilters: (filters: FilterState | ((prev: FilterState) => FilterState)) => void;
   selectedIndex: number;
   setSelectedIndex: (index: number) => void;
   scrollOffset: number;
   setScrollOffset: (offset: number) => void;
   /** Fetch CI + review for a PR. Resolves when caches are updated. */
-  onFetchCI: (pr: UserPullRequest) => Promise<void>;
+  onFetchCI: (pr: UserPullRequest) => void;
   onPrefetchDetails: (prs: UserPullRequest[]) => void;
   onRetryChecks: (pr: UserPullRequest) => Promise<string>;
-  onRefreshAll: (prs: UserPullRequest[]) => Promise<void>;
+  onRefreshAll: (visiblePRs: UserPullRequest[]) => void;
   onExit: () => void;
+  storeStatusText?: string;
 }
 
 export function PrApp({
   prs,
   localRepos,
-  ciCache,
-  reviewCache,
-  mergeableCache,
-  linearCache,
+  dataLayer,
   repoMode,
   refreshing,
   searchQuery,
   setSearchQuery,
   sortLayers,
   setSortLayers,
+  columns,
+  setColumns,
+  filters,
+  setFilters,
   selectedIndex,
   setSelectedIndex,
   scrollOffset,
@@ -218,6 +345,7 @@ export function PrApp({
   onRetryChecks,
   onRefreshAll,
   onExit,
+  storeStatusText,
   keybinds,
 }: PrAppProps) {
   const navigate = useNavigate<PrScreen>();
@@ -225,27 +353,62 @@ export function PrApp({
   const { width, height } = useTerminalDimensions();
   const [searchMode, setSearchMode] = useState(false);
   const [sortModal, setSortModal] = useState<{ selectedIndex: number } | null>(null);
+  const [columnModal, setColumnModal] = useState<{
+    selectedIndex: number;
+    reordering: boolean;
+  } | null>(null);
+  const [filterModal, setFilterModal] = useState<{
+    level: 'fields';
+    selectedIndex: number;
+  } | {
+    level: 'string-picker';
+    fieldId: FilterFieldId;
+    inputValue: string;
+    mode: StringMatchMode;
+    selectedIndex: number;
+  } | {
+    level: 'multiselect-picker';
+    fieldId: FilterFieldId;
+    selected: string[];
+    selectedIndex: number;
+  } | {
+    level: 'save-preset';
+    inputValue: string;
+  } | null>(null);
+  const [filterPresets, setFilterPresets] = useState<FilterPreset[]>([]);
+
   useFocusOwner('pr-search', searchMode);
   useFocusOwner('sort-modal', !!sortModal);
+  useFocusOwner('column-modal', !!columnModal);
+  useFocusOwner('filter-modal', !!filterModal);
+
+  // Load presets on mount
+  useEffect(() => {
+    void readFilterPresets(PR_VIEW_NAME).then(setFilterPresets);
+  }, []);
+
   const [spinnerFrame, setSpinnerFrame] = useState(0);
-  const [statusText, setStatusText] = useState('');
+  const [localStatusText, setLocalStatusText] = useState('');
+  // Local status (from retry/copy actions) takes priority over store status (from error events)
+  const statusText = localStatusText || storeStatusText || '';
   const refreshSessionRef = useRef<{
     signature: string;
     refreshedKeys: Set<string>;
   } | null>(null);
   const queuedRefreshCountRef = useRef(0);
   // Bump to force re-render after CI fetch (caches are mutated externally)
-  const [, forceRender] = useState(0);
+
 
   // Animate spinner when any PR has pending checks or a refresh is in flight
   const hasPending = useMemo(
     () =>
-      [...ciCache.values()].some((ci) =>
-        ci.checks.some((c) => c.status !== 'completed')
+      prs.some((pr) =>
+        pr.ci?.checks.some((c) => c.status !== 'completed') ?? false
       ),
-    [ciCache]
+    [prs]
   );
-  const animateSpinner = hasPending || refreshing;
+  const hasLoadingEntities = dataLayer.loading.loadingPrKeys().size > 0 || dataLayer.loading.loadingLinearKeys().size > 0;
+  const animateSpinner = hasPending || refreshing || hasLoadingEntities;
 
   useEffect(() => {
     if (!animateSpinner) return;
@@ -256,43 +419,51 @@ export function PrApp({
   }, [animateSpinner]);
 
   const filteredPRs = useMemo(() => {
-    const result = searchQuery
-      ? prs.filter((pr) => {
-          const q = searchQuery.toLowerCase();
-          const linearIssue = linearCache.get(`${pr.repoId}#${pr.number}`);
-          return (
-            pr.title.toLowerCase().includes(q) ||
-            pr.repoId.includes(q) ||
-            pr.headRef.toLowerCase().includes(q) ||
-            pr.author.toLowerCase().includes(q) ||
-            (linearIssue?.identifier.toLowerCase().includes(q) ?? false)
-          );
-        })
-      : [...prs];
+    // Apply structured filters first
+    let result = prs.filter((pr) => applyFilters(pr, filters, dataLayer));
+
+    // Then apply freetext search
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((pr) => {
+        const linearIssues = dataLayer.query.linearIssuesForPr(`${pr.repoId}#${pr.number}`);
+        const linearIssue = linearIssues[0];
+        return (
+          pr.title.toLowerCase().includes(q) ||
+          pr.repoId.includes(q) ||
+          pr.headRef.toLowerCase().includes(q) ||
+          pr.author.toLowerCase().includes(q) ||
+          (linearIssue?.identifier.toLowerCase().includes(q) ?? false)
+        );
+      });
+    }
+
     result.sort((a, b) => {
       for (const layer of sortLayers) {
         const dir = layer.dir === 'asc' ? 1 : -1;
         let cmp = 0;
-        const aKey = `${a.repoId}#${a.number}`;
-        const bKey = `${b.repoId}#${b.number}`;
         switch (layer.field) {
           case 'updated':
             cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
             break;
           case 'review':
-            cmp = reviewSortOrder(reviewCache.get(aKey)?.status)
-              - reviewSortOrder(reviewCache.get(bKey)?.status);
+            cmp = reviewSortOrder(a.review?.status)
+              - reviewSortOrder(b.review?.status);
             break;
           case 'ci':
-            cmp = ciSortOrder(ciCache.get(aKey)?.status)
-              - ciSortOrder(ciCache.get(bKey)?.status);
+            cmp = ciSortOrder(a.ci?.status)
+              - ciSortOrder(b.ci?.status);
             break;
           case 'repo':
             cmp = a.repoId.localeCompare(b.repoId);
             break;
           case 'merge':
-            cmp = mergeSortOrder(mergeableCache[aKey])
-              - mergeSortOrder(mergeableCache[bKey]);
+            cmp = mergeSortOrder(a.mergeable)
+              - mergeSortOrder(b.mergeable);
+            break;
+          case 'diff':
+            cmp = ((a.additions ?? 0) + (a.deletions ?? 0))
+              - ((b.additions ?? 0) + (b.deletions ?? 0));
             break;
           case 'number':
             cmp = a.number - b.number;
@@ -303,7 +474,7 @@ export function PrApp({
       return 0;
     });
     return result;
-  }, [prs, searchQuery, reviewCache, ciCache, mergeableCache, linearCache, sortLayers]);
+  }, [prs, searchQuery, filters, dataLayer, sortLayers]);
 
   const repoMatchMap = useMemo(() => {
     const map = new Map<string, LocalRepo[]>();
@@ -319,16 +490,55 @@ export function PrApp({
   }, [prs, localRepos]);
 
   const hasLinear = useMemo(
-    () => filteredPRs.some((pr) => linearCache.has(`${pr.repoId}#${pr.number}`)),
-    [filteredPRs, linearCache]
+    () => filteredPRs.some((pr) => dataLayer.query.linearIssuesForPr(`${pr.repoId}#${pr.number}`).length > 0),
+    [filteredPRs, dataLayer]
   );
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.org) count++;
+    if (filters.repo) count++;
+    if (filters.author) count++;
+    if (filters.linear) count++;
+    if (filters.role && filters.role.length > 0) count++;
+    if (filters.review && filters.review.length > 0) count++;
+    if (filters.ci && filters.ci.length > 0) count++;
+    if (filters.merge && filters.merge.length > 0) count++;
+    return count;
+  }, [filters]);
+
+  const stringFieldValues = useMemo(() => {
+    const orgs = [...new Set(prs.map((pr) => pr.repoOwner))].sort();
+    const repos = [...new Set(prs.map((pr) => pr.repoId))].sort();
+    const authors = [...new Set(prs.map((pr) => pr.author))].sort();
+    const linearSet = new Set<string>();
+    for (const pr of prs) {
+      const issues = dataLayer.query.linearIssuesForPr(`${pr.repoId}#${pr.number}`);
+      for (const issue of issues) linearSet.add(issue.identifier);
+    }
+    return { org: orgs, repo: repos, author: authors, linear: [...linearSet].sort() };
+  }, [prs, dataLayer]);
+
+  const filterFieldItems = useMemo((): FilterMenuItem[] => {
+    const items: FilterMenuItem[] = [];
+    for (let i = 0; i < filterPresets.length; i++) {
+      items.push({ type: 'preset', index: i, preset: filterPresets[i] });
+    }
+    for (const def of FILTER_FIELD_DEFS) {
+      items.push({ type: 'field', def });
+    }
+    if (activeFilterCount > 0) {
+      items.push({ type: 'clear' });
+      items.push({ type: 'save' });
+    }
+    items.push({ type: 'close' });
+    return items;
+  }, [filterPresets, activeFilterCount]);
 
   const hasFailedChecks = useMemo(() => {
     const selectedPR = filteredPRs[selectedIndex];
-    const selectedKey = selectedPR ? `${selectedPR.repoId}#${selectedPR.number}` : '';
-    const selectedCI = selectedKey ? ciCache.get(selectedKey) : undefined;
-    return selectedCI?.checks.some((c) => c.status === 'completed' && c.conclusion === 'failure') ?? false;
-  }, [filteredPRs, selectedIndex, ciCache]);
+    return selectedPR?.ci?.checks.some((c) => c.status === 'completed' && c.conclusion === 'failure') ?? false;
+  }, [filteredPRs, selectedIndex]);
 
   const footerRows = useMemo(() => {
     const parts = footerParts(keybinds, { retryChecks: hasFailedChecks });
@@ -359,10 +569,19 @@ export function PrApp({
     [filteredPRs, scrollOffset, listHeight]
   );
 
+  const prefetchedKeysRef = useRef(new Set<string>());
   useEffect(() => {
     if (prefetchedPRs.length === 0) return;
-    onPrefetchDetails(prefetchedPRs);
-  }, [prefetchedPRs, onPrefetchDetails, selectedIndex]);
+    const newPRs = prefetchedPRs.filter((pr) => {
+      const key = `${pr.repoId}#${pr.number}`;
+      return !prefetchedKeysRef.current.has(key);
+    });
+    if (newPRs.length === 0) return;
+    for (const pr of newPRs) {
+      prefetchedKeysRef.current.add(`${pr.repoId}#${pr.number}`);
+    }
+    onPrefetchDetails(newPRs);
+  }, [prefetchedPRs, onPrefetchDetails]);
 
   const refreshCurrentChunk = useCallback(() => {
     if (filteredPRs.length === 0) return;
@@ -397,7 +616,7 @@ export function PrApp({
       session.refreshedKeys.add(`${pr.repoId}#${pr.number}`);
     }
 
-    void onRefreshAll(chunk);
+    onRefreshAll(chunk);
   }, [
     filteredPRs,
     listHeight,
@@ -456,14 +675,14 @@ export function PrApp({
     },
     fetchCI: () => {
       const pr = filteredPRs[selectedIndex];
-      if (pr) { onFetchCI(pr).then(() => forceRender((n) => n + 1)); }
+      if (pr) { onFetchCI(pr); }
     },
     retryChecks: () => {
       const pr = filteredPRs[selectedIndex];
       if (pr) {
         onRetryChecks(pr).then((msg) => {
-          setStatusText(msg);
-          setTimeout(() => setStatusText(''), 4000);
+          setLocalStatusText(msg);
+          setTimeout(() => setLocalStatusText(''), 4000);
         });
       }
     },
@@ -472,13 +691,18 @@ export function PrApp({
       else { refreshCurrentChunk(); }
     },
     sort: () => setSortModal({ selectedIndex: 0 }),
+    columns: () => setColumnModal({ selectedIndex: 0, reordering: false }),
+    filter: () => setFilterModal({ level: 'fields', selectedIndex: 0 }),
     search: () => setSearchMode(true),
+    debug: () => navigate({ type: 'debug' }),
     quit: () => onExit(),
   }, { show: { retryChecks: hasFailedChecks } });
 
   // Sort modal navigation — only fires when sort-modal focus is active.
+  const sortItemCount = SORT_FIELDS.length + 1; // +1 for Close action
   useFocusedKeyboard((key) => {
     key.stopPropagation();
+    const isCloseRow = sortModal?.selectedIndex === SORT_FIELDS.length;
     switch (key.name) {
       case 'up':
       case 'k':
@@ -487,10 +711,11 @@ export function PrApp({
       case 'down':
       case 'j':
         setSortModal((m) =>
-          m ? { selectedIndex: Math.min(SORT_FIELDS.length - 1, m.selectedIndex + 1) } : m
+          m ? { selectedIndex: Math.min(sortItemCount - 1, m.selectedIndex + 1) } : m
         );
         break;
       case 'return': {
+        if (isCloseRow) { setSortModal(null); break; }
         const field = sortModal ? SORT_FIELDS[sortModal.selectedIndex] : undefined;
         if (field) toggleSortField(field.field);
         break;
@@ -501,8 +726,320 @@ export function PrApp({
         setSortModal(null);
         break;
     }
+    if (key.raw === ' ') {
+      if (isCloseRow) { setSortModal(null); }
+      else {
+        const field = sortModal ? SORT_FIELDS[sortModal.selectedIndex] : undefined;
+        if (field) toggleSortField(field.field);
+      }
+    }
     return true;
   }, { focusId: 'sort-modal' });
+
+  // Column modal navigation — only fires when column-modal focus is active.
+  const closeColumnModal = useCallback(() => {
+    setColumnModal(null);
+    // Persist to config file on close
+    void writeColumnConfig(PR_VIEW_NAME, columns);
+  }, [columns]);
+
+  const colItemCount = columns.length + 1; // +1 for Close action
+  useFocusedKeyboard((key) => {
+    key.stopPropagation();
+    if (!columnModal) return true;
+    const { selectedIndex: si, reordering } = columnModal;
+    const isCloseRow = si === columns.length;
+
+    const toggleColumnVis = () => {
+      if (isCloseRow) { closeColumnModal(); return; }
+      const col = columns[si];
+      const def = PR_COLUMN_DEFS.find((d) => d.id === col.id);
+      if (def) {
+        setColumns((prev) =>
+          prev.map((c, idx) =>
+            idx === si ? { ...c, visibility: cycleVisibility(c.visibility, def.supportsAuto) } : c
+          )
+        );
+      }
+    };
+
+    if (reordering) {
+      // Reorder mode: j/k moves the grabbed row
+      switch (key.name) {
+        case 'up':
+        case 'k':
+          if (si > 0) {
+            setColumns((prev) => {
+              const next = [...prev];
+              [next[si - 1], next[si]] = [next[si], next[si - 1]];
+              return next;
+            });
+            setColumnModal({ selectedIndex: si - 1, reordering: true });
+          }
+          break;
+        case 'down':
+        case 'j':
+          if (si < columns.length - 1) {
+            setColumns((prev) => {
+              const next = [...prev];
+              [next[si], next[si + 1]] = [next[si + 1], next[si]];
+              return next;
+            });
+            setColumnModal({ selectedIndex: si + 1, reordering: true });
+          }
+          break;
+        case 'return':
+        case 'escape':
+          setColumnModal({ selectedIndex: si, reordering: false });
+          break;
+      }
+    } else {
+      // Navigate mode
+      if (key.raw === ' ') {
+        toggleColumnVis();
+      } else {
+        switch (key.name) {
+          case 'up':
+          case 'k':
+            setColumnModal({ selectedIndex: Math.max(0, si - 1), reordering: false });
+            break;
+          case 'down':
+          case 'j':
+            setColumnModal({ selectedIndex: Math.min(colItemCount - 1, si + 1), reordering: false });
+            break;
+          case 'return':
+            toggleColumnVis();
+            break;
+          case 'escape':
+          case 'q':
+            closeColumnModal();
+            break;
+          default:
+            if (!isCloseRow && (key.raw === 'r' || key.raw === 'R')) {
+              setColumnModal({ selectedIndex: si, reordering: true });
+            } else if (key.raw === 'C') {
+              closeColumnModal();
+            }
+            break;
+        }
+      }
+    }
+    return true;
+  }, { focusId: 'column-modal' });
+
+  // Filter modal navigation — only fires when filter-modal focus is active.
+  useFocusedKeyboard((key) => {
+    key.stopPropagation();
+    if (!filterModal) return true;
+
+    // ── Field list level ────────────────────────────────────────
+    if (filterModal.level === 'fields') {
+      const items = filterFieldItems;
+
+      const selectFilterItem = () => {
+        const item = items[filterModal.selectedIndex];
+        if (!item) return;
+        if (item.type === 'preset') {
+          setFilters(item.preset.filters);
+          setFilterModal(null);
+        } else if (item.type === 'field') {
+          if (item.def.type === 'string') {
+            const current = filters[item.def.id] as StringFilter | undefined;
+            setFilterModal({
+              level: 'string-picker',
+              fieldId: item.def.id,
+              inputValue: current?.value ?? '',
+              mode: current?.mode ?? 'exact',
+              selectedIndex: 0,
+            });
+          } else {
+            const current = (filters[item.def.id] as string[] | undefined) ?? [];
+            setFilterModal({
+              level: 'multiselect-picker',
+              fieldId: item.def.id,
+              selected: [...current],
+              selectedIndex: 0,
+            });
+          }
+        } else if (item.type === 'clear') {
+          setFilters(EMPTY_FILTERS);
+        } else if (item.type === 'save') {
+          setFilterModal({ level: 'save-preset', inputValue: '' });
+        } else if (item.type === 'close') {
+          setFilterModal(null);
+        }
+      };
+
+      if (key.raw === ' ') {
+        selectFilterItem();
+      } else {
+        switch (key.name) {
+          case 'up':
+          case 'k':
+            setFilterModal({ ...filterModal, selectedIndex: Math.max(0, filterModal.selectedIndex - 1) });
+            break;
+          case 'down':
+          case 'j':
+            setFilterModal({ ...filterModal, selectedIndex: Math.min(items.length - 1, filterModal.selectedIndex + 1) });
+            break;
+          case 'return':
+            selectFilterItem();
+            break;
+          case 'escape':
+          case 'q':
+            setFilterModal(null);
+            break;
+          default:
+            if (key.raw === 'f' || key.raw === 'F') {
+              setFilterModal(null);
+            } else if (key.raw === 'd' || key.raw === 'D') {
+              const item = items[filterModal.selectedIndex];
+              if (item?.type === 'preset') {
+                const next = filterPresets.filter((_, idx) => idx !== item.index);
+                setFilterPresets(next);
+                void writeFilterPresets(PR_VIEW_NAME, next);
+                setFilterModal({
+                  ...filterModal,
+                  selectedIndex: Math.min(filterModal.selectedIndex, items.length - 2),
+                });
+              }
+            }
+            break;
+        }
+      }
+    } else if (filterModal.level === 'string-picker') {
+    // ── String picker level ─────────────────────────────────────
+      const allValues = stringFieldValues[filterModal.fieldId as keyof typeof stringFieldValues] ?? [];
+      const query = filterModal.inputValue.toLowerCase();
+      const suggestions = query
+        ? allValues.filter((v) => v.toLowerCase().includes(query))
+        : allValues;
+
+      switch (key.name) {
+        case 'up':
+          setFilterModal({ ...filterModal, selectedIndex: Math.max(0, filterModal.selectedIndex - 1) });
+          break;
+        case 'down':
+          setFilterModal({ ...filterModal, selectedIndex: Math.min(suggestions.length - 1, filterModal.selectedIndex + 1) });
+          break;
+        case 'tab': {
+          setFilterModal({
+            ...filterModal,
+            mode: filterModal.mode === 'fuzzy' ? 'exact' : 'fuzzy',
+          });
+          break;
+        }
+        case 'return': {
+          const value = suggestions[filterModal.selectedIndex] ?? filterModal.inputValue;
+          if (value) {
+            setFilters((prev) => ({
+              ...prev,
+              [filterModal.fieldId]: { value, mode: filterModal.mode },
+            }));
+          } else {
+            setFilters((prev) => {
+              const next = { ...prev };
+              delete next[filterModal.fieldId];
+              return next;
+            });
+          }
+          setFilterModal({ level: 'fields', selectedIndex: 0 });
+          break;
+        }
+        case 'backspace':
+          setFilterModal({ ...filterModal, inputValue: filterModal.inputValue.slice(0, -1), selectedIndex: 0 });
+          break;
+        case 'escape':
+          setFilterModal({ level: 'fields', selectedIndex: 0 });
+          break;
+        default:
+          if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
+            setFilterModal({
+              ...filterModal,
+              inputValue: filterModal.inputValue + key.raw,
+              selectedIndex: 0,
+            });
+          }
+          break;
+      }
+    } else if (filterModal.level === 'multiselect-picker') {
+    // ── Multiselect picker level ────────────────────────────────
+      const options = MULTISELECT_OPTIONS[filterModal.fieldId] ?? [];
+
+      const toggleSelected = () => {
+        const opt = options[filterModal.selectedIndex];
+        if (opt) {
+          const sel = filterModal.selected;
+          const next = sel.includes(opt.value)
+            ? sel.filter((v) => v !== opt.value)
+            : [...sel, opt.value];
+          setFilterModal({ ...filterModal, selected: next });
+        }
+      };
+
+      if (key.raw === ' ') {
+        toggleSelected();
+      } else {
+        switch (key.name) {
+          case 'up':
+          case 'k':
+            setFilterModal({ ...filterModal, selectedIndex: Math.max(0, filterModal.selectedIndex - 1) });
+            break;
+          case 'down':
+          case 'j':
+            setFilterModal({ ...filterModal, selectedIndex: Math.min(options.length - 1, filterModal.selectedIndex + 1) });
+            break;
+          case 'return':
+            toggleSelected();
+            break;
+          case 'escape': {
+            const selected = filterModal.selected;
+            if (selected.length > 0) {
+              setFilters((prev) => ({ ...prev, [filterModal.fieldId]: selected }));
+            } else {
+              setFilters((prev) => {
+                const next = { ...prev };
+                delete next[filterModal.fieldId];
+                return next;
+              });
+            }
+            setFilterModal({ level: 'fields', selectedIndex: 0 });
+            break;
+          }
+        }
+      }
+    } else if (filterModal.level === 'save-preset') {
+    // ── Save preset level ───────────────────────────────────────
+      switch (key.name) {
+        case 'return': {
+          if (filterModal.inputValue.trim()) {
+            const preset: FilterPreset = {
+              label: filterModal.inputValue.trim(),
+              filters: { ...filters },
+            };
+            const next = [...filterPresets, preset];
+            setFilterPresets(next);
+            void writeFilterPresets(PR_VIEW_NAME, next);
+          }
+          setFilterModal({ level: 'fields', selectedIndex: 0 });
+          break;
+        }
+        case 'escape':
+          setFilterModal({ level: 'fields', selectedIndex: 0 });
+          break;
+        case 'backspace':
+          setFilterModal({ ...filterModal, inputValue: filterModal.inputValue.slice(0, -1) });
+          break;
+        default:
+          if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
+            setFilterModal({ ...filterModal, inputValue: filterModal.inputValue + key.raw });
+          }
+          break;
+      }
+    }
+
+    return true;
+  }, { focusId: 'filter-modal' });
 
   // Search text input — only fires when pr-search focus is active.
   useFocusedKeyboard((key) => {
@@ -546,21 +1083,77 @@ export function PrApp({
   }, [prs]);
   const hasAnyAmbiguous = ambiguousRepoNames.size > 0;
 
-  // Responsive column widths — collapse gracefully at narrow viewports
+  // ─── Resolve column visibility from config + auto rules ─────
   const compact = width < 120;
   const veryCompact = width < 90;
-  const authorCol = repoMode ? Math.min(20, Math.floor(width * 0.15)) : 0;
-  const roleCol = repoMode ? 0 : 4;
-  const repoCol = repoMode ? 0 : Math.min(hasAnyAmbiguous ? 25 : 18, Math.floor(width * 0.2));
-  const updatedCol = veryCompact ? 8 : 12;
-  const ciCol = veryCompact ? 8 : 12;
-  const mergeCol = compact ? 3 : 11;
-  const reviewCol = compact ? 3 : 15;
-  const linearCol = hasLinear ? (compact ? 10 : 12) : 0;
-  const prCol = Math.max(
-    20,
-    width - authorCol - roleCol - repoCol - updatedCol - ciCol - mergeCol - reviewCol - linearCol - 6
+  const hasDistinctAuthors = useMemo(
+    () => new Set(prs.map((pr) => pr.author)).size > 1,
+    [prs]
   );
+  const maxPrNumber = useMemo(
+    () => filteredPRs.reduce((max, pr) => Math.max(max, pr.number), 0),
+    [filteredPRs]
+  );
+
+  /** Resolve 'auto' visibility to a concrete boolean for each column.
+   *  When a filter narrows a column to a single value, auto-hide it. */
+  const autoResolvers: Record<string, () => boolean> = useMemo(() => ({
+    role: () => {
+      if (filters.role && filters.role.length === 1) return false;
+      return !repoMode;
+    },
+    author: () => {
+      if (filters.author?.mode === 'exact') return false;
+      return !!repoMode && hasDistinctAuthors;
+    },
+    repo: () => {
+      if (filters.repo?.mode === 'exact') return false;
+      return !repoMode;
+    },
+    linear: () => hasLinear,
+  }), [repoMode, hasDistinctAuthors, hasLinear, filters]);
+
+  /** Ordered list of columns with resolved visibility and widths. */
+  const resolvedColumns = useMemo(() => {
+    const numberWidth = Math.max(2, String(maxPrNumber).length) + 2; // # + digits + space
+
+    // Width resolvers per column id (before flex fill)
+    const widthOf: Record<string, () => number> = {
+      role: () => 4,
+      author: () => Math.min(20, Math.floor(width * 0.15)),
+      number: () => numberWidth,
+      title: () => 0, // flex fill — computed after
+      repo: () => Math.min(hasAnyAmbiguous ? 25 : 18, Math.floor(width * 0.2)),
+      updated: () => veryCompact ? 8 : 12,
+      ci: () => veryCompact ? 8 : 12,
+      merge: () => compact ? 3 : 11,
+      diff: () => compact ? 12 : 14,
+      linear: () => compact ? 10 : 12,
+      review: () => compact ? 3 : 15,
+    };
+
+    type ResolvedCol = { id: string; width: number; visible: boolean };
+    const cols: ResolvedCol[] = columns.map((col) => {
+      let visible: boolean;
+      if (col.visibility === 'auto') {
+        visible = autoResolvers[col.id]?.() ?? true;
+      } else {
+        visible = col.visibility === 'visible';
+      }
+      const w = visible ? (widthOf[col.id]?.() ?? 0) : 0;
+      return { id: col.id, width: w, visible };
+    });
+
+    // Title is flex fill — gets remaining space
+    const fixedTotal = cols.reduce((sum, c) => sum + (c.id === 'title' ? 0 : c.width), 0);
+    const titleCol = cols.find((c) => c.id === 'title');
+    if (titleCol && titleCol.visible) {
+      titleCol.width = Math.max(20, width - fixedTotal - 6);
+    }
+
+    return cols;
+  }, [columns, width, compact, veryCompact, maxPrNumber, hasAnyAmbiguous, autoResolvers]);
+
 
   const sortHeader = (label: string, field: SortField, colWidth: number): string => {
     const layerIdx = sortLayers.findIndex((l) => l.field === field);
@@ -568,12 +1161,33 @@ export function PrApp({
     const arrow = sortLayers[layerIdx].dir === 'asc' ? '↑' : '↓';
     return `${label}${arrow}`.padEnd(colWidth);
   };
-  const tableFocused = !searchMode && !sortModal;
+  const tableFocused = !searchMode && !sortModal && !columnModal && !filterModal;
+  const filterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (filters.org) {
+      parts.push(filters.org.mode === 'exact' ? `org="${filters.org.value}"` : `org~${filters.org.value}`);
+    }
+    if (filters.repo) {
+      parts.push(filters.repo.mode === 'exact' ? `repo="${filters.repo.value}"` : `repo~${filters.repo.value}`);
+    }
+    if (filters.author) {
+      parts.push(filters.author.mode === 'exact' ? `author="${filters.author.value}"` : `author~${filters.author.value}`);
+    }
+    if (filters.linear) {
+      parts.push(filters.linear.mode === 'exact' ? `linear="${filters.linear.value}"` : `linear~${filters.linear.value}`);
+    }
+    if (filters.role && filters.role.length > 0) parts.push(`role=${filters.role.join(',')}`);
+    if (filters.review && filters.review.length > 0) parts.push(`review=${filters.review.join(',')}`);
+    if (filters.ci && filters.ci.length > 0) parts.push(`ci=${filters.ci.join(',')}`);
+    if (filters.merge && filters.merge.length > 0) parts.push(`merge=${filters.merge.join(',')}`);
+    return parts.join(' ');
+  }, [filters]);
+  const isFiltered = activeFilterCount > 0 || !!searchQuery;
   const headerText = ` git-switchboard pr${repoMode ? ` ${repoMode}` : ''}  ${
-    searchQuery ? `${filteredPRs.length}/${prs.length}` : String(filteredPRs.length)
-  } open PRs${searchQuery ? ` | Search: ${searchQuery}` : ''}${
-    searchMode ? ` | (type to search, [${RETURN_SYMBOL}] confirm)` : ''
-  }`;
+    isFiltered ? `${filteredPRs.length}/${prs.length}` : String(filteredPRs.length)
+  } open PRs${filterSummary ? ` | ${filterSummary}` : ''}${
+    searchQuery ? ` | Search: ${searchQuery}` : ''
+  }${searchMode ? ` | (type to search, [${RETURN_SYMBOL}] confirm)` : ''}`;
   const headerWidth = Math.max(1, width - 4);
   const headerContent = refreshing
     ? `${fit(headerText, Math.max(1, headerWidth - 2))} ${SPINNER_FRAMES[spinnerFrame]}`
@@ -594,7 +1208,16 @@ export function PrApp({
       {/* Column headers */}
       <box style={{ height: 1, width: '100%' }}>
         <text
-          content={` ${repoMode ? 'Author'.padEnd(authorCol) : ''.padEnd(roleCol)}${sortHeader('PR', 'number', prCol)}${repoMode ? '' : sortHeader('Repo', 'repo', repoCol)}${sortHeader(veryCompact ? 'Upd' : 'Updated', 'updated', updatedCol)}${sortHeader('CI', 'ci', ciCol)}${sortHeader(compact ? '' : '', 'merge', mergeCol)}${hasLinear ? (compact ? 'Lin' : 'Linear').padEnd(linearCol) : ''}${sortHeader(compact ? 'Rv' : 'Review', 'review', reviewCol)}`}
+          content={' ' + resolvedColumns
+            .filter((c) => c.visible)
+            .map((c) => {
+              const w = c.width;
+              const sortField = SORTABLE_COLUMNS[c.id as PrColumnId];
+              const headerLabel = COLUMN_HEADERS[c.id as PrColumnId]?.(compact, veryCompact) ?? c.id;
+              if (sortField) return sortHeader(headerLabel, sortField, w);
+              return headerLabel.padEnd(w);
+            })
+            .join('')}
           fg={tableFocused ? '#bb9af7' : muteColor('#bb9af7')}
         />
       </box>
@@ -617,30 +1240,41 @@ export function PrApp({
               : undefined;
 
             const prKey = `${pr.repoId}#${pr.number}`;
-            const ci = ciCache.get(prKey);
-            const ciStatus = ciSummary(ci, SPINNER_FRAMES[spinnerFrame]);
-            const review = reviewCache.get(prKey);
-            const linearIssue = linearCache.get(prKey);
-            const linearText = linearIssue ? linearIssue.identifier : (hasLinear ? '-' : '');
-            const rvw = reviewLabel(review?.status, compact);
-            const merge = mergeLabel(mergeableCache[prKey], compact);
+            const prLoading = dataLayer.loading.isPrLoading(prKey);
+            const ciStatus = ciSummary(pr.ci, SPINNER_FRAMES[spinnerFrame], prLoading);
+            const linearIssues = dataLayer.query.linearIssuesForPr(prKey);
+            const linearIssue = linearIssues[0];
+            const linearLoading = linearIssues.length === 0 && dataLayer.loading.loadingLinearKeys().size > 0;
+            const linearText = linearIssue
+              ? linearIssue.identifier
+              : linearLoading
+                ? SPINNER_FRAMES[spinnerFrame]
+                : (hasLinear ? '-' : '');
+            const rvw = reviewLabel(pr.review?.status, compact);
+            const merge = mergeLabel(pr.mergeable, compact);
             const roleIcon = roleIndicator(pr.role);
-            const authorColor = tableFocused ? '#bb9af7' : muteColor('#bb9af7');
-            const roleColor = tableFocused ? roleIcon.fg : muteColor(roleIcon.fg);
-            const titleColor = tableFocused ? '#c0caf5' : muteColor('#c0caf5');
-            const repoColor = tableFocused ? '#a9b1d6' : muteColor('#a9b1d6');
-            const updatedColor = tableFocused
-              ? '#565f89'
-              : muteColor('#565f89', 0.3);
-            const ciColor = tableFocused ? ciStatus.fg : muteColor(ciStatus.fg);
-            const mergeColor = tableFocused ? merge.fg : muteColor(merge.fg);
-            const reviewColor = tableFocused ? rvw.fg : muteColor(rvw.fg);
 
-            const prLabel = `#${pr.number} ${pr.title}`.slice(0, prCol - 1);
-            const repoLabel = (ambiguousRepoNames.has(pr.repoName) ? `${pr.repoOwner}/${pr.repoName}` : pr.repoName).slice(
-              0,
-              repoCol - 1
-            );
+            // Per-column render data: { text, fg, width }
+            const colData: Record<string, { text: string; fg: string }> = {
+              role: { text: roleIcon.text, fg: roleIcon.fg },
+              author: { text: pr.author, fg: '#bb9af7' },
+              number: { text: `#${pr.number}`, fg: '#c0caf5' },
+              title: { text: pr.title, fg: '#c0caf5' },
+              repo: {
+                text: ambiguousRepoNames.has(pr.repoName)
+                  ? `${pr.repoOwner}/${pr.repoName}`
+                  : pr.repoName,
+                fg: '#a9b1d6',
+              },
+              updated: { text: relativeTime(pr.updatedAt), fg: '#565f89' },
+              ci: { text: ciStatus.text, fg: ciStatus.fg },
+              merge: { text: merge.text, fg: merge.fg },
+              diff: formatDiff(pr.additions, pr.deletions),
+              linear: { text: linearText, fg: '#bb9af7' },
+              review: { text: rvw.text, fg: rvw.fg },
+            };
+
+            const visibleCols = resolvedColumns.filter((c) => c.visible);
 
             return (
               <box
@@ -648,7 +1282,6 @@ export function PrApp({
                 style={{ height: 1, width: '100%', backgroundColor: bg }}
                 onMouseDown={() => {
                   if (actualIndex === selectedIndex) {
-                    // Double-click effect: second click on same row opens it
                     const matches = repoMatchMap.get(`${pr.repoId}#${pr.number}`) ?? [];
                     navigate({ type: 'pr-detail', pr, matches });
                   } else {
@@ -657,30 +1290,18 @@ export function PrApp({
                 }}
               >
                 <text>
-                  {repoMode ? (
-                    <span fg={authorColor}> {pr.author.slice(0, authorCol - 2).padEnd(authorCol)}</span>
-                  ) : (
-                    <span fg={roleColor}> {roleIcon.text.padEnd(roleCol)}</span>
-                  )}
-                  <span fg={titleColor}>{prLabel.padEnd(prCol)}</span>
-                  {!repoMode && <span fg={repoColor}>{repoLabel.padEnd(repoCol)}</span>}
-                  <span fg={updatedColor}>
-                    {relativeTime(pr.updatedAt).padEnd(updatedCol)}
-                  </span>
-                  <span fg={ciColor}>
-                    {ciStatus.text.slice(0, ciCol - 1).padEnd(ciCol)}
-                  </span>
-                  <span fg={mergeColor}>
-                    {merge.text.slice(0, mergeCol - 1).padEnd(mergeCol)}
-                  </span>
-                  {hasLinear && (
-                    <span fg={tableFocused ? '#bb9af7' : muteColor('#bb9af7')}>
-                      {linearText.slice(0, linearCol - 1).padEnd(linearCol)}
-                    </span>
-                  )}
-                  <span fg={reviewColor}>
-                    {rvw.text.slice(0, reviewCol - 1).padEnd(reviewCol)}
-                  </span>
+                  {visibleCols.map((col, ci) => {
+                    const d = colData[col.id];
+                    if (!d) return null;
+                    const fg = tableFocused
+                      ? d.fg
+                      : col.id === 'updated'
+                        ? muteColor(d.fg, 0.3)
+                        : muteColor(d.fg);
+                    const sliced = d.text.slice(0, col.width - 1);
+                    const padded = (ci === 0 ? ' ' : '') + sliced.padEnd(ci === 0 ? col.width - 1 : col.width);
+                    return <span key={col.id} fg={fg}>{padded}</span>;
+                  })}
                 </text>
               </box>
             );
@@ -714,57 +1335,256 @@ export function PrApp({
 
       {/* Sort modal */}
       {sortModal && (
-        <box
-          style={{
-            position: 'absolute',
-            top: Math.floor(height / 2) - Math.floor((SORT_FIELDS.length + 4) / 2),
-            left: Math.floor(width / 2) - 20,
-            width: 40,
-            height: SORT_FIELDS.length + 4,
-          }}
+        <Modal
+          title="Sort Order"
+          hint="Enter/Space toggle | Esc close"
+          onClose={() => setSortModal(null)}
+          width={46}
+          height={sortItemCount + 1}
+          termWidth={width}
+          termHeight={height}
         >
-          <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content=" Sort Order" fg="#7aa2f7" />
-            </box>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={`${'─'.repeat(40)}`} fg="#292e42" />
-            </box>
-            {SORT_FIELDS.map((sf, i) => {
-              const isActive = i === sortModal.selectedIndex;
-              const layerIdx = sortLayers.findIndex((l) => l.field === sf.field);
-              const layer = layerIdx !== -1 ? sortLayers[layerIdx] : null;
-              const indicator = layer
-                ? `${layerIdx + 1}${layer.dir === 'asc' ? '↑' : '↓'}`
-                : '  ';
+          {SORT_FIELDS.map((sf, i) => {
+            const isActive = i === sortModal.selectedIndex;
+            const layerIdx = sortLayers.findIndex((l) => l.field === sf.field);
+            const layer = layerIdx !== -1 ? sortLayers[layerIdx] : null;
+            const indicator = layer
+              ? `${layerIdx + 1}${layer.dir === 'asc' ? '↑' : '↓'}`
+              : '  ';
+            return (
+              <ModalRow
+                key={sf.field}
+                label={` ${indicator} ${isActive ? '>' : ' '} ${sf.label}`}
+                fg={layer ? (isActive ? '#c0caf5' : '#7aa2f7') : (isActive ? '#a9b1d6' : '#565f89')}
+                active={isActive}
+                onMouseDown={() => isActive ? toggleSortField(sf.field) : setSortModal({ selectedIndex: i })}
+              />
+            );
+          })}
+          <box style={{ height: 1, width: '100%' }} />
+          <ModalRow
+            label={` ${sortModal.selectedIndex === SORT_FIELDS.length ? '>' : ' '} Close`}
+            fg={sortModal.selectedIndex === SORT_FIELDS.length ? '#c0caf5' : '#565f89'}
+            active={sortModal.selectedIndex === SORT_FIELDS.length}
+            onMouseDown={() => setSortModal(null)}
+          />
+        </Modal>
+      )}
+
+      {/* Column config modal */}
+      {columnModal && (
+        <Modal
+          title="Columns"
+          hint={columnModal.reordering ? '↑↓ move | Enter/Esc done' : 'Enter/Space toggle | r reorder | Esc close'}
+          onClose={() => closeColumnModal()}
+          width={46}
+          height={columnModal.reordering ? columns.length : colItemCount + 1}
+          termWidth={width}
+          termHeight={height}
+        >
+          {columns.map((col, i) => {
+            const isActive = i === columnModal.selectedIndex;
+            const isGrabbed = isActive && columnModal.reordering;
+            const def = PR_COLUMN_DEFS.find((d) => d.id === col.id);
+            const visIcon = col.visibility === 'auto' ? '▣' : col.visibility === 'visible' ? '✓' : '✗';
+            const label = def?.label ?? col.id;
+            const grip = isGrabbed ? '≡' : ' ';
+            return (
+              <box
+                key={col.id}
+                style={{
+                  height: 1,
+                  width: '100%',
+                  backgroundColor: isGrabbed ? '#3b4261' : isActive ? '#292e42' : undefined,
+                }}
+                onMouseDown={() => {
+                  if (isActive && def) {
+                    setColumns((prev) =>
+                      prev.map((c, idx) =>
+                        idx === i ? { ...c, visibility: cycleVisibility(c.visibility, def.supportsAuto) } : c
+                      )
+                    );
+                  } else {
+                    setColumnModal({ selectedIndex: i, reordering: false });
+                  }
+                }}
+              >
+                <text
+                  content={` ${grip} ${isActive ? '>' : ' '} ${visIcon} ${label}`}
+                  fg={col.visibility === 'hidden' ? '#565f89' : isActive ? '#c0caf5' : '#a9b1d6'}
+                />
+              </box>
+            );
+          })}
+          {!columnModal.reordering && (
+            <>
+              <box style={{ height: 1, width: '100%' }} />
+              <ModalRow
+                label={` ${columnModal.selectedIndex === columns.length ? '>' : ' '} Close`}
+                fg={columnModal.selectedIndex === columns.length ? '#c0caf5' : '#565f89'}
+                active={columnModal.selectedIndex === columns.length}
+                onMouseDown={() => closeColumnModal()}
+              />
+            </>
+          )}
+        </Modal>
+      )}
+
+      {/* Filter modal — field list */}
+      {filterModal?.level === 'fields' && (
+        <Modal
+          title={activeFilterCount > 0 ? `Filters (${activeFilterCount} active)` : 'Filters'}
+          hint="Enter/Space select | d delete preset | Esc close"
+          onClose={() => setFilterModal(null)}
+          width={46}
+          height={filterFieldItems.length + 1}
+          termWidth={width}
+          termHeight={height}
+        >
+          {filterFieldItems.map((item, i) => {
+            const isActive = i === filterModal.selectedIndex;
+            let label: string;
+            let valueText = '';
+            let fg: string;
+
+            if (item.type === 'preset') {
+              label = `★ ${item.preset.label}`;
+              fg = isActive ? '#e0af68' : '#bb9af7';
+            } else if (item.type === 'field') {
+              label = item.def.label;
+              const val = filters[item.def.id];
+              if (item.def.type === 'string' && val && typeof val === 'object' && 'value' in val) {
+                const sf = val as StringFilter;
+                valueText = ` = ${sf.mode === 'exact' ? '"' : ''}${sf.value}${sf.mode === 'exact' ? '"' : ''}`;
+              } else if (Array.isArray(val) && val.length > 0) {
+                valueText = ` = ${val.join(', ')}`;
+              }
+              fg = valueText
+                ? (isActive ? '#c0caf5' : '#7aa2f7')
+                : (isActive ? '#a9b1d6' : '#565f89');
+            } else if (item.type === 'clear') {
+              label = '✗ Clear all filters';
+              fg = isActive ? '#f7768e' : '#565f89';
+            } else if (item.type === 'save') {
+              label = '+ Save as preset';
+              fg = isActive ? '#9ece6a' : '#565f89';
+            } else {
+              label = 'Close';
+              fg = isActive ? '#c0caf5' : '#565f89';
+            }
+
+            const itemKey = item.type === 'field' ? item.def.id
+              : item.type === 'preset' ? `preset-${item.index}`
+              : item.type;
+
+            // Add spacer before first action row (clear/save/close)
+            const isFirstAction = (item.type === 'clear' || item.type === 'close') &&
+              (i === 0 || filterFieldItems[i - 1].type === 'field' || filterFieldItems[i - 1].type === 'preset');
+
+            return (
+              <box key={itemKey} flexDirection="column">
+                {isFirstAction && <box style={{ height: 1, width: '100%' }} />}
+                <ModalRow
+                  label={` ${isActive ? '>' : ' '} ${label}${valueText}`}
+                  fg={fg}
+                  active={isActive}
+                />
+              </box>
+            );
+          })}
+        </Modal>
+      )}
+
+      {/* Filter modal — string picker */}
+      {filterModal?.level === 'string-picker' && (() => {
+        const allValues = stringFieldValues[filterModal.fieldId as keyof typeof stringFieldValues] ?? [];
+        const query = filterModal.inputValue.toLowerCase();
+        const suggestions = query
+          ? allValues.filter((v) => v.toLowerCase().includes(query))
+          : allValues;
+        const maxVisible = Math.min(suggestions.length, 10);
+        const fieldDef = FILTER_FIELD_DEFS.find((d) => d.id === filterModal.fieldId);
+
+        // Scroll viewport: keep selectedIndex visible
+        const si = filterModal.selectedIndex;
+        let scrollStart = 0;
+        if (si >= maxVisible) {
+          scrollStart = si - maxVisible + 1;
+        }
+        const visibleSuggestions = suggestions.slice(scrollStart, scrollStart + maxVisible);
+        const hasMore = suggestions.length > maxVisible;
+
+        return (
+          <Modal
+            title={`${fieldDef?.label ?? filterModal.fieldId} (${filterModal.mode})`}
+            hint={`Tab fuzzy/exact | Enter confirm | Esc back${hasMore ? ` | ${suggestions.length} results` : ''}`}
+            onClose={() => setFilterModal({ level: 'fields', selectedIndex: 0 })}
+            width={46}
+            height={maxVisible + 1}
+            termWidth={width}
+            termHeight={height}
+          >
+            <ModalTextInput prefix=" > " value={filterModal.inputValue} fieldWidth={38} />
+            {visibleSuggestions.map((val, vi) => {
+              const actualIndex = scrollStart + vi;
+              const isActive = actualIndex === si;
               return (
-                <box
-                  key={sf.field}
-                  style={{
-                    height: 1,
-                    width: '100%',
-                    backgroundColor: isActive ? '#292e42' : '#1a1b26',
-                  }}
-                  onMouseDown={() => {
-                    if (isActive) {
-                      toggleSortField(sf.field);
-                    } else {
-                      setSortModal({ selectedIndex: i });
-                    }
-                  }}
-                >
-                  <text
-                    content={` ${indicator} ${isActive ? '>' : ' '} ${sf.label}`}
-                    fg={layer ? (isActive ? '#c0caf5' : '#7aa2f7') : (isActive ? '#a9b1d6' : '#565f89')}
-                  />
-                </box>
+                <ModalRow
+                  key={val}
+                  label={`   ${isActive ? '>' : ' '} ${val}`}
+                  fg={isActive ? '#c0caf5' : '#a9b1d6'}
+                  active={isActive}
+                />
               );
             })}
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content=" Enter toggle | Esc close" fg="#565f89" />
-            </box>
-          </box>
-        </box>
+          </Modal>
+        );
+      })()}
+
+      {/* Filter modal — multiselect picker */}
+      {filterModal?.level === 'multiselect-picker' && (() => {
+        const options = MULTISELECT_OPTIONS[filterModal.fieldId] ?? [];
+        const fieldDef = FILTER_FIELD_DEFS.find((d) => d.id === filterModal.fieldId);
+
+        return (
+          <Modal
+            title={fieldDef?.label ?? filterModal.fieldId}
+            hint="Enter/Space toggle | Esc apply & back"
+            onClose={() => setFilterModal({ level: 'fields', selectedIndex: 0 })}
+            width={46}
+            height={options.length}
+            termWidth={width}
+            termHeight={height}
+          >
+            {options.map((opt, i) => {
+              const isActive = i === filterModal.selectedIndex;
+              const isChecked = filterModal.selected.includes(opt.value);
+              return (
+                <ModalRow
+                  key={opt.value}
+                  label={` ${isActive ? '>' : ' '} [${isChecked ? '✓' : ' '}] ${opt.label}`}
+                  fg={isChecked ? (isActive ? '#c0caf5' : '#7aa2f7') : (isActive ? '#a9b1d6' : '#565f89')}
+                  active={isActive}
+                />
+              );
+            })}
+          </Modal>
+        );
+      })()}
+
+      {/* Filter modal — save preset */}
+      {filterModal?.level === 'save-preset' && (
+        <Modal
+          title="Save Filter Preset"
+          onClose={() => setFilterModal({ level: 'fields', selectedIndex: 0 })}
+          hint="Enter save | Esc cancel"
+          width={46}
+          height={1}
+          termWidth={width}
+          termHeight={height}
+        >
+          <ModalTextInput prefix=" Name: " value={filterModal.inputValue} fieldWidth={36} />
+        </Modal>
       )}
     </box>
   );

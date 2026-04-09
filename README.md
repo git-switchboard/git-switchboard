@@ -4,7 +4,7 @@ Monorepo for [git-switchboard](./packages/git-switchboard/) — an interactive T
 
 ## Usage
 
-### Branch Picker
+### Branch picker
 
 ```sh
 git-switchboard              # local branches
@@ -12,7 +12,7 @@ git-switchboard -r           # include remote branches
 git-switchboard -a "Alice"   # filter by author
 ```
 
-### PR Dashboard
+### PR dashboard
 
 ```sh
 git-switchboard pr           # list your open PRs across GitHub

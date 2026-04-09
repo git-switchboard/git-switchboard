@@ -1,0 +1,11 @@
+extends: substitution
+message: "'%s' is redundant. Use '%s' instead."
+level: error
+ignorecase: true
+swap:
+  terminal TUI: TUI
+  TUI interface: TUI
+  CLI interface: CLI
+  GUI interface: GUI
+  API interface: API
+  PR request: PR

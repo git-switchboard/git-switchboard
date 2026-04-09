@@ -19,6 +19,10 @@ import type {
   ReviewInfo,
   UserPullRequest,
 } from '../src/types.js';
+import { DEFAULT_SORT, EMPTY_FILTERS, defaultColumns } from '../src/types.js';
+import { PR_COLUMN_DEFS } from '../src/pr-columns.js';
+import type { PR } from '../src/data/index.js';
+import type { DataLayer } from '../src/data/index.js';
 import type { LocalRepo } from '../src/scanner.js';
 import type { PrScreen } from '../src/store.js';
 
@@ -102,6 +106,7 @@ const NOW = new Date();
 
 const MOCK_PRS: UserPullRequest[] = [
   {
+    nodeId: 'PR_42',
     number: 42,
     title: 'Add interactive PR dashboard with CI status',
     state: 'open',
@@ -117,6 +122,7 @@ const MOCK_PRS: UserPullRequest[] = [
     role: 'author',
   },
   {
+    nodeId: 'PR_127',
     number: 127,
     title: 'Refactor auth middleware for OAuth2 flow',
     state: 'open',
@@ -132,6 +138,7 @@ const MOCK_PRS: UserPullRequest[] = [
     role: 'assigned',
   },
   {
+    nodeId: 'PR_89',
     number: 89,
     title: 'Add branch filter by author name',
     state: 'open',
@@ -147,6 +154,7 @@ const MOCK_PRS: UserPullRequest[] = [
     role: 'both',
   },
   {
+    nodeId: 'PR_15',
     number: 15,
     title: 'Fix unicode table rendering on Windows',
     state: 'open',
@@ -162,6 +170,7 @@ const MOCK_PRS: UserPullRequest[] = [
     role: 'author',
   },
   {
+    nodeId: 'PR_8',
     number: 8,
     title: 'Update Homebrew formula for v0.3.0',
     state: 'open',
@@ -177,6 +186,7 @@ const MOCK_PRS: UserPullRequest[] = [
     role: 'author',
   },
   {
+    nodeId: 'PR_301',
     number: 301,
     title: 'Add retry for failed CI checks from TUI',
     state: 'open',
@@ -193,95 +203,118 @@ const MOCK_PRS: UserPullRequest[] = [
   },
 ];
 
-const MOCK_CI_CACHE = new Map<string, CIInfo>([
-  [
-    'git-switchboard/git-switchboard#42',
-    {
-      status: 'passing',
-      checks: [
-        { id: 1, name: 'build', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null },
-        { id: 2, name: 'test', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null },
-        { id: 3, name: 'lint', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null },
-      ],
-      fetchedAt: Date.now(),
-    },
-  ],
-  [
-    'acme/backend-api#127',
-    {
-      status: 'failing',
-      checks: [
-        { id: 4, name: 'build', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null },
-        { id: 5, name: 'test', status: 'completed', conclusion: 'failure', detailsUrl: null, startedAt: null, completedAt: null },
-      ],
-      fetchedAt: Date.now(),
-    },
-  ],
-  [
-    'git-switchboard/git-switchboard#89',
-    {
-      status: 'passing',
-      checks: [
-        { id: 6, name: 'build', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null },
-        { id: 7, name: 'test', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null },
-      ],
-      fetchedAt: Date.now(),
-    },
-  ],
-  [
-    'opentui/opentui#15',
-    {
-      status: 'passing',
-      checks: [
-        { id: 8, name: 'ci', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null },
-      ],
-      fetchedAt: Date.now(),
-    },
-  ],
-  [
-    'acme/frontend#301',
-    {
-      status: 'failing',
-      checks: [
-        { id: 9, name: 'build', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null },
-        { id: 10, name: 'e2e', status: 'completed', conclusion: 'failure', detailsUrl: null, startedAt: null, completedAt: null },
-        { id: 11, name: 'lint', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null },
-      ],
-      fetchedAt: Date.now(),
-    },
-  ],
-]);
+// ── Enriched PR entities (CI, review, mergeable baked in) ──
 
-const MOCK_REVIEW_CACHE = new Map<string, ReviewInfo>([
-  [
-    'git-switchboard/git-switchboard#42',
+function enrichPR(
+  pr: UserPullRequest,
+  ci?: CIInfo,
+  review?: ReviewInfo,
+  mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN',
+): PR {
+  return { ...pr, ci, review, mergeable };
+}
+
+const MOCK_ENRICHED_PRS: PR[] = [
+  enrichPR(
+    MOCK_PRS[0]!,
+    {
+      status: 'passing',
+      checks: [
+        { id: 1, name: 'build', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null, appSlug: 'github-actions' },
+        { id: 2, name: 'test', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null, appSlug: 'github-actions' },
+        { id: 3, name: 'lint', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null, appSlug: 'github-actions' },
+      ],
+      fetchedAt: Date.now(),
+    },
     { status: 'approved', reviewers: [{ login: 'alex', state: 'APPROVED', submittedAt: '' }], fetchedAt: Date.now() },
-  ],
-  [
-    'acme/backend-api#127',
+    'MERGEABLE',
+  ),
+  enrichPR(
+    MOCK_PRS[1]!,
+    {
+      status: 'failing',
+      checks: [
+        { id: 4, name: 'build', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null, appSlug: 'github-actions' },
+        { id: 5, name: 'test', status: 'completed', conclusion: 'failure', detailsUrl: null, startedAt: null, completedAt: null, appSlug: 'github-actions' },
+      ],
+      fetchedAt: Date.now(),
+    },
     { status: 'changes-requested', reviewers: [{ login: 'sarah', state: 'CHANGES_REQUESTED', submittedAt: '' }], fetchedAt: Date.now() },
-  ],
-  [
-    'git-switchboard/git-switchboard#89',
+    'CONFLICTING',
+  ),
+  enrichPR(
+    MOCK_PRS[2]!,
+    {
+      status: 'passing',
+      checks: [
+        { id: 6, name: 'build', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null, appSlug: 'github-actions' },
+        { id: 7, name: 'test', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null, appSlug: 'github-actions' },
+      ],
+      fetchedAt: Date.now(),
+    },
     { status: 'needs-review', reviewers: [], fetchedAt: Date.now() },
-  ],
-  [
-    'opentui/opentui#15',
+    'MERGEABLE',
+  ),
+  enrichPR(
+    MOCK_PRS[3]!,
+    {
+      status: 'passing',
+      checks: [
+        { id: 8, name: 'ci', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null, appSlug: 'github-actions' },
+      ],
+      fetchedAt: Date.now(),
+    },
     { status: 'approved', reviewers: [{ login: 'maintainer', state: 'APPROVED', submittedAt: '' }], fetchedAt: Date.now() },
-  ],
-  [
-    'acme/frontend#301',
+    'MERGEABLE',
+  ),
+  enrichPR(MOCK_PRS[4]!, undefined, undefined, 'UNKNOWN'),
+  enrichPR(
+    MOCK_PRS[5]!,
+    {
+      status: 'failing',
+      checks: [
+        { id: 9, name: 'build', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null, appSlug: 'github-actions' },
+        { id: 10, name: 'e2e', status: 'completed', conclusion: 'failure', detailsUrl: null, startedAt: null, completedAt: null, appSlug: 'github-actions' },
+        { id: 11, name: 'lint', status: 'completed', conclusion: 'success', detailsUrl: null, startedAt: null, completedAt: null, appSlug: 'github-actions' },
+      ],
+      fetchedAt: Date.now(),
+    },
     { status: 're-review-needed', reviewers: [{ login: 'bob', state: 'DISMISSED', submittedAt: '' }], fetchedAt: Date.now() },
-  ],
-]);
+    'CONFLICTING',
+  ),
+];
 
-const MOCK_MERGEABLE_CACHE: Record<string, 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'> = {
-  'git-switchboard/git-switchboard#42': 'MERGEABLE',
-  'acme/backend-api#127': 'CONFLICTING',
-  'git-switchboard/git-switchboard#89': 'MERGEABLE',
-  'opentui/opentui#15': 'MERGEABLE',
-  'git-switchboard/homebrew-tap#8': 'UNKNOWN',
-  'acme/frontend#301': 'CONFLICTING',
+// ── Mock DataLayer (only the subset PrApp actually calls) ──
+
+const MOCK_DATA_LAYER: DataLayer = {
+  query: {
+    linearIssuesForPr: () => [],
+    prsForLinearIssue: () => [],
+    prsForBranch: () => [],
+    branchesForPr: () => [],
+    checkoutsForPr: () => [],
+    prsForCheckout: () => [],
+    branchesForCheckout: () => [],
+    checkoutsForBranch: () => [],
+    linearIssuesForBranch: () => [],
+    branchesForLinearIssue: () => [],
+  },
+  loading: {
+    isPrLoading: () => false,
+    isLinearLoading: () => false,
+    isPrListLoading: () => false,
+    loadingPrKeys: () => new Set(),
+    loadingLinearKeys: () => new Set(),
+    destroy: () => {},
+  },
+  // Stubs — PrApp only reads query + loading
+  bus: { on: () => () => {}, off: () => {}, emit: () => {}, history: [] } as unknown as DataLayer['bus'],
+  stores: {} as unknown as DataLayer['stores'],
+  relations: {} as unknown as DataLayer['relations'],
+  ingest: {} as unknown as DataLayer['ingest'],
+  hydrate: async () => {},
+  persist: async () => {},
+  destroy: () => {},
 };
 
 // The PR used for detail + clone-prompt demo frames
@@ -291,25 +324,25 @@ const DETAIL_CI: CIInfo = {
   status: 'failing',
   checks: [
     {
-      id: 4, name: 'build', status: 'completed', conclusion: 'success',
+      id: 4, name: 'build', status: 'completed', conclusion: 'success', appSlug: 'github-actions',
       detailsUrl: 'https://github.com/acme/backend-api/actions/runs/4',
       startedAt: new Date(NOW.getTime() - 8 * 60_000).toISOString(),
       completedAt: new Date(NOW.getTime() - 5 * 60_000).toISOString(),
     },
     {
-      id: 5, name: 'test', status: 'completed', conclusion: 'failure',
+      id: 5, name: 'test', status: 'completed', conclusion: 'failure', appSlug: 'github-actions',
       detailsUrl: 'https://github.com/acme/backend-api/actions/runs/5',
       startedAt: new Date(NOW.getTime() - 7 * 60_000).toISOString(),
       completedAt: new Date(NOW.getTime() - 4 * 60_000).toISOString(),
     },
     {
-      id: 6, name: 'lint', status: 'completed', conclusion: 'success',
+      id: 6, name: 'lint', status: 'completed', conclusion: 'success', appSlug: 'github-actions',
       detailsUrl: 'https://github.com/acme/backend-api/actions/runs/6',
       startedAt: new Date(NOW.getTime() - 6 * 60_000).toISOString(),
       completedAt: new Date(NOW.getTime() - 3 * 60_000).toISOString(),
     },
     {
-      id: 7, name: 'typecheck', status: 'completed', conclusion: 'success',
+      id: 7, name: 'typecheck', status: 'completed', conclusion: 'success', appSlug: null,
       detailsUrl: null,
       startedAt: new Date(NOW.getTime() - 5 * 60_000).toISOString(),
       completedAt: new Date(NOW.getTime() - 2 * 60_000).toISOString(),
@@ -360,33 +393,111 @@ interface SerializedFrame {
   }[];
 }
 
+// ── Frame validation ──
+
+const ERROR_PATTERNS = [
+  /\bError\b/,
+  /\bTypeError\b/,
+  /\bReferenceError\b/,
+  /\bSyntaxError\b/,
+  /\bRangeError\b/,
+  /\bCannot read propert/,
+  /\bundefined is not/,
+  /\bnull is not/,
+  /\bis not a function\b/,
+  /\bUnhandled\b/,
+  /\buncaught\b/i,
+  /\bstack trace\b/i,
+  /\bat [\w.]+\s+\(/,  // stack frame like "at Module._compile ("
+];
+
+/**
+ * Validates a captured frame to ensure it contains real TUI output
+ * rather than error messages from a misconfigured component.
+ */
+function validateFrame(
+  frame: SerializedFrame,
+  name: string,
+  expectedCols: number,
+  expectedRows: number,
+): string[] {
+  const errors: string[] = [];
+
+  // Check dimension consistency
+  if (frame.cols !== expectedCols) {
+    errors.push(`${name}: expected ${expectedCols} cols, got ${frame.cols}`);
+  }
+  if (frame.rows !== expectedRows) {
+    errors.push(`${name}: expected ${expectedRows} rows, got ${frame.rows}`);
+  }
+  if (frame.lines.length !== frame.rows) {
+    errors.push(
+      `${name}: rows=${frame.rows} but lines.length=${frame.lines.length}`,
+    );
+  }
+
+  // Extract all visible text from the frame
+  const allText = frame.lines
+    .map((line) => line.spans.map((s) => s.text).join(''))
+    .join('\n');
+
+  // Check for error patterns in the rendered text
+  for (const pattern of ERROR_PATTERNS) {
+    const match = allText.match(pattern);
+    if (match) {
+      errors.push(`${name}: frame contains error text: "${match[0]}"`);
+    }
+  }
+
+  // Check content density — at least 10% of lines should have non-whitespace content
+  const nonEmptyLines = frame.lines.filter((line) =>
+    line.spans.some((s) => s.text.trim().length > 0),
+  );
+  const density = nonEmptyLines.length / frame.lines.length;
+  if (density < 0.1) {
+    errors.push(
+      `${name}: frame is nearly empty (${nonEmptyLines.length}/${frame.lines.length} lines have content)`,
+    );
+  }
+
+  return errors;
+}
+
+type CaptureResult =
+  | { ok: true; frame: SerializedFrame }
+  | { ok: false; error: string };
+
 async function captureFrame(
   element: JSX.Element,
   width: number,
   height: number
-): Promise<SerializedFrame> {
-  const { renderOnce, captureSpans, renderer } = await testRender(element, {
-    width,
-    height,
-  });
-  await renderOnce();
-  const frame = captureSpans();
+): Promise<CaptureResult> {
+  try {
+    const { renderOnce, captureSpans, renderer } = await testRender(element, {
+      width,
+      height,
+    });
+    await renderOnce();
+    const frame = captureSpans();
 
-  const serialized: SerializedFrame = {
-    cols: frame.cols,
-    rows: frame.rows,
-    lines: frame.lines.map((line) => ({
-      spans: line.spans.map((span) => ({
-        text: span.text,
-        fg: [span.fg.r, span.fg.g, span.fg.b, span.fg.a],
-        bg: [span.bg.r, span.bg.g, span.bg.b, span.bg.a],
-        width: span.width,
+    const serialized: SerializedFrame = {
+      cols: frame.cols,
+      rows: frame.rows,
+      lines: frame.lines.map((line) => ({
+        spans: line.spans.map((span) => ({
+          text: span.text,
+          fg: [span.fg.r, span.fg.g, span.fg.b, span.fg.a],
+          bg: [span.bg.r, span.bg.g, span.bg.b, span.bg.a],
+          width: span.width,
+        })),
       })),
-    })),
-  };
+    };
 
-  renderer.destroy();
-  return serialized;
+    renderer.destroy();
+    return { ok: true, frame: serialized };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 // ── Main ──
@@ -403,22 +514,38 @@ async function main() {
   const prDetailKeybinds = PR_COMMAND.views['pr-detail'].keybinds;
   const clonePromptKeybinds = PR_COMMAND.views['clone-prompt'].keybinds;
 
+  const defaultCols = defaultColumns(PR_COLUMN_DEFS);
+
   const [branchFrame, prFrame, prDetailFrame, clonePromptFrame] = await Promise.all([
+    // ── Branch picker: App needs TuiRouter context ──
     captureFrame(
-      <App
-        keybinds={branchKeybinds}
-        branches={MOCK_BRANCHES}
-        currentUser="craigory"
-        currentUserAliases={['craigory', 'Craigory Coppola']}
-        authorList={[]}
-        initialShowRemote={false}
-        onSelect={() => {}}
-        onExit={() => {}}
-        fetchBranches={() => MOCK_BRANCHES}
+      <TuiRouter
+        views={{
+          'branch-picker': {
+            keybinds: branchKeybinds,
+            render: (_, keybinds) => (
+              <App
+                keybinds={keybinds}
+                branches={MOCK_BRANCHES}
+                currentUser="craigory"
+                currentUserAliases={['craigory', 'Craigory Coppola']}
+                authorList={[]}
+                initialShowRemote={false}
+                worktrees={[]}
+                getWorkingTreeDirtyFiles={() => []}
+                onSelect={() => {}}
+                onExit={() => {}}
+                fetchBranches={() => MOCK_BRANCHES}
+              />
+            ),
+          },
+        }}
+        initialScreen={{ type: 'branch-picker' }}
       />,
       80,
       14
     ),
+    // ── PR dashboard: PrApp needs DataLayer + enriched PR[] + state setters ──
     captureFrame(
       <TuiRouter
         views={{
@@ -427,17 +554,27 @@ async function main() {
             render: (_, keybinds) => (
               <PrApp
                 keybinds={keybinds}
-                prs={MOCK_PRS}
+                prs={MOCK_ENRICHED_PRS}
                 localRepos={[]}
-                ciCache={MOCK_CI_CACHE}
-                reviewCache={MOCK_REVIEW_CACHE}
-                mergeableCache={MOCK_MERGEABLE_CACHE}
+                dataLayer={MOCK_DATA_LAYER}
                 repoMode={null}
                 refreshing={false}
-                onFetchCI={async () => {}}
+                searchQuery=""
+                setSearchQuery={() => {}}
+                sortLayers={DEFAULT_SORT}
+                setSortLayers={() => {}}
+                columns={defaultCols}
+                setColumns={() => {}}
+                filters={EMPTY_FILTERS}
+                setFilters={() => {}}
+                selectedIndex={0}
+                setSelectedIndex={() => {}}
+                scrollOffset={0}
+                setScrollOffset={() => {}}
+                onFetchCI={() => {}}
                 onPrefetchDetails={() => {}}
                 onRetryChecks={async () => ''}
-                onRefreshAll={async () => {}}
+                onRefreshAll={() => {}}
                 onExit={() => {}}
               />
             ),
@@ -448,6 +585,7 @@ async function main() {
       96,
       14
     ),
+    // ── PR detail view ──
     captureFrame(
       <TuiRouter<PrScreen>
         views={{
@@ -459,6 +597,7 @@ async function main() {
                 pr={(screen as Extract<PrScreen, { type: 'pr-detail' }>).pr}
                 ci={DETAIL_CI}
                 review={DETAIL_REVIEW}
+                linearIssues={[]}
                 ciLoading={false}
                 matches={CLONE_MATCHES}
                 watched={false}
@@ -479,6 +618,7 @@ async function main() {
       96,
       20
     ),
+    // ── Clone prompt ──
     captureFrame(
       <TuiRouter<PrScreen>
         views={{
@@ -506,15 +646,40 @@ async function main() {
     ),
   ]);
 
+  // Collect render failures and content validation errors
+  const results = {
+    branchPicker: { result: branchFrame, cols: 80, rows: 14 },
+    prDashboard: { result: prFrame, cols: 96, rows: 14 },
+    prDetail: { result: prDetailFrame, cols: 96, rows: 20 },
+    clonePrompt: { result: clonePromptFrame, cols: 80, rows: 12 },
+  } as const;
+
+  const validationErrors: string[] = [];
+  for (const [name, { result, cols, rows }] of Object.entries(results)) {
+    if (!result.ok) {
+      validationErrors.push(`${name}: render crashed — ${result.error}`);
+    } else {
+      validationErrors.push(...validateFrame(result.frame, name, cols, rows));
+    }
+  }
+
+  if (validationErrors.length > 0) {
+    console.error('Frame validation failed:');
+    for (const err of validationErrors) {
+      console.error(`  - ${err}`);
+    }
+    process.exit(1);
+  }
+
+  const frames = {
+    branchPicker: (branchFrame as Extract<CaptureResult, { ok: true }>).frame,
+    prDashboard: (prFrame as Extract<CaptureResult, { ok: true }>).frame,
+    prDetail: (prDetailFrame as Extract<CaptureResult, { ok: true }>).frame,
+    clonePrompt: (clonePromptFrame as Extract<CaptureResult, { ok: true }>).frame,
+  };
+
   mkdirSync(dirname(outputPath), { recursive: true });
-  writeFileSync(
-    outputPath,
-    JSON.stringify(
-      { branchPicker: branchFrame, prDashboard: prFrame, prDetail: prDetailFrame, clonePrompt: clonePromptFrame },
-      null,
-      2
-    )
-  );
+  writeFileSync(outputPath, JSON.stringify(frames, null, 2));
   console.log(`Wrote demo frames to ${outputPath}`);
 
   process.exit(0);

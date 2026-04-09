@@ -164,9 +164,12 @@ const gitSwitchboard = cli('git-switchboard', {
             resolveGitHubToken,
             fetchUserPRs,
             fetchRepoPRs,
-            readCachedPRsSnapshot,
+            fetchPRDetailsBatch,
           } =
             await import('./github.js');
+          const { createDataLayer } = await import('./data/index.js');
+          const { createGithubFetcher } = await import('./data/fetchers/github.js');
+          const { createLinearFetcher } = await import('./data/fetchers/linear.js');
           const { scanForRepos } = await import('./scanner.js');
           const { resolveEditor, findInstalledEditors, openInEditor, openInEditorDetached } =
             await import('./editor.js');
@@ -178,7 +181,7 @@ const gitSwitchboard = cli('git-switchboard', {
           // 1. Resolve token (TokenStore first, then legacy fallbacks)
           const { resolveToken } = await import('./token-store.js');
           const { GITHUB_PROVIDER, LINEAR_PROVIDER } = await import('./providers.js');
-          const { fetchLinearData, readCachedLinearSnapshot, resolveLinearIssue } = await import('./linear.js');
+          const { fetchLinearData, readCachedLinearSnapshot } = await import('./linear.js');
           const token =
             (await resolveToken(GITHUB_PROVIDER, { flagValue: args['github-token'] })) ??
             resolveGitHubToken(args['github-token']);
@@ -190,6 +193,43 @@ const gitSwitchboard = cli('git-switchboard', {
           }
 
           const linearToken = await resolveToken(LINEAR_PROVIDER);
+
+          // Create DataLayer with cache dir
+          const { cacheDir } = await import('./cache.js');
+          const dataLayer = createDataLayer({ cacheDir: cacheDir() });
+          await dataLayer.hydrate();
+
+          // Register fetch listeners
+          createGithubFetcher(
+            dataLayer.bus, dataLayer.ingest, dataLayer.stores,
+            {
+              fetchPRDetailsBatch: (prs) => fetchPRDetailsBatch(token, prs),
+              fetchAllPRs: (mode) => mode
+                ? fetchRepoPRs(token, mode)
+                : fetchUserPRs(token),
+            }
+          );
+          if (linearToken) {
+            const { fetchIssuesByIdentifier } = await import('./linear.js');
+            createLinearFetcher(dataLayer.bus, dataLayer.ingest, {
+              fetchIssuesByIdentifier: (identifiers) =>
+                fetchIssuesByIdentifier(linearToken, identifiers),
+              fetchAll: async () => {
+                // Always fetch fresh from the API — hydration already loaded the cache,
+                // so returning cached data here would be a no-op.
+                const cached = await readCachedLinearSnapshot(linearToken);
+                const data = await fetchLinearData(linearToken)
+                  .catch(() => cached?.data ?? null);
+                if (!data) return { issues: [], attachments: [] };
+                return {
+                  issues: [...data.issues.values()],
+                  attachments: [...data.attachments.entries()].map(
+                    ([prUrl, issueId]) => ({ prUrl, issueIdentifier: issueId })
+                  ),
+                };
+              },
+            });
+          }
 
           // Handle Ctrl+C cleanly — bypass React unmount to avoid yoga WASM crash
           const sigintHandler = () => {
@@ -243,22 +283,18 @@ const gitSwitchboard = cli('git-switchboard', {
             return [];
           });
 
-          const linearPromise = linearToken
-            ? (async () => {
-                const cached = await readCachedLinearSnapshot(linearToken);
-                if (cached && !cached.isStale) return cached.data;
-                return fetchLinearData(linearToken).catch(() => cached?.data ?? null);
-              })()
-            : Promise.resolve(null);
+          // Kick off Linear bulk fetch through the data layer's event system
+          if (linearToken) {
+            dataLayer.bus.emit('linear:fetchAll', {});
+          }
 
-          // Check for cached PR data for instant startup, including stale snapshots.
-          const cachedPRs = await readCachedPRsSnapshot(token, repoMode ?? undefined);
-          let usedCache = false;
+          // Use hydrated data-layer PRs for instant startup if available,
+          // otherwise fetch fresh from the API.
+          const hydratedPRs = dataLayer.stores.prs.getAll();
+          let usedCache = hydratedPRs.length > 0;
 
-          // Use cached PRs immediately when available and revalidate in the background later.
-          const prPromise = cachedPRs
-            ? Promise.resolve(cachedPRs.result)
-            : repoMode
+          if (!usedCache) {
+            const prResult = await (repoMode
               ? fetchRepoPRs(token, repoMode, (p) => {
                   prProgress = { ...p };
                   renderLoading();
@@ -266,26 +302,22 @@ const gitSwitchboard = cli('git-switchboard', {
               : fetchUserPRs(token, (p) => {
                   prProgress = { ...p };
                   renderLoading();
-                });
-          if (cachedPRs) usedCache = true;
+                })
+            ).catch((error: unknown) => {
+              try {
+                renderer.destroy();
+              } catch {
+                // ignore teardown failures while aborting startup
+              }
+              console.error(
+                error instanceof Error ? error.message : String(error)
+              );
+              process.exit(1);
+            });
+            dataLayer.ingest.ingestPRs(prResult.prs.map(pr => ({ ...pr })));
+          }
 
-          const prResult = await prPromise.catch((error: unknown) => {
-            try {
-              renderer.destroy();
-            } catch {
-              // ignore teardown failures while aborting startup
-            }
-            console.error(
-              error instanceof Error ? error.message : String(error)
-            );
-            process.exit(1);
-          });
-          const { prs } = prResult;
-
-          // Seed caches from the initial search query
-          const ciCache = new Map(prResult.ciCache);
-          const reviewCache = new Map(prResult.reviewCache);
-          const mergeableCache = new Map(prResult.mergeableCache);
+          const prs = dataLayer.stores.prs.getAll();
 
           if (prs.length === 0) {
             renderer.destroy();
@@ -313,33 +345,31 @@ const gitSwitchboard = cli('git-switchboard', {
               import('./store.js').PrRouterResult | null
             >();
 
-          const linearData = await linearPromise;
-          const linearCache = new Map<string, import('./types.js').LinearIssue>();
-          if (linearData) {
-            for (const pr of prs) {
-              const issue = resolveLinearIssue(
-                linearData,
-                pr.headRef,
-                pr.title,
-                undefined, // body not available in list query
-                pr.url
-              );
-              if (issue) linearCache.set(`${pr.repoId}#${pr.number}`, issue);
-            }
-          }
-
           const initialLocalRepos = scanDone ? await scanPromise : [];
 
+          // Ingest scanned repos as checkouts
+          if (initialLocalRepos.length > 0) {
+            dataLayer.ingest.ingestCheckouts(initialLocalRepos.map(repo => ({
+              path: repo.path,
+              remoteUrl: repo.remoteUrl ?? null,
+              repoId: repo.repoId ?? null,
+              currentBranch: repo.currentBranch ?? '',
+              isWorktree: repo.isWorktree,
+              parentCheckoutKey: null,
+            })));
+          }
+
+          const { readColumnConfig } = await import('./config.js');
+          const { PR_COLUMN_DEFS, PR_VIEW_NAME } = await import('./pr-columns.js');
+          const columns = await readColumnConfig(PR_VIEW_NAME, PR_COLUMN_DEFS);
+
           const store = createPrStore({
-            prs,
+            dataLayer,
             localRepos: initialLocalRepos,
             repoScanDone: scanDone,
-            ciCache,
-            reviewCache,
-            mergeableCache,
-            linearCache,
             repoMode,
             token,
+            columns,
             copyToClipboard,
             editor,
             installedEditors,
@@ -379,12 +409,21 @@ const gitSwitchboard = cli('git-switchboard', {
           if (!scanDone) {
             void scanPromise.then((repos) => {
               store.getState().setLocalRepos(repos, true);
+              // Also ingest into DataLayer
+              dataLayer.ingest.ingestCheckouts(repos.map(repo => ({
+                path: repo.path,
+                remoteUrl: repo.remoteUrl ?? null,
+                repoId: repo.repoId ?? null,
+                currentBranch: repo.currentBranch ?? '',
+                isWorktree: repo.isWorktree,
+                parentCheckoutKey: null,
+              })));
             });
           }
 
           loadingActive = false;
           root.render(
-            createElement(PrRouter, { store }) as React.ReactNode
+            createElement(PrRouter, { store, dataLayer }) as React.ReactNode
           );
 
           // If we used cached data, trigger a background refresh
@@ -536,25 +575,46 @@ const gitSwitchboard = cli('git-switchboard', {
         }
       }
 
-      // Enrich with Linear data if possible
+      // Enrich with Linear data via DataLayer
       const linearToken = await resolveToken(LINEAR_PROVIDER);
       if (linearToken) {
         try {
-          const { fetchLinearData, readCachedLinearSnapshot, matchBranchesToLinear } = await import('./linear.js');
+          const { createDataLayer: createBranchDataLayer } = await import('./data/index.js');
+          const { fetchLinearData, readCachedLinearSnapshot } = await import('./linear.js');
+
+          const branchDataLayer = createBranchDataLayer();
+
+          // Ingest branches so discovery effects can parse Linear patterns from names
+          branchDataLayer.ingest.ingestBranches(
+            branches.map((b) => ({
+              name: b.name,
+              isRemote: b.isRemote,
+              isCurrent: b.isCurrent,
+              lastCommitDate: b.date?.toISOString(),
+            }))
+          );
+
+          // Fetch and ingest Linear data — effects auto-link branches to issues
           const cached = await readCachedLinearSnapshot(linearToken);
           const linearData = cached && !cached.isStale
             ? cached.data
             : await fetchLinearData(linearToken).catch(() => cached?.data ?? null);
           if (linearData) {
-            const linearMap = matchBranchesToLinear(
-              branches.map((b) => b.name),
-              linearData
-            );
-            branches = branches.map((b) => ({
-              ...b,
-              linearIssue: linearMap.get(b.name),
-            }));
+            branchDataLayer.ingest.ingestLinearData({
+              issues: [...linearData.issues.values()],
+              attachments: [...linearData.attachments.entries()].map(
+                ([prUrl, issueId]) => ({ prUrl, issueIdentifier: issueId })
+              ),
+            });
           }
+
+          // Derive linearIssue from DataLayer relations
+          branches = branches.map((b) => {
+            const issues = branchDataLayer.query.linearIssuesForBranch(b.name);
+            return { ...b, linearIssue: issues[0] };
+          });
+
+          branchDataLayer.destroy();
         } catch {
           // Linear enrichment is optional — don't block on failure
         }

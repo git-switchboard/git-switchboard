@@ -66,6 +66,68 @@ test('prefers the newer workflow run over a later rerun of an older run', () => 
   assert.equal(selected[0].conclusion, 'success');
 });
 
+test('StatusContext candidates (commit statuses) are included alongside CheckRun candidates', () => {
+  const checkRun = createCandidate({
+    id: 100,
+    name: 'main-linux',
+    appSlug: 'github-actions',
+    workflowName: 'CI',
+    conclusion: 'success',
+  });
+  const statusContext = createCandidate({
+    id: 0,
+    name: 'linux / affected --targets=lint,test,build',
+    appSlug: null,
+    workflowName: null,
+    workflowRunId: null,
+    workflowRunNumber: null,
+    workflowRunCreatedAt: null,
+    suiteId: null,
+    suiteCreatedAt: null,
+    matchingPullRequestNumbers: [],
+    conclusion: 'failure',
+    detailsUrl: 'https://staging.nx.app/runs/abc123',
+  });
+
+  const selected = selectRelevantCheckRuns([checkRun, statusContext], 35227);
+
+  assert.equal(selected.length, 2);
+  const names = selected.map((c) => c.name).sort();
+  assert.deepEqual(names, [
+    'linux / affected --targets=lint,test,build',
+    'main-linux',
+  ]);
+});
+
+test('StatusContext candidates with same name are deduplicated to latest', () => {
+  const older = createCandidate({
+    id: 0,
+    name: 'netlify/nx-dev/deploy-preview',
+    appSlug: null,
+    workflowName: null,
+    workflowRunId: null,
+    workflowRunNumber: null,
+    workflowRunCreatedAt: null,
+    suiteId: null,
+    suiteCreatedAt: null,
+    matchingPullRequestNumbers: [],
+    conclusion: 'failure',
+    startedAt: '2026-04-09T03:00:00Z',
+    completedAt: '2026-04-09T03:00:00Z',
+  });
+  const newer = createCandidate({
+    ...older,
+    conclusion: 'success',
+    startedAt: '2026-04-09T03:16:55Z',
+    completedAt: '2026-04-09T03:16:55Z',
+  });
+
+  const selected = selectRelevantCheckRuns([older, newer], 35227);
+
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].conclusion, 'success');
+});
+
 test('keeps same-named jobs from different workflows separate', () => {
   const buildA = createCandidate({
     id: 10,

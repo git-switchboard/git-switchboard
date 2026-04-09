@@ -223,6 +223,78 @@ async function fetchAttachments(
 
 const LINEAR_CACHE_MAX_AGE = 60 * 60 * 1000; // 1 hour
 
+// ─── Fetch issues by identifier ────────────────────────────────
+
+const SEARCH_ISSUES_QUERY = `
+  query SearchIssues($term: String!) {
+    searchIssues(term: $term, first: 10) {
+      nodes {
+        id
+        identifier
+        title
+        state { name }
+        priority
+        assignee { name }
+        url
+        team { key }
+      }
+    }
+  }
+`;
+
+interface SearchIssuesResponse {
+  searchIssues: {
+    nodes: {
+      id: string;
+      identifier: string;
+      title: string;
+      state: { name: string };
+      priority: number;
+      assignee: { name: string } | null;
+      url: string;
+      team: { key: string };
+    }[];
+  };
+}
+
+export async function fetchIssuesByIdentifier(
+  token: string,
+  identifiers: string[]
+): Promise<LinearIssue[]> {
+  if (identifiers.length === 0) return [];
+
+  // Search each identifier individually — Linear's searchIssues takes a single term
+  // Batch them with Promise.allSettled to handle partial failures
+  const results = await Promise.allSettled(
+    identifiers.map(async (identifier) => {
+      const data = await linearGraphQL<SearchIssuesResponse>(
+        token,
+        SEARCH_ISSUES_QUERY,
+        { term: identifier }
+      );
+      // Filter to exact identifier match (search may return fuzzy results)
+      return data.searchIssues.nodes
+        .filter((node) => node.identifier === identifier)
+        .map((node) => ({
+          id: node.id,
+          identifier: node.identifier,
+          title: node.title,
+          status: node.state.name,
+          priority: node.priority,
+          assignee: node.assignee?.name ?? null,
+          url: node.url,
+          teamKey: node.team.key,
+        }));
+    })
+  );
+
+  return results
+    .filter((r): r is PromiseFulfilledResult<LinearIssue[]> => r.status === 'fulfilled')
+    .flatMap((r) => r.value);
+}
+
+// ─── Caching ───────────────────────────────────────────────────
+
 interface CachedLinearPayload {
   issues: Record<string, LinearIssue>;
   attachments: Record<string, string>;

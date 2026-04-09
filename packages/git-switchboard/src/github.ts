@@ -1,8 +1,8 @@
 import { execSync } from 'node:child_process';
 import { Octokit } from '@octokit/rest';
-import { selectRelevantCheckRuns } from './check-selection.js';
+import { selectRelevantCheckRuns, type CheckRunCandidate } from './check-selection.js';
 import { execute, graphql, type ResultOf } from './graphql.js';
-import { hashKey, readCache, readCacheEntry, writeCache } from './cache.js';
+import { hashKey, readCache, writeCache } from './cache.js';
 import type {
   CheckRun,
   CIInfo,
@@ -33,8 +33,15 @@ export function ghCliToken(): string | undefined {
 export const rateLimit: { current: ProviderRateLimit | null } = { current: null };
 
 /** Create an Octokit instance that tracks rate limit from response headers */
+const silentLogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+};
+
 export function createOctokit(token: string): Octokit {
-  const octokit = new Octokit({ auth: token });
+  const octokit = new Octokit({ auth: token, log: silentLogger });
   octokit.hook.after('request', (response) => {
     const h = response.headers as Record<string, string | undefined>;
     const remaining = h['x-ratelimit-remaining'];
@@ -237,8 +244,9 @@ type PullRequestSearchNode = Extract<SearchNode, { __typename: 'PullRequest' }>;
 
 type SearchResult = ResultOf<typeof SEARCH_USER_PRS>;
 
-interface StatusContextNodeInput {
+interface StatusCheckContextNodeInput {
   __typename?: string | null;
+  // ── CheckRun fields ──
   databaseId?: number | null;
   name?: string | null;
   status?: string | null;
@@ -266,6 +274,12 @@ interface StatusContextNodeInput {
       } | null;
     } | null;
   } | null;
+  // ── StatusContext fields ──
+  context?: string | null;
+  state?: string | null;
+  description?: string | null;
+  targetUrl?: string | null;
+  createdAt?: string | null;
 }
 
 interface ReviewNodeGraphInput {
@@ -275,6 +289,9 @@ interface ReviewNodeGraphInput {
 }
 
 interface PullRequestDetailsNodeInput {
+  body?: string | null;
+  additions?: number | null;
+  deletions?: number | null;
   mergeable?: string | null;
   commits: {
     nodes?: Array<{
@@ -282,7 +299,7 @@ interface PullRequestDetailsNodeInput {
         committedDate?: string | null;
         statusCheckRollup?: {
           contexts?: {
-            nodes?: readonly (StatusContextNodeInput | null)[] | null;
+            nodes?: readonly (StatusCheckContextNodeInput | null)[] | null;
           } | null;
         } | null;
       } | null;
@@ -293,41 +310,81 @@ interface PullRequestDetailsNodeInput {
   } | null;
 }
 
-function extractChecksFromStatusContextNodes(
-  contextNodes: readonly (StatusContextNodeInput | null)[],
+/**
+ * Map a StatusContext `state` (SUCCESS | FAILURE | PENDING | ERROR | EXPECTED)
+ * to the CheckRun `status` + `conclusion` pair used throughout the app.
+ */
+function mapStatusContextState(state: string): {
+  status: CheckRun['status'];
+  conclusion: string | null;
+} {
+  switch (state.toUpperCase()) {
+    case 'SUCCESS':
+      return { status: 'completed', conclusion: 'success' };
+    case 'FAILURE':
+      return { status: 'completed', conclusion: 'failure' };
+    case 'ERROR':
+      return { status: 'completed', conclusion: 'failure' };
+    case 'PENDING':
+      return { status: 'in_progress', conclusion: null };
+    case 'EXPECTED':
+      return { status: 'queued', conclusion: null };
+    default:
+      return { status: 'queued', conclusion: null };
+  }
+}
+
+/** @internal exported for testing */
+export function extractChecksFromStatusContextNodes(
+  contextNodes: readonly (StatusCheckContextNodeInput | null)[],
   pullNumber: number
 ): CheckRun[] {
-  const candidates = contextNodes
-    .filter(
-      (node): node is StatusContextNodeInput & {
-        __typename: 'CheckRun';
-        name: string;
-        checkSuite: NonNullable<StatusContextNodeInput['checkSuite']>;
-      } =>
-        node != null &&
-        node.__typename === 'CheckRun' &&
-        node.name != null &&
-        node.checkSuite != null
-    )
-    .map((node) => ({
-      id: node.databaseId ?? 0,
-      name: node.name,
-      status: (node.status?.toLowerCase() ?? 'queued') as CheckRun['status'],
-      conclusion: node.conclusion?.toLowerCase() ?? null,
-      detailsUrl: node.detailsUrl ?? null,
-      startedAt: node.startedAt ?? null,
-      completedAt: node.completedAt ?? null,
-      appSlug: node.checkSuite.app?.slug ?? null,
-      suiteId: node.checkSuite.databaseId ?? null,
-      suiteCreatedAt: node.checkSuite.createdAt ?? null,
-      workflowRunId: node.checkSuite.workflowRun?.databaseId ?? null,
-      workflowRunNumber: node.checkSuite.workflowRun?.runNumber ?? null,
-      workflowRunCreatedAt: node.checkSuite.workflowRun?.createdAt ?? null,
-      workflowName: node.checkSuite.workflowRun?.workflow?.name ?? null,
-      matchingPullRequestNumbers: (node.checkSuite.matchingPullRequests?.nodes ?? [])
-        .map((matchingPr) => matchingPr?.number ?? null)
-        .filter((number): number is number => number != null),
-    }));
+  const candidates: CheckRunCandidate[] = [];
+
+  for (const node of contextNodes) {
+    if (node == null) continue;
+
+    if (node.__typename === 'CheckRun' && node.name != null && node.checkSuite != null) {
+      candidates.push({
+        id: node.databaseId ?? 0,
+        name: node.name,
+        status: (node.status?.toLowerCase() ?? 'queued') as CheckRun['status'],
+        conclusion: node.conclusion?.toLowerCase() ?? null,
+        detailsUrl: node.detailsUrl ?? null,
+        startedAt: node.startedAt ?? null,
+        completedAt: node.completedAt ?? null,
+        appSlug: node.checkSuite.app?.slug ?? null,
+        suiteId: node.checkSuite.databaseId ?? null,
+        suiteCreatedAt: node.checkSuite.createdAt ?? null,
+        workflowRunId: node.checkSuite.workflowRun?.databaseId ?? null,
+        workflowRunNumber: node.checkSuite.workflowRun?.runNumber ?? null,
+        workflowRunCreatedAt: node.checkSuite.workflowRun?.createdAt ?? null,
+        workflowName: node.checkSuite.workflowRun?.workflow?.name ?? null,
+        matchingPullRequestNumbers: (node.checkSuite.matchingPullRequests?.nodes ?? [])
+          .map((matchingPr) => matchingPr?.number ?? null)
+          .filter((n): n is number => n != null),
+      });
+    } else if (node.__typename === 'StatusContext' && node.context != null) {
+      const { status, conclusion } = mapStatusContextState(node.state ?? 'PENDING');
+      candidates.push({
+        id: 0,
+        name: node.context,
+        status,
+        conclusion,
+        detailsUrl: node.targetUrl ?? null,
+        startedAt: node.createdAt ?? null,
+        completedAt: status === 'completed' ? (node.createdAt ?? null) : null,
+        appSlug: null,
+        suiteId: null,
+        suiteCreatedAt: null,
+        workflowRunId: null,
+        workflowRunNumber: null,
+        workflowRunCreatedAt: null,
+        workflowName: null,
+        matchingPullRequestNumbers: [],
+      });
+    }
+  }
 
   return selectRelevantCheckRuns(candidates, pullNumber);
 }
@@ -365,6 +422,8 @@ const PR_DETAIL_QUERY = graphql(`
   query PRDetail($owner: String!, $repo: String!, $number: Int!) {
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $number) {
+        additions
+        deletions
         mergeable
         commits(last: 1) {
           nodes {
@@ -403,6 +462,13 @@ const PR_DETAIL_QUERY = graphql(`
                         }
                       }
                     }
+                    ... on StatusContext {
+                      context
+                      state
+                      description
+                      targetUrl
+                      createdAt
+                    }
                   }
                 }
               }
@@ -428,6 +494,9 @@ const BATCH_PR_DETAILS_QUERY = graphql(`
       ... on PullRequest {
         id
         number
+        body
+        additions
+        deletions
         mergeable
         commits(last: 1) {
           nodes {
@@ -465,6 +534,13 @@ const BATCH_PR_DETAILS_QUERY = graphql(`
                           }
                         }
                       }
+                    }
+                    ... on StatusContext {
+                      context
+                      state
+                      description
+                      targetUrl
+                      createdAt
                     }
                   }
                 }
@@ -499,18 +575,6 @@ export interface FetchUserPRsResult {
   ciCache: Map<string, CIInfo>;
   reviewCache: Map<string, ReviewInfo>;
   mergeableCache: Map<string, MergeableStatus>;
-}
-
-function emptyPRDetails(): {
-  ci: CIInfo;
-  review: ReviewInfo;
-  mergeable: MergeableStatus;
-} {
-  return {
-    ci: { status: 'unknown', checks: [], fetchedAt: Date.now() },
-    review: { status: 'needs-review', reviewers: [], fetchedAt: Date.now() },
-    mergeable: 'UNKNOWN',
-  };
 }
 
 function buildUserPullRequest(
@@ -622,16 +686,9 @@ export async function fetchUserPRs(
     progress.phase = 'done';
     onProgress?.(progress);
 
-    const result = await mergeWithExistingPRCache(
-      token,
-      { prs, ciCache, reviewCache, mergeableCache }
-    );
-    writePRCache(token, result);
-    return result;
+    return { prs, ciCache, reviewCache, mergeableCache };
   } catch (error) {
-    const message = `Failed to fetch PRs: ${describeApiError(error)}`;
-    console.error(message);
-    throw new Error(message, { cause: error });
+    throw new Error(`Failed to fetch PRs: ${describeApiError(error)}`, { cause: error });
   }
 }
 
@@ -672,133 +729,10 @@ export async function fetchRepoPRs(
     progress.phase = 'done';
     onProgress?.(progress);
 
-    const refreshed = await mergeWithExistingPRCache(
-      token,
-      { prs, ciCache, reviewCache, mergeableCache },
-      repoFullName
-    );
-    writePRCache(token, refreshed, repoFullName);
-    return refreshed;
+    return { prs, ciCache, reviewCache, mergeableCache };
   } catch (error) {
-    const message = `Failed to fetch PRs for ${repoFullName}: ${describeApiError(error)}`;
-    console.error(message);
-    throw new Error(message, { cause: error });
+    throw new Error(`Failed to fetch PRs for ${repoFullName}: ${describeApiError(error)}`, { cause: error });
   }
-}
-
-interface CachedPRsPayload {
-  prs: UserPullRequest[];
-  ciCache: Record<string, CIInfo>;
-  reviewCache: Record<string, ReviewInfo>;
-  mergeableCache: Record<string, MergeableStatus>;
-}
-
-export interface CachedPRsSnapshot {
-  result: FetchUserPRsResult;
-  ageMs: number;
-  isStale: boolean;
-}
-
-const PR_CACHE_MAX_AGE = 60 * 60 * 1000; // 1 hour threshold for marking cached PR data as stale
-
-function prCacheKey(token: string, repoFullName?: string): string {
-  const tokenHash = hashKey(token);
-  return repoFullName ? `prs-repo-${hashKey(repoFullName)}-${tokenHash}` : `prs-${tokenHash}`;
-}
-
-function writePRCache(token: string, result: FetchUserPRsResult, repoFullName?: string): void {
-  writeCache(prCacheKey(token, repoFullName), {
-    prs: result.prs,
-    ciCache: Object.fromEntries(result.ciCache),
-    reviewCache: Object.fromEntries(result.reviewCache),
-    mergeableCache: Object.fromEntries(result.mergeableCache),
-  } satisfies CachedPRsPayload);
-}
-
-function retainMapEntries<T>(
-  map: ReadonlyMap<string, T>,
-  keys: ReadonlySet<string>
-): Map<string, T> {
-  return new Map([...map.entries()].filter(([key]) => keys.has(key)));
-}
-
-export function mergeCachedPRData(
-  incoming: FetchUserPRsResult,
-  existing: FetchUserPRsResult | null
-): FetchUserPRsResult {
-  if (!existing) return incoming;
-
-  const nextKeys = new Set(incoming.prs.map((pr) => `${pr.repoId}#${pr.number}`));
-  return {
-    prs: incoming.prs,
-    ciCache: new Map([
-      ...retainMapEntries(existing.ciCache, nextKeys),
-      ...incoming.ciCache,
-    ]),
-    reviewCache: new Map([
-      ...retainMapEntries(existing.reviewCache, nextKeys),
-      ...incoming.reviewCache,
-    ]),
-    mergeableCache: new Map([
-      ...retainMapEntries(existing.mergeableCache, nextKeys),
-      ...incoming.mergeableCache,
-    ]),
-  };
-}
-
-async function mergeWithExistingPRCache(
-  token: string,
-  incoming: FetchUserPRsResult,
-  repoFullName?: string
-): Promise<FetchUserPRsResult> {
-  const cachedSnapshot = await readCachedPRsSnapshot(token, repoFullName);
-  return mergeCachedPRData(incoming, cachedSnapshot?.result ?? null);
-}
-
-export function persistPRCache(
-  token: string,
-  result: FetchUserPRsResult,
-  repoFullName?: string
-): void {
-  writePRCache(token, result, repoFullName);
-}
-
-function fromCachedPRPayload(cached: CachedPRsPayload): FetchUserPRsResult {
-  return {
-    prs: cached.prs,
-    ciCache: new Map(Object.entries(cached.ciCache)),
-    reviewCache: new Map(Object.entries(cached.reviewCache)),
-    mergeableCache: new Map(Object.entries(cached.mergeableCache)),
-  };
-}
-
-export async function readCachedPRsSnapshot(
-  token: string,
-  repoFullName?: string
-): Promise<CachedPRsSnapshot | null> {
-  const cached = await readCacheEntry<CachedPRsPayload>(
-    prCacheKey(token, repoFullName)
-  );
-  if (!cached) return null;
-
-  const ageMs = Date.now() - cached.ts;
-  return {
-    result: fromCachedPRPayload(cached.data),
-    ageMs,
-    isStale: ageMs > PR_CACHE_MAX_AGE,
-  };
-}
-
-/**
- * Read fresh cached PR results from disk. Returns null if missing or stale.
- */
-export async function readCachedPRs(
-  token: string,
-  repoFullName?: string
-): Promise<FetchUserPRsResult | null> {
-  const snapshot = await readCachedPRsSnapshot(token, repoFullName);
-  if (!snapshot || snapshot.isStale) return null;
-  return snapshot.result;
 }
 
 // ─── fetchPRDetails (GraphQL) — CI + Reviews in one call ────────
@@ -905,7 +839,7 @@ function computeReviewStatus(
 function buildPRDetailsFromNode(
   pr: PullRequestDetailsNodeInput,
   pullNumber: number
-): { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus } {
+): { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string; additions?: number; deletions?: number } {
   const commitNode = (pr.commits.nodes ?? [])[0];
   const lastCommitDate = commitNode?.commit?.committedDate ?? '';
   const contextNodes =
@@ -933,7 +867,11 @@ function buildPRDetailsFromNode(
   const review = computeReviewStatus(reviewNodes, lastCommitDate);
   const mergeable = (pr.mergeable ?? 'UNKNOWN') as MergeableStatus;
 
-  return { ci, review, mergeable };
+  const body = pr.body ?? undefined;
+  const additions = pr.additions ?? undefined;
+  const deletions = pr.deletions ?? undefined;
+
+  return { ci, review, mergeable, body, additions, deletions };
 }
 
 async function fetchPRDetailsWithOctokit(
@@ -959,7 +897,7 @@ async function fetchPRDetailsWithOctokit(
 export async function fetchPRDetailsBatch(
   token: string,
   prs: readonly UserPullRequest[]
-): Promise<Map<string, { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus }>> {
+): Promise<Map<string, { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string; additions?: number; deletions?: number }>> {
   const octokit = createOctokit(token);
   const uniquePRs = [...new Map(prs.map((pr) => [pr.nodeId, pr])).values()];
   if (uniquePRs.length === 0) return new Map();
@@ -972,17 +910,19 @@ export async function fetchPRDetailsBatch(
   const prsByNodeId = new Map(uniquePRs.map((pr) => [pr.nodeId, pr]));
   const detailsByKey = new Map<
     string,
-    { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus }
+    { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string; additions?: number; deletions?: number }
   >();
 
   for (const node of result.nodes ?? []) {
     if (!node || node.__typename !== 'PullRequest') continue;
     const pr = prsByNodeId.get(node.id);
     if (!pr) continue;
-    detailsByKey.set(
-      `${pr.repoId}#${pr.number}`,
-      buildPRDetailsFromNode(node, pr.number)
-    );
+    const details = buildPRDetailsFromNode(node, pr.number);
+    // body/additions/deletions come from the GraphQL node directly
+    details.body = node.body ?? undefined;
+    details.additions = node.additions ?? undefined;
+    details.deletions = node.deletions ?? undefined;
+    detailsByKey.set(`${pr.repoId}#${pr.number}`, details);
   }
 
   return detailsByKey;
@@ -998,17 +938,7 @@ export async function fetchPRDetails(
   pullNumber: number
 ): Promise<{ ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus }> {
   const octokit = createOctokit(token);
-
-  try {
-    return await fetchPRDetailsWithOctokit(
-      octokit,
-      owner,
-      repo,
-      pullNumber
-    );
-  } catch {
-    return emptyPRDetails();
-  }
+  return fetchPRDetailsWithOctokit(octokit, owner, repo, pullNumber);
 }
 
 // ─── Legacy REST wrappers (kept for backward compat) ────────────
@@ -1039,6 +969,7 @@ export async function fetchChecks(
         detailsUrl: run.details_url ?? null,
         startedAt: run.started_at ?? null,
         completedAt: run.completed_at ?? null,
+        appSlug: (run.app as { slug?: string } | null)?.slug ?? null,
       }));
       return {
         status: computeCIStatus(checks),
@@ -1109,7 +1040,7 @@ export async function retryFailedJobs(
   const octokit = createOctokit(token);
   await Promise.allSettled(
     failedChecks
-      .filter((c) => c.id > 0)
+      .filter((c) => c.appSlug === 'github-actions' && c.id > 0)
       .map((c) =>
         octokit.rest.actions.reRunJobForWorkflowRun({
           owner,

@@ -5,6 +5,7 @@ import { useKeybinds } from './use-keybinds.js';
 import { buildFooterRows, FooterRows } from './footer.js';
 import { footerParts } from './view.js';
 import type { ViewProps } from './view.js';
+import { Modal, ModalRow } from './modal.js';
 import { ScrollList, handleListKey } from './scroll-list.js';
 import type { LocalRepo } from './scanner.js';
 import type { CIInfo, CheckRun, LinearIssue, ReviewInfo, UserPullRequest } from './types.js';
@@ -93,23 +94,26 @@ interface CheckAction {
   id: 'open' | 'rerun' | 'copy-logs' | 'open-logs';
 }
 
+function isGitHubActionsCheck(check: CheckRun): boolean {
+  return check.appSlug === 'github-actions' && check.id > 0;
+}
+
 function getCheckActions(check: CheckRun): CheckAction[] {
   const actions: CheckAction[] = [];
   if (check.detailsUrl) {
     actions.push({ label: 'Open in browser', id: 'open' });
   }
   const canRetry =
-    check.id > 0 &&
+    isGitHubActionsCheck(check) &&
     check.status === 'completed' &&
     (check.conclusion === 'failure' || check.conclusion === 'cancelled');
   if (canRetry) {
     actions.push({ label: 'Rerun this check', id: 'rerun' });
   }
-  // Logs are available for any GitHub Actions job with an ID
-  if (check.id > 0) {
+  if (isGitHubActionsCheck(check)) {
     actions.push({ label: 'Copy logs to clipboard', id: 'copy-logs' });
   }
-  if (check.detailsUrl) {
+  if (isGitHubActionsCheck(check) && check.detailsUrl) {
     const logsUrl = check.detailsUrl.replace(/\/?$/, '/logs');
     actions.push({ label: `Open raw logs (${logsUrl})`, id: 'open-logs' });
   }
@@ -120,7 +124,7 @@ interface PrDetailProps extends ViewProps {
   pr: UserPullRequest;
   ci: CIInfo | null;
   review: ReviewInfo | null;
-  linearIssue: LinearIssue | null;
+  linearIssues: LinearIssue[];
   ciLoading: boolean;
   matches: LocalRepo[];
   watched: boolean;
@@ -144,7 +148,7 @@ export function PrDetail({
   pr,
   ci,
   review,
-  linearIssue,
+  linearIssues,
   ciLoading,
   matches,
   watched,
@@ -194,22 +198,37 @@ export function PrDetail({
     (a, b) => checkSortOrder(a) - checkSortOrder(b)
   );
 
-  const ACTION_COUNT = 2;
+  const FIXED_ACTION_COUNT = 2; // Open in editor, Open PR in browser
+  const LINEAR_ACTION_COUNT = linearIssues.length; // One "Open in Linear" per ticket
+  const ACTION_COUNT = FIXED_ACTION_COUNT + LINEAR_ACTION_COUNT;
   const totalItems = ACTION_COUNT + checks.length;
 
   const hasReviewers = review && review.reviewers.length > 0;
   // With reviewers: header(1) + reviewer rows. Without: just "No reviews yet"(1)
   const reviewRowCount = hasReviewers ? 1 + review.reviewers.length : 1;
 
-  // Compute wrapped footer rows
-  const footerKeyParts = footerParts(keybinds);
+  // Retry context: when cursor is on a check, only show retry if that check is
+  // a GitHub Actions job. When not on a check, show retry-all if any failed.
+  const selectedCheck = selectedIndex >= ACTION_COUNT ? checks[selectedIndex - ACTION_COUNT] : null;
+  const onCheck = selectedCheck != null;
+  const canRetrySingle = onCheck && isGitHubActionsCheck(selectedCheck);
+  const hasFailedChecks = checks.some(
+    (c) => isGitHubActionsCheck(c) && c.status === 'completed' && (c.conclusion === 'failure' || c.conclusion === 'cancelled')
+  );
+  const showRetry = onCheck ? canRetrySingle : hasFailedChecks;
+
+  // Compute wrapped footer rows — swap retry text based on context
+  const footerKeyParts = footerParts(keybinds, { retry: showRetry }).map((part) =>
+    part === keybinds.retry.terminal && canRetrySingle ? '[r]etry job' : part
+  );
   const footerRows = buildFooterRows(footerKeyParts, width);
   const footerHeight = statusText ? 1 : footerRows.length;
 
-  // Chrome: header(1) + meta(1) + spacer(1) + actions-header(1) + 2 actions(2) + spacer(1) +
-  //         ci-header(1) + checks-header(1) + spacer(1) + reviewRows + spacer(1) + footer + padding(2) = 13 + reviewRows + footerHeight
-  const linearRowCount = linearIssue ? 4 : 0; // spacer + header + title + status
-  const checkListHeight = Math.max(1, height - 13 - reviewRowCount - linearRowCount - footerHeight);
+  // Chrome: header(1) + meta(1) + spacer(1) + actions-header(1) + ACTION_COUNT actions + spacer(1) +
+  //         linear-section + ci-header(1) + checks-header(1) + spacer(1) + reviewRows + spacer(1) + footer + padding(2)
+  // Linear section: spacer(1) + header(1) + per-issue: identifier(1) + status(1)
+  const linearSectionRows = linearIssues.length > 0 ? 2 + linearIssues.length * 2 : 0;
+  const checkListHeight = Math.max(1, height - 11 - ACTION_COUNT - linearSectionRows - reviewRowCount - footerHeight);
 
   const moveTo = useCallback(
     (newIndex: number) => {
@@ -254,6 +273,14 @@ export function PrDetail({
     initialLoadRequestedRef.current = null;
   }, [prIdentity]);
 
+  // Reset the guard when enrichment is lost (e.g., background list refresh clears stale CI)
+  // so the fetch effect below re-triggers.
+  useEffect(() => {
+    if (ci == null && initialLoadRequestedRef.current === prIdentity) {
+      initialLoadRequestedRef.current = null;
+    }
+  }, [ci, prIdentity]);
+
   useEffect(() => {
     if (ciLoading || (ci != null && review != null)) return;
     if (initialLoadRequestedRef.current === prIdentity) return;
@@ -296,6 +323,10 @@ export function PrDetail({
         void handleOpenInEditor();
       } else if (selectedIndex === 1) {
         onOpenUrl(pr.url);
+      } else if (selectedIndex < ACTION_COUNT) {
+        // Linear ticket action
+        const issue = linearIssues[selectedIndex - FIXED_ACTION_COUNT];
+        if (issue) onOpenUrl(issue.url);
       } else {
         const check = checks[selectedIndex - ACTION_COUNT];
         if (check) {
@@ -315,13 +346,19 @@ export function PrDetail({
     },
     refresh: () => onRefreshCI(),
     retry: () => {
-      showStatus('Retrying failed checks...');
-      onRetryChecks().then((msg) => showStatus(msg));
+      if (canRetrySingle && selectedCheck) {
+        showStatus(`Retrying ${selectedCheck.name}...`);
+        onRetryCheck(selectedCheck).then((msg) => showStatus(msg));
+      } else {
+        showStatus('Retrying failed checks...');
+        onRetryChecks().then((msg) => showStatus(msg));
+      }
     },
     watch: () => onWatch(),
+    debug: () => navigate({ type: 'debug' }),
     back: () => goBack(),
     quit: () => onExit(),
-  });
+  }, { show: { retry: showRetry } });
 
   // Check action modal — only fires when check-action focus is active.
   useFocusedKeyboard((key) => {
@@ -463,6 +500,38 @@ export function PrDetail({
         />
       </box>
 
+      {/* Linear tickets (selectable) */}
+      {linearIssues.length > 0 && linearIssues.map((issue, i) => {
+        const idx = FIXED_ACTION_COUNT + i;
+        const isSelected = selectedIndex === idx;
+        return (
+          <box key={issue.identifier} flexDirection="column">
+            <box
+              style={{
+                height: 1,
+                width: '100%',
+                backgroundColor: isSelected ? '#292e42' : undefined,
+              }}
+              onMouseDown={() => {
+                if (isSelected) onOpenUrl(issue.url);
+                else moveTo(idx);
+              }}
+            >
+              <text
+                content={`   > ${issue.identifier}: ${issue.title}`}
+                fg={isSelected ? '#bb9af7' : '#c0caf5'}
+              />
+            </box>
+            <box style={{ height: 1, width: '100%' }}>
+              <text
+                content={`     ${issue.status}${issue.assignee ? `  |  ${issue.assignee}` : ''}`}
+                fg="#565f89"
+              />
+            </box>
+          </box>
+        );
+      })}
+
       {/* Spacer */}
       <box style={{ height: 1 }} />
 
@@ -572,24 +641,6 @@ export function PrDetail({
         </box>
       )}
 
-      {/* Linear ticket */}
-      {linearIssue && (
-        <>
-          <box style={{ height: 1 }} />
-          <box style={{ height: 1, width: '100%' }}>
-            <text content={` Linear: ${linearIssue.identifier}`} fg="#bb9af7" />
-          </box>
-          <box style={{ height: 1, width: '100%' }}>
-            <text content={`  ${linearIssue.title}`} fg="#c0caf5" />
-          </box>
-          <box style={{ height: 1, width: '100%' }}>
-            <text
-              content={`  Status: ${linearIssue.status}  |  Priority: ${linearIssue.priority}${linearIssue.assignee ? `  |  Assignee: ${linearIssue.assignee}` : ''}`}
-              fg="#a9b1d6"
-            />
-          </box>
-        </>
-      )}
 
       {/* Spacer */}
       <box style={{ height: 1 }} />
@@ -607,39 +658,26 @@ export function PrDetail({
       )}
 
       {/* Check action modal */}
-      {modal && (
-        <box
-          style={{
-            position: 'absolute',
-            top: Math.floor(height / 2) - 2,
-            left: Math.floor(width / 2) - 22,
-            width: 44,
-            height: getCheckActions(modal.check).length + 4,
-          }}
-        >
-          <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-            {/* Title bar */}
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text
-                content={` ${fit(modal.check.name, 42)}`}
-                fg="#7aa2f7"
-              />
-            </box>
-            {/* Border */}
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={`${'─'.repeat(44)}`} fg="#292e42" />
-            </box>
-            {/* Options */}
-            {getCheckActions(modal.check).map((action, i) => {
+      {modal && (() => {
+        const actions = getCheckActions(modal.check);
+        return (
+          <Modal
+            title={fit(modal.check.name, 40)}
+            hint="Esc to close"
+            width={42}
+            height={actions.length}
+            termWidth={width}
+            termHeight={height}
+            onClose={() => setModal(null)}
+          >
+            {actions.map((action, i) => {
               const isActive = i === modal.selectedOption;
               return (
-                <box
+                <ModalRow
                   key={action.id}
-                  style={{
-                    height: 1,
-                    width: '100%',
-                    backgroundColor: isActive ? '#292e42' : '#1a1b26',
-                  }}
+                  label={` ${isActive ? '>' : ' '} ${action.label}`}
+                  fg={isActive ? '#c0caf5' : '#a9b1d6'}
+                  active={isActive}
                   onMouseDown={() => {
                     if (isActive) {
                       executeModalAction(modal.check, action);
@@ -647,21 +685,12 @@ export function PrDetail({
                       setModal({ ...modal, selectedOption: i });
                     }
                   }}
-                >
-                  <text
-                    content={` ${isActive ? '>' : ' '} ${action.label}`}
-                    fg={isActive ? '#c0caf5' : '#a9b1d6'}
-                  />
-                </box>
+                />
               );
             })}
-            {/* Hint */}
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={` Esc to close`} fg="#565f89" />
-            </box>
-          </box>
-        </box>
-      )}
+          </Modal>
+        );
+      })()}
     </box>
   );
 }

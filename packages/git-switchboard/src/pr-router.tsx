@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react';
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
-import { useFocusedKeyboard, useFocusOwner } from './focus-stack.js';
+import { useFocusedKeyboard, useFocusOwner, useFocusStackValue } from './focus-stack.js';
 import { useStore } from 'zustand';
 import { PrApp } from './pr-app.js';
 import { PrDetail } from './pr-detail.js';
@@ -22,10 +22,13 @@ import type { PrScreen } from './store.js';
 import type { LocalRepo } from './scanner.js';
 import type { UserPullRequest } from './types.js';
 import type { EditorInfo, ResolvedEditor } from './editor.js';
+import type { DataLayer } from './data/index.js';
 import { defineCommand, defineView } from './view.js';
 import type { Keybind } from './view.js';
 import { UP_ARROW, DOWN_ARROW, RETURN_SYMBOL, LEFT_ARROW, ESC_SYMBOL } from './unicode.js';
+import { Modal, ModalRow } from './modal.js';
 import { TuiRouter, useNavigate } from './tui-router.js';
+import { DebugView } from './debug-view.js';
 
 export type { PrRouterResult } from './store.js';
 
@@ -36,6 +39,16 @@ const PrStoreCtx = createContext<PrStoreApi | null>(null);
 function usePrStoreApi(): PrStoreApi {
   const ctx = useContext(PrStoreCtx);
   if (!ctx) throw new Error('usePrStoreApi must be used inside PrRouter');
+  return ctx;
+}
+
+// ─── DataLayer context ────────────────────────────────────────────────────────
+
+const DataLayerCtx = createContext<DataLayer | null>(null);
+
+export function useDataLayer(): DataLayer {
+  const ctx = useContext(DataLayerCtx);
+  if (!ctx) throw new Error('useDataLayer must be used inside PrRouter');
   return ctx;
 }
 
@@ -65,47 +78,54 @@ function usePrInfra(): PrInfraCtxValue {
 
 function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
   const store = usePrStoreApi();
+  const dataLayer = useDataLayer();
   const prs = useStore(store, (s) => s.prs);
   const localRepos = useStore(store, (s) => s.localRepos);
-  const ciCache = useStore(store, (s) => s.ciCache);
-  const reviewCache = useStore(store, (s) => s.reviewCache);
-  const mergeableCache = useStore(store, (s) => s.mergeableCache);
   const repoMode = useStore(store, (s) => s.repoMode);
   const refreshing = useStore(store, (s) => s.refreshing);
   const searchQuery = useStore(store, (s) => s.listSearchQuery);
   const sortLayers = useStore(store, (s) => s.listSortLayers);
+  const columns = useStore(store, (s) => s.listColumns);
+  const filters = useStore(store, (s) => s.listFilters);
   const selectedIndex = useStore(store, (s) => s.listSelectedIndex);
   const scrollOffset = useStore(store, (s) => s.listScrollOffset);
-
-  const linearCache = useStore(store, (s) => s.linearCache);
-
-  const ciMap = useMemo(() => new Map(Object.entries(ciCache)), [ciCache]);
-  const reviewMap = useMemo(() => new Map(Object.entries(reviewCache)), [reviewCache]);
-  const linearMap = useMemo(() => new Map(Object.entries(linearCache)), [linearCache]);
+  const storeStatusText = useStore(store, (s) => s.statusText);
 
   return (
     <PrApp
       keybinds={keybinds}
       prs={prs}
       localRepos={localRepos}
-      ciCache={ciMap}
-      reviewCache={reviewMap}
-      mergeableCache={mergeableCache}
-      linearCache={linearMap}
+      dataLayer={dataLayer}
       repoMode={repoMode}
       refreshing={refreshing}
       searchQuery={searchQuery}
       setSearchQuery={store.getState().setListSearchQuery}
       sortLayers={sortLayers}
       setSortLayers={store.getState().setListSortLayers}
+      columns={columns}
+      setColumns={store.getState().setListColumns}
+      filters={filters}
+      setFilters={store.getState().setListFilters}
       selectedIndex={selectedIndex}
       setSelectedIndex={store.getState().setListSelectedIndex}
       scrollOffset={scrollOffset}
       setScrollOffset={store.getState().setListScrollOffset}
-      onFetchCI={async (pr) => store.getState().fetchDetailsForPR(pr)}
-      onPrefetchDetails={store.getState().prefetchDetailsForPRs}
+      storeStatusText={storeStatusText}
+      onFetchCI={(pr) => store.getState().refreshCI(pr)}
+      onPrefetchDetails={store.getState().prefetchDetails}
       onRetryChecks={async (pr) => store.getState().retryChecks(pr)}
-      onRefreshAll={async (allPrs) => store.getState().refreshPRs(allPrs)}
+      onRefreshAll={async (visiblePRs) => {
+        store.getState().refreshAllPRs();
+        // Also force-refresh detail data (including body) for visible PRs
+        for (const pr of visiblePRs) {
+          dataLayer.bus.emit('pr:fetchDetail', {
+            repoId: pr.repoId,
+            number: pr.number,
+            force: true,
+          });
+        }
+      }}
       onExit={() => store.getState().onDone(null)}
     />
   );
@@ -119,29 +139,31 @@ function PrDetailScreen({
   keybinds: Record<string, Keybind>;
 }) {
   const store = usePrStoreApi();
+  const dataLayer = useDataLayer();
   const { prepareEditorOpen, getMatchesForPR } = usePrInfra();
-  const ciCache = useStore(store, (s) => s.ciCache);
-  const reviewCache = useStore(store, (s) => s.reviewCache);
-  const linearCache = useStore(store, (s) => s.linearCache);
-  const ciLoading = useStore(store, (s) => s.ciLoading);
   const repoScanDone = useStore(store, (s) => s.repoScanDone);
   const watchedPRs = useStore(store, (s) => s.watchedPRs);
+  // Subscribe to prs snapshot so we re-render when DataLayer entities update
+  const prs = useStore(store, (s) => s.prs);
 
   const { pr, matches } = screen;
-  const prKey = `${pr.repoId}#${pr.number}`;
+  const prEntityKey = `${pr.repoId}#${pr.number}`;
   const currentMatches = repoScanDone || matches.length === 0 ? getMatchesForPR(pr) : matches;
-  const linearIssue = linearCache[prKey] ?? null;
+  // Read fresh entity from the store snapshot (triggers re-render on pr:enriched)
+  const prEntity = prs.find((p) => `${p.repoId}#${p.number}` === prEntityKey);
+  const linearIssues = dataLayer.query.linearIssuesForPr(prEntityKey);
+  const ciLoading = dataLayer.loading.isPrLoading(prEntityKey);
 
   return (
     <PrDetail
       keybinds={keybinds}
       pr={pr}
-      ci={ciCache[prKey] ?? null}
-      review={reviewCache[prKey] ?? null}
-      linearIssue={linearIssue}
+      ci={prEntity?.ci ?? null}
+      review={prEntity?.review ?? null}
+      linearIssues={linearIssues}
       ciLoading={ciLoading}
       matches={currentMatches}
-      watched={watchedPRs.has(prKey)}
+      watched={watchedPRs.has(prEntityKey)}
       onPrepareEditorOpen={prepareEditorOpen}
       onRefreshCI={() => store.getState().refreshCI(pr)}
       onRetryChecks={async () => store.getState().retryChecks(pr)}
@@ -181,6 +203,20 @@ function ClonePromptScreen({
   );
 }
 
+function DebugScreen() {
+  const store = usePrStoreApi();
+  const dataLayer = useDataLayer();
+  const navigate = useNavigate<PrScreen>();
+
+  return (
+    <DebugView
+      history={dataLayer.bus.history}
+      onExit={() => navigate({ type: 'pr-list' })}
+      copyToClipboard={store.getState().copyToClipboard}
+    />
+  );
+}
+
 // ─── Module-level PR_COMMAND ───────────────────────────────────────────────────
 
 export const PR_COMMAND = defineCommand<PrScreen>()({
@@ -202,7 +238,7 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           terminal: `[${RETURN_SYMBOL}] Select`,
         },
         fetchCI: {
-          keys: ['c'],
+          keys: [{ raw: 'c' }],
           label: 'c',
           description: 'Fetch/refresh CI status',
           terminal: '[c] Fetch CI',
@@ -221,8 +257,11 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           terminal: '[^R]efresh all',
         },
         sort: { keys: ['s'], label: 's', description: 'Open sort modal', terminal: '[s]ort' },
+        columns: { keys: [{ raw: 'C' }], label: 'C', description: 'Configure columns', terminal: '[C]olumns' },
+        filter: { keys: ['f'], label: 'f', description: 'Open filter modal', terminal: '[f]ilter' },
         providerStatus: { keys: ['p'], label: 'p', description: 'Provider status', terminal: '[p]roviders' },
         search: { keys: [{ raw: '/' }], label: '/', description: 'Search', terminal: '[/] Search' },
+        debug: { keys: [{ raw: '~' }], label: '~', description: 'Debug event bus', terminal: '[~] Debug' },
         quit: { keys: ['q', 'escape'], label: 'q or Esc', description: 'Quit', terminal: '[q]uit' },
       },
       render: (_, keybinds) => <PrListScreen keybinds={keybinds} />,
@@ -258,7 +297,8 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           keys: ['r'],
           label: 'r',
           description: 'Retry failed checks',
-          terminal: '[r]etry',
+          terminal: '[r]etry failed',
+          conditional: true,
         },
         watch: {
           keys: ['w'],
@@ -267,6 +307,7 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           terminal: '[w]atch',
         },
         providerStatus: { keys: ['p'], label: 'p', description: 'Provider status', terminal: '[p]roviders' },
+        debug: { keys: [{ raw: '~' }], label: '~', description: 'Debug event bus', terminal: '[~] Debug' },
         back: {
           keys: ['escape', 'backspace', 'left'],
           label: 'Left, Backspace or Esc',
@@ -324,6 +365,11 @@ export const PR_COMMAND = defineCommand<PrScreen>()({
           keybinds={keybinds}
         />
       ),
+    }),
+
+    'debug': defineView<PrScreen>()({
+      keybinds: {},
+      render: () => <DebugScreen />,
     }),
   },
 });
@@ -393,54 +439,37 @@ function EditorModalOverlay({
     return false;
   }, { focusId: 'editor-modal' });
 
-  const modalWidth = Math.min(60, width - 4);
   return (
-    <box
-      style={{
-        position: 'absolute',
-        top: Math.floor(height / 2) - Math.floor(installedEditors.length / 2) - 2,
-        left: Math.floor(width / 2) - Math.floor(modalWidth / 2),
-        width: modalWidth,
-        height: installedEditors.length + 4,
-      }}
+    <Modal
+      title="Select editor"
+      onClose={() => setEditorModal(null)}
+      hint={`[${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [Esc] Cancel`}
+      width={Math.min(56, width - 8)}
+      height={installedEditors.length}
+      termWidth={width}
+      termHeight={height}
     >
-      <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-        <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-          <text content=" Select editor" fg="#7aa2f7" />
-        </box>
-        <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-          <text content={'─'.repeat(modalWidth)} fg="#292e42" />
-        </box>
-        {installedEditors.map((ed, i) => {
-          const isActive = i === selectedIndex;
-          const isDisabled = !!ed.disabled;
-          const reason = isActive && typeof ed.disabled === 'string' ? ` — ${ed.disabled}` : '';
-          const label = ` ${isActive && !isDisabled ? '>' : ' '} ${ed.name}${reason}`;
-          const fg = isDisabled ? '#565f89' : isActive ? '#c0caf5' : '#a9b1d6';
-          return (
-            <box
-              key={ed.command}
-              style={{ height: 1, width: '100%', backgroundColor: isActive ? '#292e42' : '#1a1b26' }}
-              onMouseDown={() => {
-                if (isActive && !isDisabled) {
-                  void confirm();
-                } else {
-                  setEditorModal({ pr, matches, selectedIndex: i });
-                }
-              }}
-            >
-              <text content={label} fg={fg} />
-            </box>
-          );
-        })}
-        <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-          <text
-            content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [Esc] Cancel`}
-            fg="#565f89"
+      {installedEditors.map((ed, i) => {
+        const isActive = i === selectedIndex;
+        const isDisabled = !!ed.disabled;
+        const reason = isActive && typeof ed.disabled === 'string' ? ` — ${ed.disabled}` : '';
+        return (
+          <ModalRow
+            key={ed.command}
+            label={` ${isActive && !isDisabled ? '>' : ' '} ${ed.name}${reason}`}
+            fg={isDisabled ? '#565f89' : isActive ? '#c0caf5' : '#a9b1d6'}
+            active={isActive}
+            onMouseDown={() => {
+              if (isActive && !isDisabled) {
+                void confirm();
+              } else {
+                setEditorModal({ pr, matches, selectedIndex: i });
+              }
+            }}
           />
-        </box>
-      </box>
-    </box>
+        );
+      })}
+    </Modal>
   );
 }
 
@@ -448,9 +477,10 @@ function EditorModalOverlay({
 
 export interface PrRouterProps {
   store: PrStoreApi;
+  dataLayer: DataLayer;
 }
 
-export function PrRouter({ store }: PrRouterProps) {
+export function PrRouter({ store, dataLayer }: PrRouterProps) {
   useExitOnCtrlC();
 
   const localRepos = useStore(store, (s) => s.localRepos);
@@ -460,12 +490,12 @@ export function PrRouter({ store }: PrRouterProps) {
   const { width, height } = useTerminalDimensions();
   const [editorModal, setEditorModal] = useState<EditorModalState | null>(null);
   const [showProviderStatus, setShowProviderStatus] = useState(false);
+  const focusStack = useFocusStackValue();
 
   // ─── Provider status shortcut ─────────────────────────────────────
-  // PrRouter sits outside TuiRouter (and the FocusStackProvider), so this
-  // uses the raw useKeyboard from @opentui/react with its own gating.
+  // Gate on focus stack so text inputs (search, filter name) aren't intercepted.
   useKeyboard((key) => {
-    if (!editorModal && !showProviderStatus && key.raw === 'p') {
+    if (!editorModal && !showProviderStatus && focusStack.stack.length === 0 && key.raw === 'p') {
       setShowProviderStatus(true);
       key.stopPropagation();
       return true;
@@ -485,16 +515,23 @@ export function PrRouter({ store }: PrRouterProps) {
         if (!match) continue;
         const pr = s.prs.find((p) => p.repoId === match[1] && p.number === Number(match[2]));
         if (!pr) continue;
-        const oldCI = s.ciCache[key];
-        await s.fetchDetailsForPR(pr);
-        const newCI = storeRef.current.getState().ciCache[key];
-        if (oldCI?.status === 'pending' && newCI && newCI.status !== 'pending' && newCI.status !== 'unknown') {
-          const icon = newCI.status === 'passing' ? '\u2713' : '\u2717';
-          sendNotification(
-            `git-switchboard: CI ${newCI.status}`,
-            `${icon} ${pr.repoOwner}/${pr.repoName}#${pr.number}: ${pr.title}`
-          );
-        }
+        const oldCI = s.dataLayer.stores.prs.get(key)?.ci;
+        s.refreshCI(pr);
+        // Check for status transitions after enrichment arrives
+        const offEnriched = s.dataLayer.bus.on('pr:enriched', (enriched) => {
+          if (`${enriched.repoId}#${enriched.number}` !== key) return;
+          offEnriched();
+          const newCI = enriched.ci;
+          if (oldCI?.status === 'pending' && newCI && newCI.status !== 'pending' && newCI.status !== 'unknown') {
+            const icon = newCI.status === 'passing' ? '\u2713' : '\u2717';
+            sendNotification(
+              `git-switchboard: CI ${newCI.status}`,
+              `${icon} ${pr.repoOwner}/${pr.repoName}#${pr.number}: ${pr.title}`
+            );
+          }
+        });
+        // Clean up listener after timeout
+        setTimeout(offEnriched, 15_000);
       }
     }, 30_000);
     return () => clearInterval(interval);
@@ -577,14 +614,17 @@ export function PrRouter({ store }: PrRouterProps) {
   );
 
   return (
-    <PrStoreCtx.Provider value={store}>
-      <PrInfraCtx.Provider value={infra}>
-        <TuiRouter<PrScreen>
-          views={PR_COMMAND.views}
-          initialScreen={{ type: 'pr-list' }}
-          overlay={combinedOverlay}
-        />
-      </PrInfraCtx.Provider>
-    </PrStoreCtx.Provider>
+    <DataLayerCtx.Provider value={dataLayer}>
+      <PrStoreCtx.Provider value={store}>
+        <PrInfraCtx.Provider value={infra}>
+          <TuiRouter<PrScreen>
+            views={PR_COMMAND.views}
+            initialScreen={{ type: 'pr-list' }}
+            overlay={combinedOverlay}
+            focusStack={focusStack}
+          />
+        </PrInfraCtx.Provider>
+      </PrStoreCtx.Provider>
+    </DataLayerCtx.Provider>
   );
 }

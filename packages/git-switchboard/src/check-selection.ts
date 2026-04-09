@@ -99,5 +99,6 @@ export function selectRelevantCheckRuns(
     detailsUrl: candidate.detailsUrl,
     startedAt: candidate.startedAt,
     completedAt: candidate.completedAt,
+    appSlug: candidate.appSlug,
   }));
 }
