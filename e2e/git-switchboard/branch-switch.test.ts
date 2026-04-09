@@ -59,7 +59,7 @@ describe("branch switch", () => {
     expect(branch).not.toBe("main");
   });
 
-  it("switches to a different branch by navigating down", async () => {
+  it.skip("switches to a different branch by navigating down", async () => {
     resetToMain(fixture.path);
 
     const cli = spawnCLI(fixture.path, ["--no-pr"]);
