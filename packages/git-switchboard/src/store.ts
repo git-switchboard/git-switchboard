@@ -1,8 +1,6 @@
 import { create } from 'zustand';
 import {
   fetchCheckLogs,
-  fetchUserPRs,
-  fetchRepoPRs,
   retryFailedJobs,
 } from './github.js';
 import { openUrl } from './notify.js';
@@ -73,7 +71,7 @@ export interface PrStore {
   retryCheck: (pr: UserPullRequest, check: CheckRun) => Promise<string>;
   copyLogs: (pr: UserPullRequest, check: CheckRun) => Promise<string>;
   toggleWatch: (pr: UserPullRequest) => void;
-  refreshAllPRs: () => Promise<void>;
+  refreshAllPRs: () => void;
   openInBrowser: (url: string) => void;
   showStatus: (text: string) => void;
   clearStatus: () => void;
@@ -82,16 +80,12 @@ export interface PrStore {
 
 interface PrStoreDeps {
   fetchCheckLogs: typeof fetchCheckLogs;
-  fetchUserPRs: typeof fetchUserPRs;
-  fetchRepoPRs: typeof fetchRepoPRs;
   retryFailedJobs: typeof retryFailedJobs;
   openUrl: typeof openUrl;
 }
 
 const DEFAULT_DEPS: PrStoreDeps = {
   fetchCheckLogs,
-  fetchUserPRs,
-  fetchRepoPRs,
   retryFailedJobs,
   openUrl,
 };
@@ -115,8 +109,6 @@ export const createPrStore = (initial: {
 }, deps: Partial<PrStoreDeps> = {}) => {
   const {
     fetchCheckLogs: fetchCheckLogsImpl,
-    fetchUserPRs: fetchUserPRsImpl,
-    fetchRepoPRs: fetchRepoPRsImpl,
     retryFailedJobs: retryFailedJobsImpl,
     openUrl: openUrlImpl,
   } = { ...DEFAULT_DEPS, ...deps };
@@ -287,30 +279,20 @@ export const createPrStore = (initial: {
         });
       },
 
-      refreshAllPRs: async () => {
-        const { token, repoMode } = get();
+      refreshAllPRs: () => {
+        const { repoMode } = get();
         set({ refreshing: true });
-        try {
-          const result = repoMode
-            ? await fetchRepoPRsImpl(token, repoMode)
-            : await fetchUserPRsImpl(token);
 
-          // Re-ingest through DataLayer with enrichment data
-          const prsWithEnrichment: PR[] = result.prs.map((pr) => {
-            const key = `${pr.repoId}#${pr.number}`;
-            return {
-              ...pr,
-              ci: result.ciCache.get(key),
-              review: result.reviewCache.get(key),
-              mergeable: result.mergeableCache.get(key),
-            };
-          });
-          dataLayer.ingest.ingestPRs(prsWithEnrichment);
-          set({ refreshing: false });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Refresh failed';
-          set({ refreshing: false, statusText: message });
-        }
+        // Listen for completion — pr:discovered fires when fresh PRs are ingested
+        const cleanup = () => { offDiscovered(); offError(); clearTimeout(timer); };
+        const done = () => { cleanup(); set({ refreshing: false }); };
+        const offDiscovered = dataLayer.bus.on('pr:discovered', done);
+        const offError = dataLayer.bus.on('error', (err) => {
+          if (err.source === 'pr:fetchAll') done();
+        });
+        const timer = setTimeout(done, 30_000);
+
+        dataLayer.bus.emit('pr:fetchAll', { repoMode });
       },
 
       openInBrowser: (url) => openUrlImpl(url),

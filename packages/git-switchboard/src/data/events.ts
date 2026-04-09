@@ -24,6 +24,7 @@ export type DataEventMap = {
   // Command events
   'pr:fetch': { repoId: string; number: number };
   'pr:fetchDetail': { repoId: string; number: number; force?: boolean };
+  'pr:fetchAll': { repoMode: string | null };
   'linear:issue:fetch': { identifier: string };
   'checkout:scan': { paths?: string[] };
 

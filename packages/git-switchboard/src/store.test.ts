@@ -90,37 +90,18 @@ describe('PrStore with DataLayer', () => {
     assert.equal(store.getState().prs[0].ci?.status, 'passing');
   });
 
-  it('refreshAllPRs preserves existing data on failure', async () => {
+  it('refreshAllPRs emits pr:fetchAll on the bus', () => {
     const pr = createPR();
-    const { dataLayer } = createStoreWithDataLayer([pr]);
+    const { store, dataLayer } = createStoreWithDataLayer([pr]);
 
-    const storeInstance = createPrStore(
-      {
-        dataLayer,
-        localRepos: [],
-        repoScanDone: true,
-        repoMode: null,
-        token: 'test-token',
-        copyToClipboard: async () => true,
-        onDone: () => {},
-        openEditorForPR: async () => 'ok',
-        waitForLocalRepos: async () => [],
-        editor: null,
-        installedEditors: [],
-      },
-      {
-        fetchUserPRs: async () => {
-          throw new Error('network blew up');
-        },
-      }
-    );
+    const fetches: { repoMode: string | null }[] = [];
+    dataLayer.bus.on('pr:fetchAll', (p) => fetches.push(p));
 
-    await storeInstance.getState().refreshAllPRs();
+    store.getState().refreshAllPRs();
 
-    const state = storeInstance.getState();
-    assert.equal(state.refreshing, false);
-    // PRs still in DataLayer — store snapshot preserved
-    assert.equal(state.prs.length, 1);
+    assert.equal(fetches.length, 1);
+    assert.equal(fetches[0].repoMode, null);
+    assert.equal(store.getState().refreshing, true);
   });
 
   it('prefetchDetails emits pr:fetchDetail events on DataLayer bus', () => {

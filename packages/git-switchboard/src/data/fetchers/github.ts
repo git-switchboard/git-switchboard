@@ -5,10 +5,18 @@ import type { Ingester } from '../ingest.js';
 import type { EntityStore } from '../entity-store.js';
 import type { CIInfo, ReviewInfo, MergeableStatus } from '../../types.js';
 
+interface FetchUserPRsResult {
+  prs: PR[];
+  ciCache: Map<string, CIInfo>;
+  reviewCache: Map<string, ReviewInfo>;
+  mergeableCache: Map<string, MergeableStatus>;
+}
+
 interface GithubFetcherDeps {
   fetchPRDetailsBatch: (
     prs: PR[],
   ) => Promise<Map<string, { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus }>>;
+  fetchAllPRs?: (repoMode: string | null) => Promise<FetchUserPRsResult>;
   batchDelayMs?: number;
   /** How long before a successfully-fetched PR can be re-fetched (default 30s) */
   cooldownMs?: number;
@@ -111,8 +119,30 @@ export function createGithubFetcher(
     }
   });
 
+  const unsubFetchAll = deps.fetchAllPRs
+    ? bus.on('pr:fetchAll', async ({ repoMode }) => {
+        try {
+          const result = await deps.fetchAllPRs!(repoMode);
+          const prsWithEnrichment: PR[] = result.prs.map((pr) => {
+            const key = `${pr.repoId}#${pr.number}`;
+            return {
+              ...pr,
+              ci: result.ciCache.get(key),
+              review: result.reviewCache.get(key),
+              mergeable: result.mergeableCache.get(key),
+            };
+          });
+          ingester.ingestPRs(prsWithEnrichment);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          bus.emit('error', { source: 'pr:fetchAll', message });
+        }
+      })
+    : null;
+
   return () => {
     unsubDetail();
+    unsubFetchAll?.();
     if (detailTimer) clearTimeout(detailTimer);
   };
 }

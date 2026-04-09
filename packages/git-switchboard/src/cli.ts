@@ -203,7 +203,12 @@ const gitSwitchboard = cli('git-switchboard', {
           // Register fetch listeners
           createGithubFetcher(
             dataLayer.bus, dataLayer.ingest, dataLayer.stores,
-            { fetchPRDetailsBatch: (prs) => fetchPRDetailsBatch(token, prs) }
+            {
+              fetchPRDetailsBatch: (prs) => fetchPRDetailsBatch(token, prs),
+              fetchAllPRs: (mode) => mode
+                ? fetchRepoPRs(token, mode)
+                : fetchUserPRs(token),
+            }
           );
           if (linearToken) {
             createLinearFetcher(dataLayer.bus, dataLayer.ingest, {
