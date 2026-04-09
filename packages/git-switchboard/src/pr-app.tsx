@@ -63,6 +63,21 @@ function fit(str: string, width: number): string {
   return str.slice(0, width - 1) + ELLIPSIS;
 }
 
+function formatDiffNum(n: number): string {
+  if (n >= 10000) return `${(n / 1000).toFixed(1)}k`.replace('.0k', 'k');
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`.replace('.0k', 'k');
+  return String(n);
+}
+
+function formatDiff(additions: number | undefined, deletions: number | undefined): { text: string; fg: string } {
+  if (additions == null && deletions == null) return { text: '', fg: '#565f89' };
+  const a = additions ?? 0;
+  const d = deletions ?? 0;
+  const text = `+${formatDiffNum(a)}/-${formatDiffNum(d)}`;
+  const fg = d === 0 ? '#9ece6a' : a === 0 ? '#f7768e' : '#c0caf5';
+  return { text, fg };
+}
+
 const SPINNER_FRAMES = ['|', '/', '-', '\\'];
 const PREFETCH_BUFFER_ROWS = 5;
 
@@ -102,6 +117,7 @@ const SORT_FIELDS: { field: SortField; label: string; defaultDir: SortDir }[] = 
   { field: 'ci', label: 'CI Status', defaultDir: 'asc' },
   { field: 'repo', label: 'Repository', defaultDir: 'asc' },
   { field: 'merge', label: 'Merge Status', defaultDir: 'asc' },
+  { field: 'diff', label: 'Diff Size', defaultDir: 'desc' },
   { field: 'number', label: 'PR Number', defaultDir: 'desc' },
 ];
 
@@ -191,6 +207,7 @@ const SORTABLE_COLUMNS: Partial<Record<PrColumnId, SortField>> = {
   updated: 'updated',
   ci: 'ci',
   merge: 'merge',
+  diff: 'diff',
   review: 'review',
 };
 
@@ -203,6 +220,7 @@ const COLUMN_HEADERS: Record<PrColumnId, (compact: boolean, veryCompact: boolean
   updated: (_c, vc) => vc ? 'Upd' : 'Updated',
   ci: () => 'CI',
   merge: () => '',
+  diff: () => 'Diff',
   linear: (c) => c ? 'Lin' : 'Linear',
   review: (c) => c ? 'Rv' : 'Review',
 };
@@ -440,6 +458,10 @@ export function PrApp({
           case 'merge':
             cmp = mergeSortOrder(a.mergeable)
               - mergeSortOrder(b.mergeable);
+            break;
+          case 'diff':
+            cmp = ((a.additions ?? 0) + (a.deletions ?? 0))
+              - ((b.additions ?? 0) + (b.deletions ?? 0));
             break;
           case 'number':
             cmp = a.number - b.number;
@@ -1063,6 +1085,7 @@ export function PrApp({
       updated: () => veryCompact ? 8 : 12,
       ci: () => veryCompact ? 8 : 12,
       merge: () => compact ? 3 : 11,
+      diff: () => compact ? 12 : 14,
       linear: () => compact ? 10 : 12,
       review: () => compact ? 3 : 15,
     };
@@ -1184,6 +1207,7 @@ export function PrApp({
               updated: { text: relativeTime(pr.updatedAt), fg: '#565f89' },
               ci: { text: ciStatus.text, fg: ciStatus.fg },
               merge: { text: merge.text, fg: merge.fg },
+              diff: formatDiff(pr.additions, pr.deletions),
               linear: { text: linearText, fg: '#bb9af7' },
               review: { text: rvw.text, fg: rvw.fg },
             };

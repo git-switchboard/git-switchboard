@@ -5,6 +5,10 @@ import type { Ingester } from '../ingest.js';
 
 interface LinearFetcherDeps {
   fetchIssuesByIdentifier: (identifiers: string[]) => Promise<LinearIssue[]>;
+  fetchAll?: () => Promise<{
+    issues: LinearIssue[];
+    attachments: { prUrl: string; issueIdentifier: string }[];
+  }>;
   batchDelayMs?: number;
 }
 
@@ -35,7 +39,7 @@ export function createLinearFetcher(
     }
   }
 
-  const unsub = bus.on('linear:issue:fetch', ({ identifier }) => {
+  const unsubFetch = bus.on('linear:issue:fetch', ({ identifier }) => {
     if (pending.has(identifier)) return;
     pending.add(identifier);
 
@@ -44,8 +48,21 @@ export function createLinearFetcher(
     }
   });
 
+  const unsubFetchAll = deps.fetchAll
+    ? bus.on('linear:fetchAll', async () => {
+        try {
+          const result = await deps.fetchAll!();
+          ingester.ingestLinearData(result);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          bus.emit('error', { source: 'linear:fetchAll', message });
+        }
+      })
+    : null;
+
   return () => {
-    unsub();
+    unsubFetch();
+    unsubFetchAll?.();
     if (timer) clearTimeout(timer);
   };
 }

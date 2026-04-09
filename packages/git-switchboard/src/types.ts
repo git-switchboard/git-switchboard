@@ -169,7 +169,7 @@ export interface FilterPreset {
 }
 
 // ─── Sort types (shared between pr-app and store) ──────────────────────────
-export type SortField = 'updated' | 'review' | 'ci' | 'repo' | 'merge' | 'number';
+export type SortField = 'updated' | 'review' | 'ci' | 'repo' | 'merge' | 'number' | 'diff';
 export type SortDir = 'asc' | 'desc';
 
 export interface SortLayer {

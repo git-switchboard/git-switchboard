@@ -158,4 +158,4 @@ function hasChanged(a: object, b: object, skipKeys?: Set<string>): boolean {
 }
 
 // Fields on PR that are handled separately by the enrichment check
-const PR_ENRICHMENT_KEYS = new Set(['ci', 'review', 'mergeable', 'body']);
+const PR_ENRICHMENT_KEYS = new Set(['ci', 'review', 'mergeable', 'body', 'additions', 'deletions']);

@@ -215,6 +215,20 @@ const gitSwitchboard = cli('git-switchboard', {
             createLinearFetcher(dataLayer.bus, dataLayer.ingest, {
               fetchIssuesByIdentifier: (identifiers) =>
                 fetchIssuesByIdentifier(linearToken, identifiers),
+              fetchAll: async () => {
+                // Always fetch fresh from the API — hydration already loaded the cache,
+                // so returning cached data here would be a no-op.
+                const cached = await readCachedLinearSnapshot(linearToken);
+                const data = await fetchLinearData(linearToken)
+                  .catch(() => cached?.data ?? null);
+                if (!data) return { issues: [], attachments: [] };
+                return {
+                  issues: [...data.issues.values()],
+                  attachments: [...data.attachments.entries()].map(
+                    ([prUrl, issueId]) => ({ prUrl, issueIdentifier: issueId })
+                  ),
+                };
+              },
             });
           }
 
@@ -270,13 +284,10 @@ const gitSwitchboard = cli('git-switchboard', {
             return [];
           });
 
-          const linearPromise = linearToken
-            ? (async () => {
-                const cached = await readCachedLinearSnapshot(linearToken);
-                if (cached && !cached.isStale) return cached.data;
-                return fetchLinearData(linearToken).catch(() => cached?.data ?? null);
-              })()
-            : Promise.resolve(null);
+          // Kick off Linear bulk fetch through the data layer's event system
+          if (linearToken) {
+            dataLayer.bus.emit('linear:fetchAll', {});
+          }
 
           // Check for cached PR data for instant startup, including stale snapshots.
           const cachedPRs = await readCachedPRsSnapshot(token, repoMode ?? undefined);
@@ -347,17 +358,6 @@ const gitSwitchboard = cli('git-switchboard', {
               import('./store.js').PrRouterResult | null
             >();
 
-          // Ingest Linear data into DataLayer
-          const linearData = await linearPromise;
-          if (linearData) {
-            dataLayer.ingest.ingestLinearData({
-              issues: [...linearData.issues.values()],
-              attachments: [...linearData.attachments.entries()].map(
-                ([prUrl, issueId]) => ({ prUrl, issueIdentifier: issueId })
-              ),
-            });
-          }
-
           const initialLocalRepos = scanDone ? await scanPromise : [];
 
           // Ingest scanned repos as checkouts
@@ -372,12 +372,17 @@ const gitSwitchboard = cli('git-switchboard', {
             })));
           }
 
+          const { readColumnConfig } = await import('./config.js');
+          const { PR_COLUMN_DEFS, PR_VIEW_NAME } = await import('./pr-columns.js');
+          const columns = await readColumnConfig(PR_VIEW_NAME, PR_COLUMN_DEFS);
+
           const store = createPrStore({
             dataLayer,
             localRepos: initialLocalRepos,
             repoScanDone: scanDone,
             repoMode,
             token,
+            columns,
             copyToClipboard,
             editor,
             installedEditors,

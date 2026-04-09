@@ -283,6 +283,8 @@ interface ReviewNodeGraphInput {
 
 interface PullRequestDetailsNodeInput {
   body?: string | null;
+  additions?: number | null;
+  deletions?: number | null;
   mergeable?: string | null;
   commits: {
     nodes?: Array<{
@@ -373,6 +375,8 @@ const PR_DETAIL_QUERY = graphql(`
   query PRDetail($owner: String!, $repo: String!, $number: Int!) {
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $number) {
+        additions
+        deletions
         mergeable
         commits(last: 1) {
           nodes {
@@ -437,6 +441,8 @@ const BATCH_PR_DETAILS_QUERY = graphql(`
         id
         number
         body
+        additions
+        deletions
         mergeable
         commits(last: 1) {
           nodes {
@@ -898,7 +904,7 @@ function computeReviewStatus(
 function buildPRDetailsFromNode(
   pr: PullRequestDetailsNodeInput,
   pullNumber: number
-): { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string } {
+): { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string; additions?: number; deletions?: number } {
   const commitNode = (pr.commits.nodes ?? [])[0];
   const lastCommitDate = commitNode?.commit?.committedDate ?? '';
   const contextNodes =
@@ -927,8 +933,10 @@ function buildPRDetailsFromNode(
   const mergeable = (pr.mergeable ?? 'UNKNOWN') as MergeableStatus;
 
   const body = pr.body ?? undefined;
+  const additions = pr.additions ?? undefined;
+  const deletions = pr.deletions ?? undefined;
 
-  return { ci, review, mergeable, body };
+  return { ci, review, mergeable, body, additions, deletions };
 }
 
 async function fetchPRDetailsWithOctokit(
@@ -954,7 +962,7 @@ async function fetchPRDetailsWithOctokit(
 export async function fetchPRDetailsBatch(
   token: string,
   prs: readonly UserPullRequest[]
-): Promise<Map<string, { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus }>> {
+): Promise<Map<string, { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string; additions?: number; deletions?: number }>> {
   const octokit = createOctokit(token);
   const uniquePRs = [...new Map(prs.map((pr) => [pr.nodeId, pr])).values()];
   if (uniquePRs.length === 0) return new Map();
@@ -967,7 +975,7 @@ export async function fetchPRDetailsBatch(
   const prsByNodeId = new Map(uniquePRs.map((pr) => [pr.nodeId, pr]));
   const detailsByKey = new Map<
     string,
-    { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string }
+    { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string; additions?: number; deletions?: number }
   >();
 
   for (const node of result.nodes ?? []) {
@@ -975,8 +983,10 @@ export async function fetchPRDetailsBatch(
     const pr = prsByNodeId.get(node.id);
     if (!pr) continue;
     const details = buildPRDetailsFromNode(node, pr.number);
-    // body comes from the GraphQL node directly (gql.tada types it)
+    // body/additions/deletions come from the GraphQL node directly
     details.body = node.body ?? undefined;
+    details.additions = node.additions ?? undefined;
+    details.deletions = node.deletions ?? undefined;
     detailsByKey.set(`${pr.repoId}#${pr.number}`, details);
   }
 

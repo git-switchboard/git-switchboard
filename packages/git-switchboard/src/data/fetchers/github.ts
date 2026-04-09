@@ -15,7 +15,7 @@ interface FetchUserPRsResult {
 interface GithubFetcherDeps {
   fetchPRDetailsBatch: (
     prs: PR[],
-  ) => Promise<Map<string, { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string }>>;
+  ) => Promise<Map<string, { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string; additions?: number; deletions?: number }>>;
   fetchAllPRs?: (repoMode: string | null) => Promise<FetchUserPRsResult>;
   batchDelayMs?: number;
   /** Max PRs per GraphQL batch request (default 20) */
@@ -100,6 +100,8 @@ export function createGithubFetcher(
               review: details.review,
               mergeable: details.mergeable,
               body: details.body ?? existing.body,
+              additions: details.additions ?? existing.additions,
+              deletions: details.deletions ?? existing.deletions,
             });
           }
         }

@@ -48,6 +48,7 @@ function createStoreWithDataLayer(prs: PR[] = []) {
     repoScanDone: true,
     repoMode: null,
     token: 'test-token',
+    columns: [],
     copyToClipboard: async () => true,
     onDone: () => {},
     openEditorForPR: async () => 'ok',

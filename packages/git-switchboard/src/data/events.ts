@@ -26,6 +26,7 @@ export type DataEventMap = {
   'pr:fetchDetail': { repoId: string; number: number; force?: boolean };
   'pr:fetchAll': { repoMode: string | null };
   'linear:issue:fetch': { identifier: string };
+  'linear:fetchAll': {};
   'checkout:scan': { paths?: string[] };
 
   // Error events
