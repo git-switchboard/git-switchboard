@@ -1,4 +1,4 @@
-import { useKeyboard } from '@opentui/react';
+import { useFocusedKeyboard } from './focus-stack.js';
 import type { Keybind, KeyMatcher } from './view.js';
 
 export interface KeyInput {
@@ -23,9 +23,8 @@ function matchesKey(matcher: KeyMatcher, key: KeyInput): boolean {
  * - A handler returning `false` passes the event to the next matching keybind.
  * - Any other return value (including `void`) consumes the event.
  *
- * Because `useKeyboard` is LIFO, call `useKeybinds` BEFORE registering any
- * higher-priority `useKeyboard` handlers (e.g. text input modes) so those
- * fire first and can consume events before the keybinds see them.
+ * Focus-aware: by default, keybinds only fire when the focus stack is empty.
+ * Pass `{ focusId }` in options to bind keybinds to a specific focus scope.
  *
  * ```ts
  * useKeybinds(keybinds, {
@@ -33,18 +32,16 @@ function matchesKey(matcher: KeyMatcher, key: KeyInput): boolean {
  *   quit: () => onExit(),
  * });
  *
- * // Registered after → fires first. Consumes events in input mode.
- * useKeyboard((key) => {
- *   if (inputMode) { handleInput(key); return true; }
- * });
+ * // Only fires when 'search' focus is active.
+ * useFocusedKeyboard((key) => { handleInput(key); }, { focusId: 'search' });
  * ```
  */
 export function useKeybinds<TKeybinds extends Record<string, Keybind>>(
   keybinds: TKeybinds,
   handlers: Partial<{ [K in keyof TKeybinds]: (event: KeyInput) => boolean | void }>,
-  options?: { show?: Partial<Record<string, boolean>> }
+  options?: { show?: Partial<Record<string, boolean>>; focusId?: string }
 ): void {
-  useKeyboard((key) => {
+  useFocusedKeyboard((key) => {
     const input: KeyInput = {
       name: key.name ?? '',
       ctrl: !!key.ctrl,
@@ -66,5 +63,5 @@ export function useKeybinds<TKeybinds extends Record<string, Keybind>>(
         return true;
       }
     }
-  });
+  }, options?.focusId ? { focusId: options.focusId } : undefined);
 }

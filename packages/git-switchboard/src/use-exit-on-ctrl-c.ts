@@ -1,4 +1,5 @@
-import { useKeyboard, useRenderer } from '@opentui/react';
+import { useRenderer } from '@opentui/react';
+import { useFocusedKeyboard } from './focus-stack.js';
 
 /**
  * Exit the process on Ctrl+C.
@@ -7,7 +8,7 @@ import { useKeyboard, useRenderer } from '@opentui/react';
 export function useExitOnCtrlC(): void {
   const renderer = useRenderer();
 
-  useKeyboard((key) => {
+  useFocusedKeyboard((key) => {
     if (key.ctrl && key.name === 'c') {
       try {
         renderer.destroy();
@@ -16,5 +17,5 @@ export function useExitOnCtrlC(): void {
       }
       process.exit(0);
     }
-  });
+  }, { global: true });
 }

@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, createContext, useContext } from 'react';
 import type React from 'react';
 import type { View } from './view.js';
+import { FocusStackProvider, useFocusStackValue } from './focus-stack.js';
 
 // ─── Internal navigation context ──────────────────────────────────────────────
 
@@ -70,13 +71,17 @@ export function TuiRouter<TScreen extends { type: string }>({
     [navigate, goBack, history.length]
   );
 
+  const focusStack = useFocusStackValue();
+
   const view = views[screen.type];
   if (!view) return null;
 
   return (
     <NavigationCtx.Provider value={ctx}>
-      {view.render(screen, view.keybinds)}
-      {overlay}
+      <FocusStackProvider value={focusStack}>
+        {view.render(screen, view.keybinds)}
+        {overlay}
+      </FocusStackProvider>
     </NavigationCtx.Provider>
   );
 }
