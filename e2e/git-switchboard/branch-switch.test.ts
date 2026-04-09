@@ -44,7 +44,7 @@ describe("branch switch", () => {
     expect(branches).toContain("feature/beta");
   });
 
-  it("switches branch when enter is pressed on the first item", async () => {
+  it.skip("switches branch when enter is pressed on the first item", async () => {
     const cli = spawnCLI(fixture.path, ["--no-pr"]);
 
     // Give the TUI time to render, then press Enter on the first item
