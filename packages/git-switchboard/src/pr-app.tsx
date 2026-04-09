@@ -1337,10 +1337,10 @@ export function PrApp({
         <box
           style={{
             position: 'absolute',
-            top: Math.floor(height / 2) - Math.floor((sortItemCount + 4) / 2),
+            top: Math.floor(height / 2) - Math.floor((sortItemCount + 5) / 2),
             left: Math.floor(width / 2) - 20,
             width: 40,
-            height: sortItemCount + 4,
+            height: sortItemCount + 5,
           }}
         >
           <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
@@ -1380,6 +1380,9 @@ export function PrApp({
                 </box>
               );
             })}
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content={'─'.repeat(40)} fg="#292e42" />
+            </box>
             {/* Close action row */}
             <box
               style={{
@@ -1390,7 +1393,7 @@ export function PrApp({
               onMouseDown={() => setSortModal(null)}
             >
               <text
-                content={`     ${sortModal.selectedIndex === SORT_FIELDS.length ? '>' : ' '} Close`}
+                content={` ${sortModal.selectedIndex === SORT_FIELDS.length ? '>' : ' '} Close`}
                 fg={sortModal.selectedIndex === SORT_FIELDS.length ? '#c0caf5' : '#565f89'}
               />
             </box>
@@ -1406,10 +1409,10 @@ export function PrApp({
         <box
           style={{
             position: 'absolute',
-            top: Math.floor(height / 2) - Math.floor((colItemCount + 3) / 2),
+            top: Math.floor(height / 2) - Math.floor((colItemCount + 5) / 2),
             left: Math.floor(width / 2) - 22,
             width: 44,
-            height: colItemCount + 3,
+            height: colItemCount + 5,
           }}
         >
           <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
@@ -1465,21 +1468,26 @@ export function PrApp({
                 </box>
               );
             })}
-            {/* Close action row */}
             {!columnModal.reordering && (
-              <box
-                style={{
-                  height: 1,
-                  width: '100%',
-                  backgroundColor: columnModal.selectedIndex === columns.length ? '#292e42' : '#1a1b26',
-                }}
-                onMouseDown={() => closeColumnModal()}
-              >
-                <text
-                  content={`     ${columnModal.selectedIndex === columns.length ? '>' : ' '} Close`}
-                  fg={columnModal.selectedIndex === columns.length ? '#c0caf5' : '#565f89'}
-                />
-              </box>
+              <>
+                <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+                  <text content={'─'.repeat(44)} fg="#292e42" />
+                </box>
+                {/* Close action row */}
+                <box
+                  style={{
+                    height: 1,
+                    width: '100%',
+                    backgroundColor: columnModal.selectedIndex === columns.length ? '#292e42' : '#1a1b26',
+                  }}
+                  onMouseDown={() => closeColumnModal()}
+                >
+                  <text
+                    content={` ${columnModal.selectedIndex === columns.length ? '>' : ' '} Close`}
+                    fg={columnModal.selectedIndex === columns.length ? '#c0caf5' : '#565f89'}
+                  />
+                </box>
+              </>
             )}
             <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
               <text
@@ -1500,10 +1508,10 @@ export function PrApp({
         <box
           style={{
             position: 'absolute',
-            top: Math.floor(height / 2) - Math.floor((filterFieldItems.length + 4) / 2),
+            top: Math.floor(height / 2) - Math.floor((filterFieldItems.length + 5) / 2),
             left: Math.floor(width / 2) - 22,
             width: 44,
-            height: filterFieldItems.length + 4,
+            height: filterFieldItems.length + 5,
           }}
         >
           <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
@@ -1569,6 +1577,9 @@ export function PrApp({
               );
             })}
             <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content={'─'.repeat(44)} fg="#292e42" />
+            </box>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
               <text content=" Enter/Space select | d delete preset | Esc close" fg="#565f89" />
             </box>
           </box>
@@ -1584,7 +1595,7 @@ export function PrApp({
           : allValues;
         const maxVisible = Math.min(suggestions.length, 10);
         const fieldDef = FILTER_FIELD_DEFS.find((d) => d.id === filterModal.fieldId);
-        const modalHeight = maxVisible + 5;
+        const modalHeight = maxVisible + 6;
 
         return (
           <box
@@ -1625,6 +1636,9 @@ export function PrApp({
                 );
               })}
               <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+                <text content={'─'.repeat(44)} fg="#292e42" />
+              </box>
+              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
                 <text content=" Tab fuzzy/exact | Enter confirm | Esc back" fg="#565f89" />
               </box>
             </box>
@@ -1636,7 +1650,7 @@ export function PrApp({
       {filterModal?.level === 'multiselect-picker' && (() => {
         const options = MULTISELECT_OPTIONS[filterModal.fieldId] ?? [];
         const fieldDef = FILTER_FIELD_DEFS.find((d) => d.id === filterModal.fieldId);
-        const modalHeight = options.length + 4;
+        const modalHeight = options.length + 5;
 
         return (
           <box
@@ -1674,6 +1688,9 @@ export function PrApp({
                   </box>
                 );
               })}
+              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+                <text content={'─'.repeat(44)} fg="#292e42" />
+              </box>
               <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
                 <text content=" Enter/Space toggle | Esc apply & back" fg="#565f89" />
               </box>
