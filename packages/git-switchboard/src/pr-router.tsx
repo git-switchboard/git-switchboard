@@ -108,7 +108,17 @@ function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
       onFetchCI={(pr) => store.getState().refreshCI(pr)}
       onPrefetchDetails={store.getState().prefetchDetails}
       onRetryChecks={async (pr) => store.getState().retryChecks(pr)}
-      onRefreshAll={async () => store.getState().refreshAllPRs()}
+      onRefreshAll={async (visiblePRs) => {
+        store.getState().refreshAllPRs();
+        // Also force-refresh detail data (including body) for visible PRs
+        for (const pr of visiblePRs) {
+          dataLayer.bus.emit('pr:fetchDetail', {
+            repoId: pr.repoId,
+            number: pr.number,
+            force: true,
+          });
+        }
+      }}
       onExit={() => store.getState().onDone(null)}
     />
   );

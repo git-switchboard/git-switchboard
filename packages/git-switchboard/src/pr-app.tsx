@@ -189,7 +189,7 @@ interface PrAppProps extends ViewProps {
   onFetchCI: (pr: UserPullRequest) => void;
   onPrefetchDetails: (prs: UserPullRequest[]) => void;
   onRetryChecks: (pr: UserPullRequest) => Promise<string>;
-  onRefreshAll: (prs: UserPullRequest[]) => Promise<void>;
+  onRefreshAll: (visiblePRs: UserPullRequest[]) => void;
   onExit: () => void;
   storeStatusText?: string;
 }
@@ -401,7 +401,7 @@ export function PrApp({
       session.refreshedKeys.add(`${pr.repoId}#${pr.number}`);
     }
 
-    void onRefreshAll(chunk);
+    onRefreshAll(chunk);
   }, [
     filteredPRs,
     listHeight,
