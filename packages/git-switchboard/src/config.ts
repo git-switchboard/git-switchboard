@@ -23,6 +23,10 @@ export type TokenConfig = Partial<Record<TokenStrategy, string>>;
 
 export interface Config {
   tokens?: Record<string, TokenConfig>;
+  /** Per-view column order and visibility. Key is the view name (e.g. 'pr-list'). */
+  columns?: Record<string, { id: string; visibility: 'auto' | 'visible' | 'hidden' }[]>;
+  /** Saved filter presets. Key is the view name (e.g. 'pr-list'). */
+  filterPresets?: Record<string, FilterPreset[]>;
 }
 
 async function ensureDirs(): Promise<void> {
@@ -63,5 +67,71 @@ export async function removeTokenConfig(provider: string): Promise<void> {
   if (config.tokens) {
     delete config.tokens[provider];
   }
+  await writeConfig(config);
+}
+
+// ─── Column config helpers ──────────────────────────────────────────────────
+
+import type { ColumnConfig, ColumnDef, FilterPreset } from './types.js';
+import { defaultColumns } from './types.js';
+
+/**
+ * Read column config for a view, merging saved config with defaults.
+ * Handles new columns being added or old ones removed across versions.
+ */
+export async function readColumnConfig<TId extends string>(
+  viewName: string,
+  defs: ColumnDef<TId>[],
+): Promise<ColumnConfig<TId>[]> {
+  const config = await readConfig();
+  const saved = config.columns?.[viewName];
+  if (!saved) return defaultColumns(defs);
+
+  const validIds = new Set<string>(defs.map((d) => d.id));
+  // Keep saved entries that still exist, in saved order
+  const result: ColumnConfig<TId>[] = [];
+  const seen = new Set<string>();
+  for (const entry of saved) {
+    if (validIds.has(entry.id) && !seen.has(entry.id)) {
+      result.push(entry as ColumnConfig<TId>);
+      seen.add(entry.id);
+    }
+  }
+  // Append any new columns not in saved config
+  for (const def of defs) {
+    if (!seen.has(def.id)) {
+      result.push({
+        id: def.id,
+        visibility: def.supportsAuto ? 'auto' : 'visible',
+      });
+    }
+  }
+  return result;
+}
+
+export async function writeColumnConfig<TId extends string>(
+  viewName: string,
+  columns: ColumnConfig<TId>[],
+): Promise<void> {
+  const config = await readConfig();
+  config.columns ??= {};
+  config.columns[viewName] = columns;
+  await writeConfig(config);
+}
+
+// ─── Filter preset helpers ─────────────────────────────────────────────────
+
+export async function readFilterPresets(viewName: string): Promise<FilterPreset[]> {
+  const config = await readConfig();
+  return config.filterPresets?.[viewName] ?? [];
+}
+
+export async function writeFilterPresets(
+  viewName: string,
+  presets: FilterPreset[],
+): Promise<void> {
+  const config = await readConfig();
+  config.filterPresets ??= {};
+  config.filterPresets[viewName] = presets;
   await writeConfig(config);
 }
