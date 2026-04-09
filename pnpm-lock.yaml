@@ -116,6 +116,16 @@ importers:
         version: 4.1.2(@types/node@22.18.1)(vite@7.3.1(@types/node@22.18.1)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3))
 
   packages/git-switchboard:
+    dependencies:
+      '@opentui/core':
+        specifier: ^0.1.96
+        version: 0.1.96(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)
+      '@opentui/react':
+        specifier: ^0.1.96
+        version: 0.1.96(react-devtools-core@7.0.1)(react@19.2.4)(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)(ws@8.20.0)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.4
     devDependencies:
       '@octokit/graphql-schema':
         specifier: ^15.26.1
@@ -123,12 +133,9 @@ importers:
       '@octokit/rest':
         specifier: ^22.0.0
         version: 22.0.1
-      '@opentui/core':
-        specifier: ^0.1.96
-        version: 0.1.96(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)
-      '@opentui/react':
-        specifier: ^0.1.96
-        version: 0.1.96(react-devtools-core@7.0.1)(react@19.2.4)(stage-js@1.0.1)(typescript@5.9.2)(web-tree-sitter@0.25.10)(ws@8.20.0)
+      '@types/bun':
+        specifier: ^1.3.11
+        version: 1.3.11
       '@types/node':
         specifier: 22.18.1
         version: 22.18.1
@@ -147,9 +154,6 @@ importers:
       graphql:
         specifier: ^16.13.2
         version: 16.13.2
-      react:
-        specifier: ^19.0.0
-        version: 19.2.4
       tslib:
         specifier: ^2.5.0
         version: 2.8.1
@@ -1569,6 +1573,9 @@ packages:
   '@types/babel__traverse@7.28.0':
     resolution: {integrity: sha512-8PvcXf70gTDZBgt9ptxJ8elBeBjcLOAcOtoO/mPJjtji1+CdGbHgm77om1GrsPxsiE+uXIpNSK64UYaIwQXd4Q==}
 
+  '@types/bun@1.3.11':
+    resolution: {integrity: sha512-5vPne5QvtpjGpsGYXiFyycfpDF2ECyPcTSsFBMa0fraoxiQyMJ3SmuQIGhzPg2WJuWxVBoxWJ2kClYTcw/4fAg==}
+
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
 
@@ -1965,6 +1972,9 @@ packages:
     resolution: {integrity: sha512-Lh1oQAYHDcnesJauieA4UNkWGXY9hYck7OA5IaRwE3Bp6K2F2pJSNYqq+hIy7P3uOvo3km3oxS8304g5gDMl/w==}
     peerDependencies:
       typescript: ^5
+
+  bun-types@1.3.11:
+    resolution: {integrity: sha512-1KGPpoxQWl9f6wcZh57LvrPIInQMn2TQ7jsgxqpRzg+l0QPOFvJVH7HmvHo/AiPgwXy+/Thf6Ov3EdVn1vOabg==}
 
   bun-webgpu-darwin-arm64@0.1.6:
     resolution: {integrity: sha512-lIsDkPzJzPl6yrB5CUOINJFPnTRv6fF/Q8J1mAr43ogSp86WZEg9XZKaT6f3EUJ+9ETogGoMnoj1q0AwHUTbAQ==}
@@ -5969,6 +5979,10 @@ snapshots:
     dependencies:
       '@babel/types': 7.29.0
 
+  '@types/bun@1.3.11':
+    dependencies:
+      bun-types: 1.3.11
+
   '@types/chai@5.2.3':
     dependencies:
       '@types/deep-eql': 4.0.2
@@ -6474,6 +6488,10 @@ snapshots:
   bun-ffi-structs@0.1.2(typescript@5.9.2):
     dependencies:
       typescript: 5.9.2
+
+  bun-types@1.3.11:
+    dependencies:
+      '@types/node': 22.18.1
 
   bun-webgpu-darwin-arm64@0.1.6:
     optional: true
