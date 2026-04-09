@@ -106,9 +106,9 @@ function HeroSection({
             animationDelay: '160ms',
           }}
         >
-          A terminal TUI for mission-critical branch operations. Browse, filter,
-          and checkout git branches with live GitHub PR integration — all from
-          your command line.
+          A TUI for mission-critical branch operations. Browse, filter, and
+          checkout git branches with live GitHub PR integration — all from your
+          terminal.
         </p>
 
         <div
