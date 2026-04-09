@@ -9,10 +9,41 @@
 - Claude
 - Craigory Coppola @AgentEnder
 
+## 0.1.0 (2026-04-08)
+
+### 🚀 Features
+
+- add config module for ~/.config/git-switchboard ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- add `connect` subcommand with provider setup TUI ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- add crypto module for AES-256-GCM token encryption ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- add TokenStore with multi-strategy token resolution ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- add GitHub and Linear provider definitions ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- add Linear API client with caching and issue matching ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- add provider status modal for rate limit display ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- add Linear enrichment columns and `p` keybind to all views ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- show token resolution source in connect views ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- add whoami validation for provider connections ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- add `reset-terminal` command ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- worktree conflict resolution, dirty-checkout guards, and branch validation ([#10](https://github.com/git-switchboard/git-switchboard/pull/10))
+
+### 🩹 Fixes
+
+- guard select action against firing during search/sort modal ([2915fa8](https://github.com/git-switchboard/git-switchboard/commit/2915fa8))
+- improve Windows and Linux container compatibility ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- properly destroy renderer on connect exit ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- support paste in all text input fields ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+- ensure parent directory exists before writing encrypted files ([#11](https://github.com/git-switchboard/git-switchboard/pull/11))
+
+### ❤️ Thank You
+
+- Claude
+- Craigory Coppola @AgentEnder
+
 ## 0.0.2 (2026-04-07)
 
 ### 🚀 Features
 
+- add e2e test suite with verdaccio and PTY harness ([#7](https://github.com/git-switchboard/git-switchboard/pull/7))
 - polish docs-site and extract keybinds from the app ([31421aa](https://github.com/git-switchboard/git-switchboard/commit/31421aa))
 - chunked PR refresh and viewport-aware prefetching ([ec84e00](https://github.com/git-switchboard/git-switchboard/commit/ec84e00))
 - add refreshPRs, lazy repo scan, and cache persistence to store ([04a9dd6](https://github.com/git-switchboard/git-switchboard/commit/04a9dd6))
