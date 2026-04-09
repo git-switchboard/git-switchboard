@@ -53,6 +53,8 @@ export interface CheckRun {
   detailsUrl: string | null;
   startedAt: string | null;
   completedAt: string | null;
+  /** GitHub App slug that created this check (e.g. "github-actions", "nx-cloud"). Null for commit statuses. */
+  appSlug: string | null;
 }
 
 export interface CIInfo {

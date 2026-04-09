@@ -1,96 +1,70 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mergeCachedPRData } from './github.js';
-import type {
-  CIInfo,
-  MergeableStatus,
-  ReviewInfo,
-  UserPullRequest,
-} from './types.js';
+import { extractChecksFromStatusContextNodes } from './github.js';
 
-function createPR(overrides: Partial<UserPullRequest> = {}): UserPullRequest {
-  return {
-    nodeId: 'PR_test_123',
-    number: 123,
-    title: 'Preserve stale detail data',
-    state: 'OPEN',
-    draft: false,
-    repoOwner: 'nrwl',
-    repoName: 'nx',
-    repoId: 'nrwl/nx',
-    forkRepoId: null,
-    headRef: 'feature/cache',
-    updatedAt: '2026-04-03T12:00:00Z',
-    url: 'https://github.com/nrwl/nx/pull/123',
-    author: 'octocat',
-    role: 'author',
-    ...overrides,
-  };
-}
-
-function createCIInfo(overrides: Partial<CIInfo> = {}): CIInfo {
-  return {
-    status: 'passing',
-    checks: [],
-    fetchedAt: Date.now(),
-    ...overrides,
-  };
-}
-
-function createReviewInfo(overrides: Partial<ReviewInfo> = {}): ReviewInfo {
-  return {
-    status: 'approved',
-    reviewers: [],
-    fetchedAt: Date.now(),
-    ...overrides,
-  };
-}
-
-test('mergeCachedPRData preserves cached detail data for PRs still in the list', () => {
-  const activePR = createPR();
-  const droppedPR = createPR({
-    nodeId: 'PR_test_999',
-    number: 999,
-    title: 'Dropped PR',
-    headRef: 'feature/dropped',
-    url: 'https://github.com/nrwl/nx/pull/999',
-  });
-  const activeKey = `${activePR.repoId}#${activePR.number}`;
-  const droppedKey = `${droppedPR.repoId}#${droppedPR.number}`;
-
-  const staleCI = createCIInfo({ status: 'failing' });
-  const staleReview = createReviewInfo({ status: 'changes-requested' });
-  const staleMergeable: MergeableStatus = 'CONFLICTING';
-
-  const merged = mergeCachedPRData(
+test('extractChecksFromStatusContextNodes handles both CheckRun and StatusContext nodes', () => {
+  // Simulate the exact shape GitHub GraphQL API returns
+  const contextNodes = [
+    // CheckRun node
     {
-      prs: [activePR],
-      ciCache: new Map(),
-      reviewCache: new Map(),
-      mergeableCache: new Map(),
+      __typename: 'CheckRun',
+      databaseId: 70540554133,
+      name: 'main-linux',
+      status: 'COMPLETED',
+      conclusion: 'FAILURE',
+      detailsUrl: 'https://github.com/nrwl/nx/actions/runs/24170345810/job/70540554133',
+      startedAt: '2026-04-09T03:14:00Z',
+      completedAt: '2026-04-09T04:06:26Z',
+      checkSuite: {
+        databaseId: 63774308853,
+        createdAt: '2026-04-09T03:13:45Z',
+        app: { slug: 'github-actions' },
+        matchingPullRequests: { nodes: [{ number: 35227 }] },
+        workflowRun: {
+          databaseId: 24170345810,
+          runNumber: 9362,
+          createdAt: '2026-04-09T03:13:45Z',
+          workflow: { name: 'CI' },
+        },
+      },
     },
+    // StatusContext node (Nx Cloud)
     {
-      prs: [activePR, droppedPR],
-      ciCache: new Map([
-        [activeKey, staleCI],
-        [droppedKey, createCIInfo({ status: 'pending' })],
-      ]),
-      reviewCache: new Map([
-        [activeKey, staleReview],
-        [droppedKey, createReviewInfo({ status: 'needs-review' })],
-      ]),
-      mergeableCache: new Map([
-        [activeKey, staleMergeable],
-        [droppedKey, 'UNKNOWN'],
-      ]),
-    }
-  );
+      __typename: 'StatusContext',
+      context: 'linux / affected --targets=lint,test,build',
+      state: 'FAILURE',
+      description: 'Run failed. See logs and more details at Nx Cloud',
+      targetUrl: 'https://staging.nx.app/runs/bOdBW3u4dF',
+      createdAt: '2026-04-09T04:21:32Z',
+    },
+    // StatusContext node (Netlify)
+    {
+      __typename: 'StatusContext',
+      context: 'netlify/nx-dev/deploy-preview',
+      state: 'SUCCESS',
+      description: 'Deploy Preview ready!',
+      targetUrl: 'https://deploy-preview-35227--nx-dev.netlify.app',
+      createdAt: '2026-04-09T03:16:55Z',
+    },
+  ] as const;
 
-  assert.deepEqual(merged.prs, [activePR]);
-  assert.deepEqual([...merged.ciCache.entries()], [[activeKey, staleCI]]);
-  assert.deepEqual([...merged.reviewCache.entries()], [[activeKey, staleReview]]);
-  assert.deepEqual(
-    [...merged.mergeableCache.entries()],
-    [[activeKey, staleMergeable]]
-  );
+  const checks = extractChecksFromStatusContextNodes(contextNodes as any, 35227);
+
+  assert.equal(checks.length, 3, `Expected 3 checks, got ${checks.length}: ${checks.map(c => c.name).join(', ')}`);
+
+  const checkRun = checks.find(c => c.name === 'main-linux');
+  assert.ok(checkRun);
+  assert.equal(checkRun.appSlug, 'github-actions');
+  assert.equal(checkRun.conclusion, 'failure');
+  assert.equal(checkRun.id, 70540554133);
+
+  const nxCloud = checks.find(c => c.name === 'linux / affected --targets=lint,test,build');
+  assert.ok(nxCloud, 'StatusContext check from Nx Cloud should be present');
+  assert.equal(nxCloud.appSlug, null);
+  assert.equal(nxCloud.conclusion, 'failure');
+  assert.equal(nxCloud.detailsUrl, 'https://staging.nx.app/runs/bOdBW3u4dF');
+
+  const netlify = checks.find(c => c.name === 'netlify/nx-dev/deploy-preview');
+  assert.ok(netlify, 'StatusContext check from Netlify should be present');
+  assert.equal(netlify.conclusion, 'success');
 });
