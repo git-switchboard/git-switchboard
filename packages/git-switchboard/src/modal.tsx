@@ -49,19 +49,18 @@ export function Modal({
 
   return (
     <>
-      {/* Backdrop — click to dismiss */}
-      {onClose && (
-        <box
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: termWidth,
-            height: termHeight,
-          }}
-          onMouseDown={onClose}
-        />
-      )}
+      {/* Backdrop — dims content and dismisses on click */}
+      <box
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: termWidth,
+          height: termHeight,
+          backgroundColor: '#0f0f14',
+        }}
+        onMouseDown={onClose}
+      />
       <box
         style={{
           position: 'absolute',

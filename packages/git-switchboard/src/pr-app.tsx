@@ -1505,10 +1505,19 @@ export function PrApp({
         const maxVisible = Math.min(suggestions.length, 10);
         const fieldDef = FILTER_FIELD_DEFS.find((d) => d.id === filterModal.fieldId);
 
+        // Scroll viewport: keep selectedIndex visible
+        const si = filterModal.selectedIndex;
+        let scrollStart = 0;
+        if (si >= maxVisible) {
+          scrollStart = si - maxVisible + 1;
+        }
+        const visibleSuggestions = suggestions.slice(scrollStart, scrollStart + maxVisible);
+        const hasMore = suggestions.length > maxVisible;
+
         return (
           <Modal
             title={`${fieldDef?.label ?? filterModal.fieldId} (${filterModal.mode})`}
-            hint="Tab fuzzy/exact | Enter confirm | Esc back"
+            hint={`Tab fuzzy/exact | Enter confirm | Esc back${hasMore ? ` | ${suggestions.length} results` : ''}`}
             onClose={() => setFilterModal({ level: 'fields', selectedIndex: 0 })}
             width={46}
             height={maxVisible + 1}
@@ -1518,14 +1527,18 @@ export function PrApp({
             <box style={{ height: 1, width: '100%' }}>
               <text content={` > ${filterModal.inputValue}█`} fg="#c0caf5" />
             </box>
-            {suggestions.slice(0, maxVisible).map((val, i) => (
-              <ModalRow
-                key={val}
-                label={`   ${i === filterModal.selectedIndex ? '>' : ' '} ${val}`}
-                fg={i === filterModal.selectedIndex ? '#c0caf5' : '#a9b1d6'}
-                active={i === filterModal.selectedIndex}
-              />
-            ))}
+            {visibleSuggestions.map((val, vi) => {
+              const actualIndex = scrollStart + vi;
+              const isActive = actualIndex === si;
+              return (
+                <ModalRow
+                  key={val}
+                  label={`   ${isActive ? '>' : ' '} ${val}`}
+                  fg={isActive ? '#c0caf5' : '#a9b1d6'}
+                  active={isActive}
+                />
+              );
+            })}
           </Modal>
         );
       })()}
