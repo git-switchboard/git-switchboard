@@ -184,6 +184,8 @@ export const createPrStore = (initial: {
       prefetchDetails: (prs) => {
         for (const pr of prs) {
           const key = `${pr.repoId}#${pr.number}`;
+          // Skip if already loading
+          if (dataLayer.loading.isPrLoading(key)) continue;
           const entity = dataLayer.stores.prs.get(key);
           // Skip if has fresh enrichment — check that CI was fetched after PR was last updated
           if (entity?.ci && entity?.review) {

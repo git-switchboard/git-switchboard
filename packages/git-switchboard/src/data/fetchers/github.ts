@@ -35,6 +35,7 @@ export function createGithubFetcher(
   deps: GithubFetcherDeps,
 ): () => void {
   const batchDelay = deps.batchDelayMs ?? 50;
+  const maxBatchSize = deps.batchSize ?? 20;
   const cooldown = deps.cooldownMs ?? 30_000;
   const pendingDetails = new Map<string, { repoId: string; number: number }>();
   const forcedKeys = new Set<string>();
@@ -67,34 +68,46 @@ export function createGithubFetcher(
     const batchKeys = prsToFetch.map((pr) => `${pr.repoId}#${pr.number}`);
     for (const key of batchKeys) inFlight.add(key);
 
+    // Chunk into batches of maxBatchSize and run concurrently
+    const chunks: PR[][] = [];
+    for (let i = 0; i < prsToFetch.length; i += maxBatchSize) {
+      chunks.push(prsToFetch.slice(i, i + maxBatchSize));
+    }
+
     try {
-      const results = await deps.fetchPRDetailsBatch(prsToFetch);
+      const chunkResults = await Promise.allSettled(
+        chunks.map((chunk) => deps.fetchPRDetailsBatch(chunk))
+      );
 
       const fetchedAt = Date.now();
-      for (const key of results.keys()) {
-        recentlyFetched.set(key, fetchedAt);
-      }
-
       const enriched: PR[] = [];
-      for (const [key, details] of results) {
-        const existing = stores.prs.get(key);
-        if (existing) {
-          enriched.push({
-            ...existing,
-            ci: details.ci,
-            review: details.review,
-            mergeable: details.mergeable,
-            body: details.body ?? existing.body,
-          });
+
+      for (const result of chunkResults) {
+        if (result.status === 'rejected') {
+          const message = result.reason instanceof Error ? result.reason.message : 'Unknown error';
+          bus.emit('error', { source: 'pr:fetchDetail', message });
+          continue;
+        }
+        for (const key of result.value.keys()) {
+          recentlyFetched.set(key, fetchedAt);
+        }
+        for (const [key, details] of result.value) {
+          const existing = stores.prs.get(key);
+          if (existing) {
+            enriched.push({
+              ...existing,
+              ci: details.ci,
+              review: details.review,
+              mergeable: details.mergeable,
+              body: details.body ?? existing.body,
+            });
+          }
         }
       }
 
       if (enriched.length > 0) {
         ingester.ingestPRs(enriched);
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      bus.emit('error', { source: 'pr:fetchDetail', message });
     } finally {
       for (const key of batchKeys) inFlight.delete(key);
     }

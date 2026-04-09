@@ -197,6 +197,7 @@ function ClonePromptScreen({
 }
 
 function DebugScreen() {
+  const store = usePrStoreApi();
   const dataLayer = useDataLayer();
   const navigate = useNavigate<PrScreen>();
 
@@ -204,6 +205,7 @@ function DebugScreen() {
     <DebugView
       history={dataLayer.bus.history}
       onExit={() => navigate({ type: 'pr-list' })}
+      copyToClipboard={store.getState().copyToClipboard}
     />
   );
 }

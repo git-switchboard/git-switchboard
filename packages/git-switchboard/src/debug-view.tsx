@@ -121,9 +121,10 @@ function getChildren(entry: HistoryEntry, history: HistoryEntry[]): HistoryEntry
 interface DebugViewProps {
   history: HistoryEntry[];
   onExit: () => void;
+  copyToClipboard?: (text: string) => Promise<boolean>;
 }
 
-export function DebugView({ history, onExit }: DebugViewProps) {
+export function DebugView({ history, onExit, copyToClipboard }: DebugViewProps) {
   const { width, height } = useTerminalDimensions();
   const listHeight = Math.max(1, height - 5);
   const initialIndex = Math.max(0, history.length - 1);
@@ -165,9 +166,10 @@ export function DebugView({ history, onExit }: DebugViewProps) {
       payload: e.payload,
     }));
     await writeFile(logPath, JSON.stringify(data, null, 2));
-    setFooterMessage(`Exported to ${logPath}`);
+    if (copyToClipboard) await copyToClipboard(logPath);
+    setFooterMessage(`Exported to ${logPath} (copied to clipboard)`);
     setTimeout(() => setFooterMessage(''), 5000);
-  }, [history]);
+  }, [history, copyToClipboard]);
 
   useKeyboard((key) => {
     key.stopPropagation();
