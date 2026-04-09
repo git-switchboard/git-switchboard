@@ -205,6 +205,73 @@ const COLUMN_HEADERS: Record<PrColumnId, (compact: boolean, veryCompact: boolean
   review: (c) => c ? 'Rv' : 'Review',
 };
 
+// ─── Filter helpers ─────────────────────────────────────────────────────────
+
+function matchesStringFilter(value: string, filter: StringFilter): boolean {
+  if (filter.mode === 'exact') return value.toLowerCase() === filter.value.toLowerCase();
+  return value.toLowerCase().includes(filter.value.toLowerCase());
+}
+
+function applyFilters(pr: PR, filters: FilterState, dataLayer: DataLayer): boolean {
+  if (filters.org && !matchesStringFilter(pr.repoOwner, filters.org)) return false;
+  if (filters.repo && !matchesStringFilter(pr.repoId, filters.repo)) return false;
+  if (filters.author && !matchesStringFilter(pr.author, filters.author)) return false;
+  if (filters.linear) {
+    const linearIssues = dataLayer.query.linearIssuesForPr(`${pr.repoId}#${pr.number}`);
+    const linearIssue = linearIssues[0];
+    if (!linearIssue || !matchesStringFilter(linearIssue.identifier, filters.linear)) return false;
+  }
+  if (filters.role && filters.role.length > 0 && !filters.role.includes(pr.role)) return false;
+  if (filters.review && filters.review.length > 0) {
+    if (!pr.review?.status || !filters.review.includes(pr.review.status)) return false;
+  }
+  if (filters.ci && filters.ci.length > 0) {
+    if (!pr.ci?.status || !filters.ci.includes(pr.ci.status)) return false;
+  }
+  if (filters.merge && filters.merge.length > 0) {
+    if (!pr.mergeable || !filters.merge.includes(pr.mergeable)) return false;
+  }
+  return true;
+}
+
+// ─── Multiselect option definitions ─────────────────────────────────────────
+
+const MULTISELECT_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  role: [
+    { value: 'author', label: 'Author' },
+    { value: 'assigned', label: 'Assigned' },
+    { value: 'both', label: 'Both' },
+  ],
+  review: [
+    { value: 'approved', label: 'Approved' },
+    { value: 'changes-requested', label: 'Changes Requested' },
+    { value: 're-review-needed', label: 'Re-review Needed' },
+    { value: 'needs-review', label: 'Needs Review' },
+    { value: 'commented', label: 'Commented' },
+    { value: 'dismissed', label: 'Dismissed' },
+  ],
+  ci: [
+    { value: 'passing', label: 'Passing' },
+    { value: 'failing', label: 'Failing' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'mixed', label: 'Mixed' },
+    { value: 'unknown', label: 'Unknown' },
+  ],
+  merge: [
+    { value: 'MERGEABLE', label: 'Mergeable' },
+    { value: 'CONFLICTING', label: 'Conflicting' },
+    { value: 'UNKNOWN', label: 'Unknown' },
+  ],
+};
+
+// ─── Filter modal menu item type ────────────────────────────────────────────
+
+type FilterMenuItem =
+  | { type: 'preset'; index: number; preset: FilterPreset }
+  | { type: 'field'; def: FilterFieldDef }
+  | { type: 'clear' }
+  | { type: 'save' };
+
 interface PrAppProps extends ViewProps {
   prs: PR[];
   localRepos: LocalRepo[];
@@ -303,20 +370,25 @@ export function PrApp({
   }, [animateSpinner]);
 
   const filteredPRs = useMemo(() => {
-    const result = searchQuery
-      ? prs.filter((pr) => {
-          const q = searchQuery.toLowerCase();
-          const linearIssues = dataLayer.query.linearIssuesForPr(`${pr.repoId}#${pr.number}`);
-          const linearIssue = linearIssues[0];
-          return (
-            pr.title.toLowerCase().includes(q) ||
-            pr.repoId.includes(q) ||
-            pr.headRef.toLowerCase().includes(q) ||
-            pr.author.toLowerCase().includes(q) ||
-            (linearIssue?.identifier.toLowerCase().includes(q) ?? false)
-          );
-        })
-      : [...prs];
+    // Apply structured filters first
+    let result = prs.filter((pr) => applyFilters(pr, filters, dataLayer));
+
+    // Then apply freetext search
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((pr) => {
+        const linearIssues = dataLayer.query.linearIssuesForPr(`${pr.repoId}#${pr.number}`);
+        const linearIssue = linearIssues[0];
+        return (
+          pr.title.toLowerCase().includes(q) ||
+          pr.repoId.includes(q) ||
+          pr.headRef.toLowerCase().includes(q) ||
+          pr.author.toLowerCase().includes(q) ||
+          (linearIssue?.identifier.toLowerCase().includes(q) ?? false)
+        );
+      });
+    }
+
     result.sort((a, b) => {
       for (const layer of sortLayers) {
         const dir = layer.dir === 'asc' ? 1 : -1;
@@ -349,7 +421,7 @@ export function PrApp({
       return 0;
     });
     return result;
-  }, [prs, searchQuery, dataLayer, sortLayers]);
+  }, [prs, searchQuery, filters, dataLayer, sortLayers]);
 
   const repoMatchMap = useMemo(() => {
     const map = new Map<string, LocalRepo[]>();
