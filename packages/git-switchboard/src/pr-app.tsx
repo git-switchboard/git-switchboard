@@ -214,7 +214,7 @@ const SORTABLE_COLUMNS: Partial<Record<PrColumnId, SortField>> = {
 const COLUMN_HEADERS: Record<PrColumnId, (compact: boolean, veryCompact: boolean) => string> = {
   role: () => '',
   author: () => 'Author',
-  number: () => '#',
+  number: () => 'PR #',
   title: () => 'PR',
   repo: () => 'Repo',
   updated: (_c, vc) => vc ? 'Upd' : 'Updated',
