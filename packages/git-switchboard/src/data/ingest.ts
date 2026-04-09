@@ -45,6 +45,7 @@ export function createIngester(
         const merged: PR = existing
           ? {
               ...pr,
+              body: pr.body ?? existing.body,
               ci: pr.ci ?? existing.ci,
               review: pr.review ?? existing.review,
               mergeable: pr.mergeable ?? existing.mergeable,
@@ -146,4 +147,4 @@ function hasChanged(a: object, b: object, skipKeys?: Set<string>): boolean {
 }
 
 // Fields on PR that are handled separately by the enrichment check
-const PR_ENRICHMENT_KEYS = new Set(['ci', 'review', 'mergeable']);
+const PR_ENRICHMENT_KEYS = new Set(['ci', 'review', 'mergeable', 'body']);

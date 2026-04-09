@@ -435,6 +435,7 @@ const BATCH_PR_DETAILS_QUERY = graphql(`
       ... on PullRequest {
         id
         number
+        body
         mergeable
         commits(last: 1) {
           nodes {
@@ -896,7 +897,7 @@ function computeReviewStatus(
 function buildPRDetailsFromNode(
   pr: PullRequestDetailsNodeInput,
   pullNumber: number
-): { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus } {
+): { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string } {
   const commitNode = (pr.commits.nodes ?? [])[0];
   const lastCommitDate = commitNode?.commit?.committedDate ?? '';
   const contextNodes =
@@ -924,7 +925,10 @@ function buildPRDetailsFromNode(
   const review = computeReviewStatus(reviewNodes, lastCommitDate);
   const mergeable = (pr.mergeable ?? 'UNKNOWN') as MergeableStatus;
 
-  return { ci, review, mergeable };
+  // body is available on the batch query node but not the single PR detail query
+  const body = 'body' in pr ? (pr as { body?: string }).body : undefined;
+
+  return { ci, review, mergeable, body };
 }
 
 async function fetchPRDetailsWithOctokit(
@@ -963,7 +967,7 @@ export async function fetchPRDetailsBatch(
   const prsByNodeId = new Map(uniquePRs.map((pr) => [pr.nodeId, pr]));
   const detailsByKey = new Map<
     string,
-    { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus }
+    { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string }
   >();
 
   for (const node of result.nodes ?? []) {

@@ -15,6 +15,7 @@ export interface PR {
   author: string;
   role: PRRole;
   updatedAt: string;
+  body?: string;
   ci?: CIInfo;
   review?: ReviewInfo;
   mergeable?: MergeableStatus;

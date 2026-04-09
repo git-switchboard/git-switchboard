@@ -15,7 +15,7 @@ interface FetchUserPRsResult {
 interface GithubFetcherDeps {
   fetchPRDetailsBatch: (
     prs: PR[],
-  ) => Promise<Map<string, { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus }>>;
+  ) => Promise<Map<string, { ci: CIInfo; review: ReviewInfo; mergeable: MergeableStatus; body?: string }>>;
   fetchAllPRs?: (repoMode: string | null) => Promise<FetchUserPRsResult>;
   batchDelayMs?: number;
   /** How long before a successfully-fetched PR can be re-fetched (default 30s) */
@@ -82,6 +82,7 @@ export function createGithubFetcher(
             ci: details.ci,
             review: details.review,
             mergeable: details.mergeable,
+            body: details.body ?? existing.body,
           });
         }
       }

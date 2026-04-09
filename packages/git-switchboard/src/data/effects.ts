@@ -46,6 +46,18 @@ export function registerDiscoveryEffects(
     }),
   );
 
+  // PR enriched -> parse body for Linear issue patterns (body only available after detail fetch)
+  unsubs.push(
+    bus.on('pr:enriched', (pr) => {
+      if (!pr.body) return;
+      const key = prKey(pr);
+      const bodyIssue = parseLinearIssueId(pr.body);
+      if (bodyIssue) {
+        relations.link('prToLinear', key, bodyIssue);
+      }
+    }),
+  );
+
   // Branch discovered -> link to Linear by name pattern, link to existing PRs
   unsubs.push(
     bus.on('branch:discovered', (branch) => {
