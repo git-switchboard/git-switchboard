@@ -32,6 +32,7 @@ import type { DataLayer, PR } from './data/index.js';
 import type { PrColumnId } from './pr-columns.js';
 import { PR_COLUMN_DEFS, PR_VIEW_NAME } from './pr-columns.js';
 import { writeColumnConfig, readFilterPresets, writeFilterPresets } from './config.js';
+import { Modal, ModalRow } from './modal.js';
 import {
   CHECKMARK,
   CROSSMARK,
@@ -1334,255 +1335,155 @@ export function PrApp({
 
       {/* Sort modal */}
       {sortModal && (
-        <box
-          style={{
-            position: 'absolute',
-            top: Math.floor(height / 2) - Math.floor((sortItemCount + 7) / 2),
-            left: Math.floor(width / 2) - 25,
-            width: 50,
-            height: sortItemCount + 7,
-          }}
+        <Modal
+          title="Sort Order"
+          hint="Enter/Space toggle | Esc close"
+          width={46}
+          height={sortItemCount + 1}
+          termWidth={width}
+          termHeight={height}
         >
-          <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content=" Sort Order" fg="#7aa2f7" />
-            </box>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={`${'─'.repeat(50)}`} fg="#292e42" />
-            </box>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
-            {SORT_FIELDS.map((sf, i) => {
-              const isActive = i === sortModal.selectedIndex;
-              const layerIdx = sortLayers.findIndex((l) => l.field === sf.field);
-              const layer = layerIdx !== -1 ? sortLayers[layerIdx] : null;
-              const indicator = layer
-                ? `${layerIdx + 1}${layer.dir === 'asc' ? '↑' : '↓'}`
-                : '  ';
-              return (
-                <box
-                  key={sf.field}
-                  style={{
-                    height: 1,
-                    width: '100%',
-                    backgroundColor: isActive ? '#292e42' : '#1a1b26',
-                  }}
-                  onMouseDown={() => {
-                    if (isActive) {
-                      toggleSortField(sf.field);
-                    } else {
-                      setSortModal({ selectedIndex: i });
-                    }
-                  }}
-                >
-                  <text
-                    content={` ${indicator} ${isActive ? '>' : ' '} ${sf.label}`}
-                    fg={layer ? (isActive ? '#c0caf5' : '#7aa2f7') : (isActive ? '#a9b1d6' : '#565f89')}
-                  />
-                </box>
-              );
-            })}
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
-            {/* Close action row */}
-            <box
-              style={{
-                height: 1,
-                width: '100%',
-                backgroundColor: sortModal.selectedIndex === SORT_FIELDS.length ? '#292e42' : '#1a1b26',
-              }}
-              onMouseDown={() => setSortModal(null)}
-            >
-              <text
-                content={` ${sortModal.selectedIndex === SORT_FIELDS.length ? '>' : ' '} Close`}
-                fg={sortModal.selectedIndex === SORT_FIELDS.length ? '#c0caf5' : '#565f89'}
+          {SORT_FIELDS.map((sf, i) => {
+            const isActive = i === sortModal.selectedIndex;
+            const layerIdx = sortLayers.findIndex((l) => l.field === sf.field);
+            const layer = layerIdx !== -1 ? sortLayers[layerIdx] : null;
+            const indicator = layer
+              ? `${layerIdx + 1}${layer.dir === 'asc' ? '↑' : '↓'}`
+              : '  ';
+            return (
+              <ModalRow
+                key={sf.field}
+                label={` ${indicator} ${isActive ? '>' : ' '} ${sf.label}`}
+                fg={layer ? (isActive ? '#c0caf5' : '#7aa2f7') : (isActive ? '#a9b1d6' : '#565f89')}
+                active={isActive}
+                onMouseDown={() => isActive ? toggleSortField(sf.field) : setSortModal({ selectedIndex: i })}
               />
-            </box>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content=" Enter/Space toggle | Esc close" fg="#565f89" />
-            </box>
-          </box>
-        </box>
+            );
+          })}
+          <box style={{ height: 1, width: '100%' }} />
+          <ModalRow
+            label={` ${sortModal.selectedIndex === SORT_FIELDS.length ? '>' : ' '} Close`}
+            fg={sortModal.selectedIndex === SORT_FIELDS.length ? '#c0caf5' : '#565f89'}
+            active={sortModal.selectedIndex === SORT_FIELDS.length}
+            onMouseDown={() => setSortModal(null)}
+          />
+        </Modal>
       )}
 
       {/* Column config modal */}
       {columnModal && (
-        <box
-          style={{
-            position: 'absolute',
-            top: Math.floor(height / 2) - Math.floor((colItemCount + 7) / 2),
-            left: Math.floor(width / 2) - 25,
-            width: 50,
-            height: colItemCount + 7,
-          }}
+        <Modal
+          title="Columns"
+          hint={columnModal.reordering ? '↑↓ move | Enter/Esc done' : 'Enter/Space toggle | r reorder | Esc close'}
+          width={46}
+          height={columnModal.reordering ? columns.length : colItemCount + 1}
+          termWidth={width}
+          termHeight={height}
         >
-          <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content=" Columns" fg="#7aa2f7" />
-            </box>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={'─'.repeat(50)} fg="#292e42" />
-            </box>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
-            {columns.map((col, i) => {
-              const isActive = i === columnModal.selectedIndex;
-              const isGrabbed = isActive && columnModal.reordering;
-              const def = PR_COLUMN_DEFS.find((d) => d.id === col.id);
-              const visIcon = col.visibility === 'auto' ? '▣' : col.visibility === 'visible' ? '✓' : '✗';
-              const label = def?.label ?? col.id;
-              const grip = isGrabbed ? '≡' : ' ';
-              return (
-                <box
-                  key={col.id}
-                  style={{
-                    height: 1,
-                    width: '100%',
-                    backgroundColor: isGrabbed
-                      ? '#3b4261'
-                      : isActive
-                        ? '#292e42'
-                        : '#1a1b26',
-                  }}
-                  onMouseDown={() => {
-                    if (isActive) {
-                      if (def) {
-                        setColumns((prev) =>
-                          prev.map((c, idx) =>
-                            idx === i ? { ...c, visibility: cycleVisibility(c.visibility, def.supportsAuto) } : c
-                          )
-                        );
-                      }
-                    } else {
-                      setColumnModal({ selectedIndex: i, reordering: false });
-                    }
-                  }}
-                >
-                  <text
-                    content={` ${grip} ${isActive ? '>' : ' '} ${visIcon} ${label}`}
-                    fg={
-                      col.visibility === 'hidden'
-                        ? '#565f89'
-                        : isActive
-                          ? '#c0caf5'
-                          : '#a9b1d6'
-                    }
-                  />
-                </box>
-              );
-            })}
-            {!columnModal.reordering && (
-              <>
-                <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
-                {/* Close action row */}
-                <box
-                  style={{
-                    height: 1,
-                    width: '100%',
-                    backgroundColor: columnModal.selectedIndex === columns.length ? '#292e42' : '#1a1b26',
-                  }}
-                  onMouseDown={() => closeColumnModal()}
-                >
-                  <text
-                    content={` ${columnModal.selectedIndex === columns.length ? '>' : ' '} Close`}
-                    fg={columnModal.selectedIndex === columns.length ? '#c0caf5' : '#565f89'}
-                  />
-                </box>
-              </>
-            )}
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text
-                content={
-                  columnModal.reordering
-                    ? ' ↑↓ move | Enter/Esc done'
-                    : ' Enter/Space toggle | r reorder | Esc close'
-                }
-                fg="#565f89"
+          {columns.map((col, i) => {
+            const isActive = i === columnModal.selectedIndex;
+            const isGrabbed = isActive && columnModal.reordering;
+            const def = PR_COLUMN_DEFS.find((d) => d.id === col.id);
+            const visIcon = col.visibility === 'auto' ? '▣' : col.visibility === 'visible' ? '✓' : '✗';
+            const label = def?.label ?? col.id;
+            const grip = isGrabbed ? '≡' : ' ';
+            return (
+              <box
+                key={col.id}
+                style={{
+                  height: 1,
+                  width: '100%',
+                  backgroundColor: isGrabbed ? '#3b4261' : isActive ? '#292e42' : undefined,
+                }}
+                onMouseDown={() => {
+                  if (isActive && def) {
+                    setColumns((prev) =>
+                      prev.map((c, idx) =>
+                        idx === i ? { ...c, visibility: cycleVisibility(c.visibility, def.supportsAuto) } : c
+                      )
+                    );
+                  } else {
+                    setColumnModal({ selectedIndex: i, reordering: false });
+                  }
+                }}
+              >
+                <text
+                  content={` ${grip} ${isActive ? '>' : ' '} ${visIcon} ${label}`}
+                  fg={col.visibility === 'hidden' ? '#565f89' : isActive ? '#c0caf5' : '#a9b1d6'}
+                />
+              </box>
+            );
+          })}
+          {!columnModal.reordering && (
+            <>
+              <box style={{ height: 1, width: '100%' }} />
+              <ModalRow
+                label={` ${columnModal.selectedIndex === columns.length ? '>' : ' '} Close`}
+                fg={columnModal.selectedIndex === columns.length ? '#c0caf5' : '#565f89'}
+                active={columnModal.selectedIndex === columns.length}
+                onMouseDown={() => closeColumnModal()}
               />
-            </box>
-          </box>
-        </box>
+            </>
+          )}
+        </Modal>
       )}
 
       {/* Filter modal — field list */}
       {filterModal?.level === 'fields' && (
-        <box
-          style={{
-            position: 'absolute',
-            top: Math.floor(height / 2) - Math.floor((filterFieldItems.length + 6) / 2),
-            left: Math.floor(width / 2) - 25,
-            width: 50,
-            height: filterFieldItems.length + 6,
-          }}
+        <Modal
+          title={activeFilterCount > 0 ? `Filters (${activeFilterCount} active)` : 'Filters'}
+          hint="Enter/Space select | d delete preset | Esc close"
+          width={46}
+          height={filterFieldItems.length}
+          termWidth={width}
+          termHeight={height}
         >
-          <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text
-                content={activeFilterCount > 0 ? ` Filters (${activeFilterCount} active)` : ' Filters'}
-                fg="#7aa2f7"
-              />
-            </box>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={'─'.repeat(50)} fg="#292e42" />
-            </box>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
-            {filterFieldItems.map((item, i) => {
-              const isActive = i === filterModal.selectedIndex;
-              let label: string;
-              let valueText = '';
-              let fg: string;
+          {filterFieldItems.map((item, i) => {
+            const isActive = i === filterModal.selectedIndex;
+            let label: string;
+            let valueText = '';
+            let fg: string;
 
-              if (item.type === 'preset') {
-                label = `★ ${item.preset.label}`;
-                fg = isActive ? '#e0af68' : '#bb9af7';
-              } else if (item.type === 'field') {
-                label = item.def.label;
-                const val = filters[item.def.id];
-                if (item.def.type === 'string' && val && typeof val === 'object' && 'value' in val) {
-                  const sf = val as StringFilter;
-                  valueText = ` = ${sf.mode === 'exact' ? '"' : ''}${sf.value}${sf.mode === 'exact' ? '"' : ''}`;
-                } else if (Array.isArray(val) && val.length > 0) {
-                  valueText = ` = ${val.join(', ')}`;
-                }
-                fg = valueText
-                  ? (isActive ? '#c0caf5' : '#7aa2f7')
-                  : (isActive ? '#a9b1d6' : '#565f89');
-              } else if (item.type === 'clear') {
-                label = '✗ Clear all filters';
-                fg = isActive ? '#f7768e' : '#565f89';
-              } else if (item.type === 'save') {
-                label = '+ Save as preset';
-                fg = isActive ? '#9ece6a' : '#565f89';
-              } else {
-                label = 'Close';
-                fg = isActive ? '#c0caf5' : '#565f89';
+            if (item.type === 'preset') {
+              label = `★ ${item.preset.label}`;
+              fg = isActive ? '#e0af68' : '#bb9af7';
+            } else if (item.type === 'field') {
+              label = item.def.label;
+              const val = filters[item.def.id];
+              if (item.def.type === 'string' && val && typeof val === 'object' && 'value' in val) {
+                const sf = val as StringFilter;
+                valueText = ` = ${sf.mode === 'exact' ? '"' : ''}${sf.value}${sf.mode === 'exact' ? '"' : ''}`;
+              } else if (Array.isArray(val) && val.length > 0) {
+                valueText = ` = ${val.join(', ')}`;
               }
+              fg = valueText
+                ? (isActive ? '#c0caf5' : '#7aa2f7')
+                : (isActive ? '#a9b1d6' : '#565f89');
+            } else if (item.type === 'clear') {
+              label = '✗ Clear all filters';
+              fg = isActive ? '#f7768e' : '#565f89';
+            } else if (item.type === 'save') {
+              label = '+ Save as preset';
+              fg = isActive ? '#9ece6a' : '#565f89';
+            } else {
+              label = 'Close';
+              fg = isActive ? '#c0caf5' : '#565f89';
+            }
 
-              const itemKey = item.type === 'field' ? item.def.id
-                : item.type === 'preset' ? `preset-${item.index}`
-                : item.type;
+            const itemKey = item.type === 'field' ? item.def.id
+              : item.type === 'preset' ? `preset-${item.index}`
+              : item.type;
 
-              return (
-                <box
-                  key={itemKey}
-                  style={{
-                    height: 1,
-                    width: '100%',
-                    backgroundColor: isActive ? '#292e42' : '#1a1b26',
-                  }}
-                >
-                  <text
-                    content={` ${isActive ? '>' : ' '} ${label}${valueText}`}
-                    fg={fg}
-                  />
-                </box>
-              );
-            })}
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={'─'.repeat(50)} fg="#292e42" />
-            </box>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content=" Enter/Space select | d delete preset | Esc close" fg="#565f89" />
-            </box>
-          </box>
-        </box>
+            return (
+              <ModalRow
+                key={itemKey}
+                label={` ${isActive ? '>' : ' '} ${label}${valueText}`}
+                fg={fg}
+                active={isActive}
+              />
+            );
+          })}
+        </Modal>
       )}
 
       {/* Filter modal — string picker */}
@@ -1594,55 +1495,28 @@ export function PrApp({
           : allValues;
         const maxVisible = Math.min(suggestions.length, 10);
         const fieldDef = FILTER_FIELD_DEFS.find((d) => d.id === filterModal.fieldId);
-        const modalHeight = maxVisible + 7;
 
         return (
-          <box
-            style={{
-              position: 'absolute',
-              top: Math.floor(height / 2) - Math.floor(modalHeight / 2),
-              left: Math.floor(width / 2) - 22,
-              width: 44,
-              height: modalHeight,
-            }}
+          <Modal
+            title={`${fieldDef?.label ?? filterModal.fieldId} (${filterModal.mode})`}
+            hint="Tab fuzzy/exact | Enter confirm | Esc back"
+            width={46}
+            height={maxVisible + 1}
+            termWidth={width}
+            termHeight={height}
           >
-            <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content={` ${fieldDef?.label ?? filterModal.fieldId} (${filterModal.mode})`} fg="#7aa2f7" />
-              </box>
-              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content={'─'.repeat(50)} fg="#292e42" />
-              </box>
-              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
-              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content={`  > ${filterModal.inputValue}█`} fg="#c0caf5" />
-              </box>
-              {suggestions.slice(0, maxVisible).map((val, i) => {
-                const isActive = i === filterModal.selectedIndex;
-                return (
-                  <box
-                    key={val}
-                    style={{
-                      height: 1,
-                      width: '100%',
-                      backgroundColor: isActive ? '#292e42' : '#1a1b26',
-                    }}
-                  >
-                    <text
-                      content={`   ${isActive ? '>' : ' '} ${val}`}
-                      fg={isActive ? '#c0caf5' : '#a9b1d6'}
-                    />
-                  </box>
-                );
-              })}
-              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content={'─'.repeat(50)} fg="#292e42" />
-              </box>
-              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content=" Tab fuzzy/exact | Enter confirm | Esc back" fg="#565f89" />
-              </box>
+            <box style={{ height: 1, width: '100%' }}>
+              <text content={` > ${filterModal.inputValue}█`} fg="#c0caf5" />
             </box>
-          </box>
+            {suggestions.slice(0, maxVisible).map((val, i) => (
+              <ModalRow
+                key={val}
+                label={`   ${i === filterModal.selectedIndex ? '>' : ' '} ${val}`}
+                fg={i === filterModal.selectedIndex ? '#c0caf5' : '#a9b1d6'}
+                active={i === filterModal.selectedIndex}
+              />
+            ))}
+          </Modal>
         );
       })()}
 
@@ -1650,82 +1524,46 @@ export function PrApp({
       {filterModal?.level === 'multiselect-picker' && (() => {
         const options = MULTISELECT_OPTIONS[filterModal.fieldId] ?? [];
         const fieldDef = FILTER_FIELD_DEFS.find((d) => d.id === filterModal.fieldId);
-        const modalHeight = options.length + 6;
 
         return (
-          <box
-            style={{
-              position: 'absolute',
-              top: Math.floor(height / 2) - Math.floor(modalHeight / 2),
-              left: Math.floor(width / 2) - 22,
-              width: 44,
-              height: modalHeight,
-            }}
+          <Modal
+            title={fieldDef?.label ?? filterModal.fieldId}
+            hint="Enter/Space toggle | Esc apply & back"
+            width={46}
+            height={options.length}
+            termWidth={width}
+            termHeight={height}
           >
-            <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content={` ${fieldDef?.label ?? filterModal.fieldId}`} fg="#7aa2f7" />
-              </box>
-              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content={'─'.repeat(50)} fg="#292e42" />
-              </box>
-              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
-              {options.map((opt, i) => {
-                const isActive = i === filterModal.selectedIndex;
-                const isChecked = filterModal.selected.includes(opt.value);
-                return (
-                  <box
-                    key={opt.value}
-                    style={{
-                      height: 1,
-                      width: '100%',
-                      backgroundColor: isActive ? '#292e42' : '#1a1b26',
-                    }}
-                  >
-                    <text
-                      content={` ${isActive ? '>' : ' '} [${isChecked ? '✓' : ' '}] ${opt.label}`}
-                      fg={isChecked ? (isActive ? '#c0caf5' : '#7aa2f7') : (isActive ? '#a9b1d6' : '#565f89')}
-                    />
-                  </box>
-                );
-              })}
-              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content={'─'.repeat(50)} fg="#292e42" />
-              </box>
-              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content=" Enter/Space toggle | Esc apply & back" fg="#565f89" />
-              </box>
-            </box>
-          </box>
+            {options.map((opt, i) => {
+              const isActive = i === filterModal.selectedIndex;
+              const isChecked = filterModal.selected.includes(opt.value);
+              return (
+                <ModalRow
+                  key={opt.value}
+                  label={` ${isActive ? '>' : ' '} [${isChecked ? '✓' : ' '}] ${opt.label}`}
+                  fg={isChecked ? (isActive ? '#c0caf5' : '#7aa2f7') : (isActive ? '#a9b1d6' : '#565f89')}
+                  active={isActive}
+                />
+              );
+            })}
+          </Modal>
         );
       })()}
 
       {/* Filter modal — save preset */}
       {filterModal?.level === 'save-preset' && (
-        <box
-          style={{
-            position: 'absolute',
-            top: Math.floor(height / 2) - 2,
-            left: Math.floor(width / 2) - 25,
-            width: 50,
-            height: 4,
-          }}
+        <Modal
+          title="Save Filter Preset"
+          hint="Enter save | Esc cancel"
+          width={46}
+          height={1}
+          termWidth={width}
+          termHeight={height}
         >
-          <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content=" Save Filter Preset" fg="#7aa2f7" />
-            </box>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={'─'.repeat(50)} fg="#292e42" />
-            </box>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={` Name: ${filterModal.inputValue}█`} fg="#c0caf5" />
-            </box>
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content=" Enter save | Esc cancel" fg="#565f89" />
-            </box>
+          <box style={{ height: 1, width: '100%' }}>
+            <text content={` Name: ${filterModal.inputValue}█`} fg="#c0caf5" />
           </box>
-        </box>
+        </Modal>
       )}
     </box>
   );

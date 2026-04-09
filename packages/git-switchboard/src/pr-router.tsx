@@ -26,6 +26,7 @@ import type { DataLayer } from './data/index.js';
 import { defineCommand, defineView } from './view.js';
 import type { Keybind } from './view.js';
 import { UP_ARROW, DOWN_ARROW, RETURN_SYMBOL, LEFT_ARROW, ESC_SYMBOL } from './unicode.js';
+import { Modal, ModalRow } from './modal.js';
 import { TuiRouter, useNavigate } from './tui-router.js';
 import { DebugView } from './debug-view.js';
 
@@ -437,54 +438,36 @@ function EditorModalOverlay({
     return false;
   }, { focusId: 'editor-modal' });
 
-  const modalWidth = Math.min(60, width - 4);
   return (
-    <box
-      style={{
-        position: 'absolute',
-        top: Math.floor(height / 2) - Math.floor(installedEditors.length / 2) - 2,
-        left: Math.floor(width / 2) - Math.floor(modalWidth / 2),
-        width: modalWidth,
-        height: installedEditors.length + 4,
-      }}
+    <Modal
+      title="Select editor"
+      hint={`[${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [Esc] Cancel`}
+      width={Math.min(56, width - 8)}
+      height={installedEditors.length}
+      termWidth={width}
+      termHeight={height}
     >
-      <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
-        <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-          <text content=" Select editor" fg="#7aa2f7" />
-        </box>
-        <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-          <text content={'─'.repeat(modalWidth)} fg="#292e42" />
-        </box>
-        {installedEditors.map((ed, i) => {
-          const isActive = i === selectedIndex;
-          const isDisabled = !!ed.disabled;
-          const reason = isActive && typeof ed.disabled === 'string' ? ` — ${ed.disabled}` : '';
-          const label = ` ${isActive && !isDisabled ? '>' : ' '} ${ed.name}${reason}`;
-          const fg = isDisabled ? '#565f89' : isActive ? '#c0caf5' : '#a9b1d6';
-          return (
-            <box
-              key={ed.command}
-              style={{ height: 1, width: '100%', backgroundColor: isActive ? '#292e42' : '#1a1b26' }}
-              onMouseDown={() => {
-                if (isActive && !isDisabled) {
-                  void confirm();
-                } else {
-                  setEditorModal({ pr, matches, selectedIndex: i });
-                }
-              }}
-            >
-              <text content={label} fg={fg} />
-            </box>
-          );
-        })}
-        <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-          <text
-            content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [Esc] Cancel`}
-            fg="#565f89"
+      {installedEditors.map((ed, i) => {
+        const isActive = i === selectedIndex;
+        const isDisabled = !!ed.disabled;
+        const reason = isActive && typeof ed.disabled === 'string' ? ` — ${ed.disabled}` : '';
+        return (
+          <ModalRow
+            key={ed.command}
+            label={` ${isActive && !isDisabled ? '>' : ' '} ${ed.name}${reason}`}
+            fg={isDisabled ? '#565f89' : isActive ? '#c0caf5' : '#a9b1d6'}
+            active={isActive}
+            onMouseDown={() => {
+              if (isActive && !isDisabled) {
+                void confirm();
+              } else {
+                setEditorModal({ pr, matches, selectedIndex: i });
+              }
+            }}
           />
-        </box>
-      </box>
-    </box>
+        );
+      })}
+    </Modal>
   );
 }
 
