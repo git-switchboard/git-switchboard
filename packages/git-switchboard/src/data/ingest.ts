@@ -23,37 +23,43 @@ export function createIngester(
   bus: EventBus<DataEventMap>,
   stores: Stores,
 ): Ingester {
-  // Shared helper: two-phase batch ingest
-  // Phase 1: store all items, collect events to emit
-  // Phase 2: emit all events (effects now see the full batch in the store)
+  const sessionStartedAt = Date.now();
+  // Enrichment from a previous session gets a 60s grace period for stale-while-refresh,
+  // then is discarded so the prefetch system re-fetches it
+  const STALE_GRACE_MS = 60_000;
+
   function emitDeferred(events: EventEntry<keyof DataEventMap>[]): void {
     for (const { event, payload } of events) {
       (bus.emit as (e: string, p: unknown) => void)(event, payload);
     }
   }
 
+  function isEnrichmentFresh(fetchedAt: number | undefined, updatedAtMs: number): boolean {
+    if (fetchedAt == null) return false;
+    // Stale if fetched before the PR was last updated
+    if (fetchedAt < updatedAtMs) return false;
+    // Stale if from a previous session and grace period expired
+    if (fetchedAt < sessionStartedAt && Date.now() - sessionStartedAt > STALE_GRACE_MS) return false;
+    return true;
+  }
+
   return {
     ingestPRs(prs: PR[]): void {
-      // Phase 1: store all, determine which events to fire
       const deferred: EventEntry<'pr:discovered' | 'pr:enriched'>[] = [];
 
       for (const pr of prs) {
         const key = prKey(pr);
         const existing = stores.prs.get(key);
 
-        // If new PR lacks enrichment but existing has it, preserve it —
-        // UNLESS the enrichment is stale (fetched before the PR was last updated)
+        // Preserve existing enrichment only if it's fresh
         const updatedAtMs = new Date(pr.updatedAt).getTime();
-        const enrichmentFresh = (fetchedAt: number | undefined) =>
-          fetchedAt != null && fetchedAt >= updatedAtMs;
-
         const merged: PR = existing
           ? {
               ...pr,
               body: pr.body ?? existing.body,
-              ci: pr.ci ?? (enrichmentFresh(existing.ci?.fetchedAt) ? existing.ci : undefined),
-              review: pr.review ?? (enrichmentFresh(existing.review?.fetchedAt) ? existing.review : undefined),
-              mergeable: pr.mergeable ?? (enrichmentFresh(existing.ci?.fetchedAt) ? existing.mergeable : undefined),
+              ci: pr.ci ?? (isEnrichmentFresh(existing.ci?.fetchedAt, updatedAtMs) ? existing.ci : undefined),
+              review: pr.review ?? (isEnrichmentFresh(existing.review?.fetchedAt, updatedAtMs) ? existing.review : undefined),
+              mergeable: pr.mergeable ?? (isEnrichmentFresh(existing.ci?.fetchedAt, updatedAtMs) ? existing.mergeable : undefined),
             }
           : pr;
         stores.prs.set(merged);
