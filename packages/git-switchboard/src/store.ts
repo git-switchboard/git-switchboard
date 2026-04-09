@@ -126,6 +126,10 @@ export const createPrStore = (initial: {
 
     unsubs.push(dataLayer.bus.on('pr:discovered', refreshPrSnapshot));
     unsubs.push(dataLayer.bus.on('pr:enriched', refreshPrSnapshot));
+    // Re-render when relations change (e.g., Linear ticket linked to PR)
+    // or new Linear issues arrive — PrApp reads these via query API during render
+    unsubs.push(dataLayer.bus.on('relation:created', refreshPrSnapshot));
+    unsubs.push(dataLayer.bus.on('linear:issue:discovered', refreshPrSnapshot));
     let statusClearTimer: ReturnType<typeof setTimeout> | null = null;
     unsubs.push(dataLayer.bus.on('error', ({ source, message }) => {
       if (statusClearTimer) clearTimeout(statusClearTimer);
