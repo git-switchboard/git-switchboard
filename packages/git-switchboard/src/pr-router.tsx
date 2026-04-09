@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react';
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
-import { useFocusedKeyboard, useFocusOwner } from './focus-stack.js';
+import { useFocusedKeyboard, useFocusOwner, useFocusStackValue } from './focus-stack.js';
 import { useStore } from 'zustand';
 import { PrApp } from './pr-app.js';
 import { PrDetail } from './pr-detail.js';
@@ -489,12 +489,12 @@ export function PrRouter({ store, dataLayer }: PrRouterProps) {
   const { width, height } = useTerminalDimensions();
   const [editorModal, setEditorModal] = useState<EditorModalState | null>(null);
   const [showProviderStatus, setShowProviderStatus] = useState(false);
+  const focusStack = useFocusStackValue();
 
   // ─── Provider status shortcut ─────────────────────────────────────
-  // PrRouter sits outside TuiRouter (and the FocusStackProvider), so this
-  // uses the raw useKeyboard from @opentui/react with its own gating.
+  // Gate on focus stack so text inputs (search, filter name) aren't intercepted.
   useKeyboard((key) => {
-    if (!editorModal && !showProviderStatus && key.raw === 'p') {
+    if (!editorModal && !showProviderStatus && focusStack.stack.length === 0 && key.raw === 'p') {
       setShowProviderStatus(true);
       key.stopPropagation();
       return true;
@@ -620,6 +620,7 @@ export function PrRouter({ store, dataLayer }: PrRouterProps) {
             views={PR_COMMAND.views}
             initialScreen={{ type: 'pr-list' }}
             overlay={combinedOverlay}
+            focusStack={focusStack}
           />
         </PrInfraCtx.Provider>
       </PrStoreCtx.Provider>

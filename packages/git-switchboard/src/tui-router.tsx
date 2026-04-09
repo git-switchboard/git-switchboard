@@ -36,11 +36,13 @@ export function TuiRouter<TScreen extends { type: string }>({
   views,
   initialScreen,
   overlay,
+  focusStack: externalFocusStack,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   views: Record<string, View<TScreen, any>>;
   initialScreen: TScreen;
   overlay?: React.ReactNode;
+  focusStack?: ReturnType<typeof useFocusStackValue>;
 }) {
   const [screen, setScreen] = useState<TScreen>(initialScreen);
   const [history, setHistory] = useState<TScreen[]>([]);
@@ -71,7 +73,8 @@ export function TuiRouter<TScreen extends { type: string }>({
     [navigate, goBack, history.length]
   );
 
-  const focusStack = useFocusStackValue();
+  const ownFocusStack = useFocusStackValue();
+  const focusStack = externalFocusStack ?? ownFocusStack;
 
   const view = views[screen.type];
   if (!view) return null;
