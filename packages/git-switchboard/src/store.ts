@@ -182,11 +182,13 @@ export const createPrStore = (initial: {
 
       prefetchDetails: (prs) => {
         for (const pr of prs) {
-          // Skip if already has enrichment data — the fetch listener also
-          // enforces a 30s cooldown, but this avoids emitting events entirely
           const key = `${pr.repoId}#${pr.number}`;
           const entity = dataLayer.stores.prs.get(key);
-          if (entity?.ci && entity?.review) continue;
+          // Skip if has fresh enrichment — check that CI was fetched after PR was last updated
+          if (entity?.ci && entity?.review) {
+            const updatedAt = new Date(entity.updatedAt).getTime();
+            if (entity.ci.fetchedAt >= updatedAt) continue;
+          }
 
           dataLayer.bus.emit('pr:fetchDetail', {
             repoId: pr.repoId,
