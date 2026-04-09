@@ -41,14 +41,19 @@ export function createIngester(
         const key = prKey(pr);
         const existing = stores.prs.get(key);
 
-        // If new PR lacks enrichment but existing has it, preserve it
+        // If new PR lacks enrichment but existing has it, preserve it —
+        // UNLESS the enrichment is stale (fetched before the PR was last updated)
+        const updatedAtMs = new Date(pr.updatedAt).getTime();
+        const enrichmentFresh = (fetchedAt: number | undefined) =>
+          fetchedAt != null && fetchedAt >= updatedAtMs;
+
         const merged: PR = existing
           ? {
               ...pr,
               body: pr.body ?? existing.body,
-              ci: pr.ci ?? existing.ci,
-              review: pr.review ?? existing.review,
-              mergeable: pr.mergeable ?? existing.mergeable,
+              ci: pr.ci ?? (enrichmentFresh(existing.ci?.fetchedAt) ? existing.ci : undefined),
+              review: pr.review ?? (enrichmentFresh(existing.review?.fetchedAt) ? existing.review : undefined),
+              mergeable: pr.mergeable ?? (enrichmentFresh(existing.ci?.fetchedAt) ? existing.mergeable : undefined),
             }
           : pr;
         stores.prs.set(merged);
