@@ -1,4 +1,4 @@
-import { useKeyboard } from '@opentui/react';
+import { useFocusedKeyboard, useFocusOwner } from './focus-stack.js';
 import { rateLimit as githubRateLimit } from './github.js';
 import { linearRateLimit } from './linear.js';
 import type { ProviderRateLimit } from './types.js';
@@ -25,7 +25,8 @@ export function ProviderStatusModal({
   height: number;
   onClose: () => void;
 }) {
-  useKeyboard((key) => {
+  useFocusOwner('provider-status', true);
+  useFocusedKeyboard((key) => {
     key.stopPropagation();
     if (
       key.name === 'escape' ||
@@ -34,7 +35,7 @@ export function ProviderStatusModal({
     ) {
       onClose();
     }
-  });
+  }, { focusId: 'provider-status' });
 
   const modalWidth = Math.min(50, width - 4);
   const modalHeight = 7;

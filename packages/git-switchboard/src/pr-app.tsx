@@ -1,5 +1,6 @@
-import { useKeyboard, useTerminalDimensions } from '@opentui/react';
+import { useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusedKeyboard, useFocusOwner } from './focus-stack.js';
 import { useKeybinds } from './use-keybinds.js';
 import { muteColor } from './colors.js';
 import { buildFooterRows, FooterRows } from './footer.js';
@@ -176,8 +177,6 @@ interface PrAppProps extends ViewProps {
   reviewCache: Map<string, ReviewInfo>;
   mergeableCache: Record<string, MergeableStatus>;
   linearCache: Map<string, import('./types.js').LinearIssue>;
-  /** When true, a parent modal overlay is active — skip keybind processing. */
-  modalActive?: boolean;
   repoMode: string | null;
   refreshing: boolean;
   /** Persistent filter state from the store */
@@ -204,7 +203,6 @@ export function PrApp({
   reviewCache,
   mergeableCache,
   linearCache,
-  modalActive = false,
   repoMode,
   refreshing,
   searchQuery,
@@ -226,9 +224,11 @@ export function PrApp({
   useExitOnCtrlC();
   const { width, height } = useTerminalDimensions();
   const [searchMode, setSearchMode] = useState(false);
+  const [sortModal, setSortModal] = useState<{ selectedIndex: number } | null>(null);
+  useFocusOwner('pr-search', searchMode);
+  useFocusOwner('sort-modal', !!sortModal);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [statusText, setStatusText] = useState('');
-  const [sortModal, setSortModal] = useState<{ selectedIndex: number } | null>(null);
   const refreshSessionRef = useRef<{
     signature: string;
     refreshedKeys: Set<string>;
@@ -444,12 +444,10 @@ export function PrApp({
 
   useKeybinds(keybinds, {
     navigate: (key) => {
-      if (modalActive) return false;
       if (key.name === 'up' || key.name === 'k') moveTo(selectedIndex - 1);
       else moveTo(selectedIndex + 1);
     },
     select: () => {
-      if (modalActive || searchMode || sortModal) return;
       const pr = filteredPRs[selectedIndex];
       if (pr) {
         const matches = repoMatchMap.get(`${pr.repoId}#${pr.number}`) ?? [];
@@ -457,12 +455,10 @@ export function PrApp({
       }
     },
     fetchCI: () => {
-      if (modalActive) return false;
       const pr = filteredPRs[selectedIndex];
       if (pr) { onFetchCI(pr).then(() => forceRender((n) => n + 1)); }
     },
     retryChecks: () => {
-      if (modalActive) return false;
       const pr = filteredPRs[selectedIndex];
       if (pr) {
         onRetryChecks(pr).then((msg) => {
@@ -472,64 +468,65 @@ export function PrApp({
       }
     },
     refreshAll: () => {
-      if (modalActive) return false;
       if (refreshing) { queuedRefreshCountRef.current += 1; }
       else { refreshCurrentChunk(); }
     },
-    sort: () => { if (modalActive) return false; setSortModal({ selectedIndex: 0 }); },
-    search: () => { if (modalActive) return false; setSearchMode(true); },
-    quit: () => { if (modalActive) return false; onExit(); },
+    sort: () => setSortModal({ selectedIndex: 0 }),
+    search: () => setSearchMode(true),
+    quit: () => onExit(),
   }, { show: { retryChecks: hasFailedChecks } });
 
-  // Fires first (LIFO) — handles sort modal, search text input, and page/home/end navigation.
-  useKeyboard((key) => {
-    if (sortModal) {
-      key.stopPropagation();
-      switch (key.name) {
-        case 'up':
-        case 'k':
-          setSortModal((m) => m ? { selectedIndex: Math.max(0, m.selectedIndex - 1) } : m);
-          break;
-        case 'down':
-        case 'j':
-          setSortModal((m) =>
-            m ? { selectedIndex: Math.min(SORT_FIELDS.length - 1, m.selectedIndex + 1) } : m
-          );
-          break;
-        case 'return': {
-          const field = SORT_FIELDS[sortModal.selectedIndex];
-          if (field) toggleSortField(field.field);
-          break;
-        }
-        case 'escape':
-        case 'q':
-        case 's':
-          setSortModal(null);
-          break;
+  // Sort modal navigation — only fires when sort-modal focus is active.
+  useFocusedKeyboard((key) => {
+    key.stopPropagation();
+    switch (key.name) {
+      case 'up':
+      case 'k':
+        setSortModal((m) => m ? { selectedIndex: Math.max(0, m.selectedIndex - 1) } : m);
+        break;
+      case 'down':
+      case 'j':
+        setSortModal((m) =>
+          m ? { selectedIndex: Math.min(SORT_FIELDS.length - 1, m.selectedIndex + 1) } : m
+        );
+        break;
+      case 'return': {
+        const field = sortModal ? SORT_FIELDS[sortModal.selectedIndex] : undefined;
+        if (field) toggleSortField(field.field);
+        break;
       }
-      return true;
+      case 'escape':
+      case 'q':
+      case 's':
+        setSortModal(null);
+        break;
     }
+    return true;
+  }, { focusId: 'sort-modal' });
 
-    if (searchMode) {
-      key.stopPropagation();
-      const shouldCommit =
-        key.name === 'return' || key.name === 'tab' ||
-        key.name === 'up' || key.name === 'down' || key.raw === '\t';
-      if (key.name === 'escape') {
-        setSearchMode(false);
-        setSearchQuery('');
-      } else if (shouldCommit) {
-        setSearchMode(false);
-      } else if (key.name === 'backspace') {
-        setSearchQuery(searchQuery.slice(0, -1));
-      } else if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
-        setSearchQuery(searchQuery + key.raw);
-        setSelectedIndex(0);
-        setScrollOffset(0);
-      }
-      return true;
+  // Search text input — only fires when pr-search focus is active.
+  useFocusedKeyboard((key) => {
+    key.stopPropagation();
+    const shouldCommit =
+      key.name === 'return' || key.name === 'tab' ||
+      key.name === 'up' || key.name === 'down' || key.raw === '\t';
+    if (key.name === 'escape') {
+      setSearchMode(false);
+      setSearchQuery('');
+    } else if (shouldCommit) {
+      setSearchMode(false);
+    } else if (key.name === 'backspace') {
+      setSearchQuery(searchQuery.slice(0, -1));
+    } else if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
+      setSearchQuery(searchQuery + key.raw);
+      setSelectedIndex(0);
+      setScrollOffset(0);
     }
+    return true;
+  }, { focusId: 'pr-search' });
 
+  // Page/Home/End navigation — only fires when no focus is claimed.
+  useFocusedKeyboard((key) => {
     if (handleListKey(key.name, selectedIndex, filteredPRs.length, listHeight, moveTo)) return true;
   });
 

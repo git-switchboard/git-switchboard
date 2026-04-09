@@ -1,5 +1,5 @@
-import { useKeyboard } from "@opentui/react";
 import { useState } from "react";
+import { useFocusedKeyboard, useFocusOwner } from './focus-stack.js';
 import type { EditorInfo } from "./editor.js";
 import { DOWN_ARROW, RETURN_SYMBOL, UP_ARROW } from "./unicode.js";
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
@@ -21,7 +21,8 @@ export function EditorPrompt({
   const clampIndex = (idx: number) =>
     Math.max(0, Math.min(idx, editors.length - 1));
 
-  useKeyboard((key) => {
+  useFocusOwner('editor-prompt', true);
+  useFocusedKeyboard((key) => {
     key.stopPropagation();
     switch (key.name) {
       case "up":
@@ -42,7 +43,7 @@ export function EditorPrompt({
         onCancel();
         break;
     }
-  });
+  }, { focusId: 'editor-prompt' });
 
   return (
     <box flexDirection="column" style={{ width: "100%", height: "100%" }}>

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { useTerminalDimensions, useKeyboard } from '@opentui/react';
+import { useTerminalDimensions } from '@opentui/react';
+import { useFocusedKeyboard, useFocusOwner } from './focus-stack.js';
 import type { Keybind } from './view.js';
 import { footerParts } from './view.js';
 import { useKeybinds } from './use-keybinds.js';
@@ -43,6 +44,8 @@ export function ConnectSetup({
   const provider = ALL_PROVIDERS.find((p) => p.name === providerName);
 
   const [step, setStep] = useState<Step>('strategy');
+  const isTextInput = step === 'input' || step === 'password' || step === 'confirm-password';
+  useFocusOwner('connect-input', isTextInput);
   const [strategyIndex, setStrategyIndex] = useState(0);
   const [selectedStrategy, setSelectedStrategy] = useState<TokenStrategy | null>(null);
   const [inputValue, setInputValue] = useState('');
@@ -120,7 +123,6 @@ export function ConnectSetup({
   // Strategy selection keybinds
   useKeybinds(keybinds, {
     navigate: (key) => {
-      if (step !== 'strategy') return false;
       const dir = key.name === 'up' || key.name === 'k' ? -1 : 1;
       setStrategyIndex((i) => Math.max(0, Math.min(STRATEGY_OPTIONS.length - 1, i + dir)));
     },
@@ -157,11 +159,9 @@ export function ConnectSetup({
     },
   });
 
-  // Text input handler for input/password steps
-  useKeyboard((key) => {
-    if (step === 'input' || step === 'password' || step === 'confirm-password') {
-      key.stopPropagation();
-    }
+  // Text input handler for input/password steps — fires when connect-input focus is active.
+  useFocusedKeyboard((key) => {
+    key.stopPropagation();
     if (step === 'input') {
       if (key.name === 'return' && inputValue.length > 0) {
         if (selectedStrategy === 'password') {
@@ -216,7 +216,7 @@ export function ConnectSetup({
       }
     }
     return false;
-  });
+  }, { focusId: 'connect-input' });
 
   // Handle bracketed paste events
   usePaste((text) => {

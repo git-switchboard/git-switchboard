@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { useKeyboard, useTerminalDimensions } from '@opentui/react';
+import { useFocusedKeyboard, useFocusOwner } from './focus-stack.js';
 import { useStore } from 'zustand';
 import { PrApp } from './pr-app.js';
 import { PrDetail } from './pr-detail.js';
@@ -50,8 +51,6 @@ interface PrInfraCtxValue {
   prepareEditorOpen: (pr: UserPullRequest, matches: LocalRepo[]) => Promise<LocalRepo[] | null>;
   getMatchesForPR: (pr: UserPullRequest, repos?: readonly LocalRepo[]) => LocalRepo[];
   setEditorModal: (state: EditorModalState | null) => void;
-  /** True when any modal overlay is active — views should skip keybind processing. */
-  modalActive: boolean;
 }
 
 const PrInfraCtx = createContext<PrInfraCtxValue | null>(null);
@@ -66,7 +65,6 @@ function usePrInfra(): PrInfraCtxValue {
 
 function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
   const store = usePrStoreApi();
-  const { modalActive } = usePrInfra();
   const prs = useStore(store, (s) => s.prs);
   const localRepos = useStore(store, (s) => s.localRepos);
   const ciCache = useStore(store, (s) => s.ciCache);
@@ -88,7 +86,6 @@ function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
   return (
     <PrApp
       keybinds={keybinds}
-      modalActive={modalActive}
       prs={prs}
       localRepos={localRepos}
       ciCache={ciMap}
@@ -122,7 +119,7 @@ function PrDetailScreen({
   keybinds: Record<string, Keybind>;
 }) {
   const store = usePrStoreApi();
-  const { prepareEditorOpen, getMatchesForPR, modalActive } = usePrInfra();
+  const { prepareEditorOpen, getMatchesForPR } = usePrInfra();
   const ciCache = useStore(store, (s) => s.ciCache);
   const reviewCache = useStore(store, (s) => s.reviewCache);
   const linearCache = useStore(store, (s) => s.linearCache);
@@ -138,7 +135,6 @@ function PrDetailScreen({
   return (
     <PrDetail
       keybinds={keybinds}
-      modalActive={modalActive}
       pr={pr}
       ci={ciCache[prKey] ?? null}
       review={reviewCache[prKey] ?? null}
@@ -355,6 +351,7 @@ function EditorModalOverlay({
   height,
 }: EditorModalOverlayProps) {
   const navigate = useNavigate<PrScreen>();
+  useFocusOwner('editor-modal', true);
 
   const confirm = useCallback(async () => {
     const chosen = installedEditors[selectedIndex];
@@ -366,7 +363,7 @@ function EditorModalOverlay({
     if (cloneMatches) navigate({ type: 'clone-prompt', pr, matches: cloneMatches });
   }, [selectedIndex, installedEditors, pr, matches, setEditor, setEditorModal, prepareEditorOpen, navigate]);
 
-  useKeyboard((key) => {
+  useFocusedKeyboard((key) => {
     switch (key.name) {
       case 'up':
       case 'k':
@@ -394,7 +391,7 @@ function EditorModalOverlay({
         return true;
     }
     return false;
-  });
+  }, { focusId: 'editor-modal' });
 
   const modalWidth = Math.min(60, width - 4);
   return (
@@ -464,15 +461,10 @@ export function PrRouter({ store }: PrRouterProps) {
   const [editorModal, setEditorModal] = useState<EditorModalState | null>(null);
   const [showProviderStatus, setShowProviderStatus] = useState(false);
 
-  // ─── Global keybind guard ────────────────────────────────────────
-  // PrRouter is the top-level parent — its handler fires FIRST (FIFO).
-  // When a modal is active, consume all keys here so child views don't process them.
-  // The modal overlay handles its own keys via its own useKeyboard.
+  // ─── Provider status shortcut ─────────────────────────────────────
+  // PrRouter sits outside TuiRouter (and the FocusStackProvider), so this
+  // uses the raw useKeyboard from @opentui/react with its own gating.
   useKeyboard((key) => {
-    if (editorModal || showProviderStatus) {
-      // Don't stopPropagation — let the modal overlay's handler still fire.
-      // Instead, we rely on child views checking modalActive via context.
-    }
     if (!editorModal && !showProviderStatus && key.raw === 'p') {
       setShowProviderStatus(true);
       key.stopPropagation();
@@ -553,10 +545,9 @@ export function PrRouter({ store }: PrRouterProps) {
   );
 
   // ─── Infra context value ────────────────────────────────────────
-  const modalActive = !!editorModal || showProviderStatus;
   const infra = useMemo<PrInfraCtxValue>(
-    () => ({ prepareEditorOpen, getMatchesForPR, setEditorModal, modalActive }),
-    [prepareEditorOpen, getMatchesForPR, modalActive]
+    () => ({ prepareEditorOpen, getMatchesForPR, setEditorModal }),
+    [prepareEditorOpen, getMatchesForPR]
   );
 
   // ─── Editor modal overlay ───────────────────────────────────────

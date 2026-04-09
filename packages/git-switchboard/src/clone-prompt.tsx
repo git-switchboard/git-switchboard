@@ -1,5 +1,5 @@
-import { useKeyboard } from '@opentui/react';
 import { useState } from 'react';
+import { useFocusedKeyboard, useFocusOwner } from './focus-stack.js';
 import { useKeybinds } from './use-keybinds.js';
 import type { LocalRepo } from './scanner.js';
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
@@ -28,6 +28,7 @@ export function ClonePrompt({
   const { goBack } = useHistory();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [inputMode, setInputMode] = useState(false);
+  useFocusOwner('clone-input', inputMode);
   const [worktreePath, setWorktreePath] = useState('');
 
   // Items: existing clones + "Create new worktree" option
@@ -55,6 +56,7 @@ export function ClonePrompt({
   const clampIndex = (idx: number) =>
     Math.max(0, Math.min(idx, items.length - 1));
 
+  // Default keybinds — fire when no focus is claimed.
   useKeybinds(keybinds, {
     navigate: (key) => {
       if (key.name === 'up' || key.name === 'k') setSelectedIndex((i) => clampIndex(i - 1));
@@ -69,6 +71,10 @@ export function ClonePrompt({
       }
     },
     back: () => goBack(),
+  });
+
+  // Input mode keybinds — fire when clone-input focus is active.
+  useKeybinds(keybinds, {
     confirmInput: () => {
       if (worktreePath) onCreateWorktree(worktreePath);
     },
@@ -76,11 +82,10 @@ export function ClonePrompt({
       setInputMode(false);
       setWorktreePath('');
     },
-  }, { show: { confirmInput: inputMode, cancelInput: inputMode } });
+  }, { show: { confirmInput: inputMode, cancelInput: inputMode }, focusId: 'clone-input' });
 
-  // Fires first (LIFO) — handles worktree path text input.
-  useKeyboard((key) => {
-    if (!inputMode) return;
+  // Worktree path text input — only fires when clone-input focus is active.
+  useFocusedKeyboard((key) => {
     if (key.name === 'backspace') {
       setWorktreePath((p) => p.slice(0, -1));
       return true;
@@ -90,7 +95,7 @@ export function ClonePrompt({
       return true;
     }
     // Non-printable keys fall through to let confirmInput/cancelInput fire.
-  });
+  }, { focusId: 'clone-input' });
 
   return (
     <box

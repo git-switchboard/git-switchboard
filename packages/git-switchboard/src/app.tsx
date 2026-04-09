@@ -1,5 +1,6 @@
-import { useKeyboard, useTerminalDimensions } from '@opentui/react';
+import { useTerminalDimensions } from '@opentui/react';
 import { useCallback, useMemo, useState } from 'react';
+import { useFocusedKeyboard, useFocusOwner } from './focus-stack.js';
 import { useKeybinds } from './use-keybinds.js';
 import { muteColor } from './colors.js';
 import { ScrollList, handleListKey } from './scroll-list.js';
@@ -57,6 +58,7 @@ export function App({
   const [authorFilter, setAuthorFilter] = useState<AuthorFilterMode>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState(false);
+  useFocusOwner('branch-search', searchMode);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
 
@@ -119,7 +121,6 @@ export function App({
       else moveTo(selectedIndex + 1);
     },
     select: () => {
-      if (searchMode) return;
       const branch = filteredBranches[selectedIndex];
       if (!branch) return;
       const resolvedName = branch.isRemote
@@ -159,27 +160,29 @@ export function App({
     quit: () => onExit(),
   });
 
-  // Fires first (LIFO) — handles search text input and page/home/end navigation.
-  useKeyboard((key) => {
-    if (searchMode) {
-      key.stopPropagation();
-      const shouldCommit =
-        key.name === 'return' || key.name === 'tab' ||
-        key.name === 'up' || key.name === 'down' || key.raw === '\t';
-      if (key.name === 'escape') {
-        setSearchMode(false);
-        setSearchQuery('');
-      } else if (shouldCommit) {
-        setSearchMode(false);
-      } else if (key.name === 'backspace') {
-        setSearchQuery((q) => q.slice(0, -1));
-      } else if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
-        setSearchQuery((q) => q + key.raw);
-        setSelectedIndex(0);
-        setScrollOffset(0);
-      }
-      return true;
+  // Search text input — only fires when 'branch-search' focus is active.
+  useFocusedKeyboard((key) => {
+    key.stopPropagation();
+    const shouldCommit =
+      key.name === 'return' || key.name === 'tab' ||
+      key.name === 'up' || key.name === 'down' || key.raw === '\t';
+    if (key.name === 'escape') {
+      setSearchMode(false);
+      setSearchQuery('');
+    } else if (shouldCommit) {
+      setSearchMode(false);
+    } else if (key.name === 'backspace') {
+      setSearchQuery((q) => q.slice(0, -1));
+    } else if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
+      setSearchQuery((q) => q + key.raw);
+      setSelectedIndex(0);
+      setScrollOffset(0);
     }
+    return true;
+  }, { focusId: 'branch-search' });
+
+  // Page/Home/End navigation — only fires when no focus is claimed.
+  useFocusedKeyboard((key) => {
     if (handleListKey(key.name, selectedIndex, filteredBranches.length, listHeight, moveTo)) return true;
   });
 

@@ -1,5 +1,5 @@
-import { useKeyboard } from '@opentui/react';
 import { useState } from 'react';
+import { useFocusedKeyboard, useFocusOwner } from './focus-stack.js';
 import { useKeybinds } from './use-keybinds.js';
 import { useHistory, useNavigate } from './tui-router.js';
 import { useExitOnCtrlC } from './use-exit-on-ctrl-c.js';
@@ -92,6 +92,7 @@ export function WorktreeConflict({
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [inputMode, setInputMode] = useState(false);
+  useFocusOwner('wt-input', inputMode);
   const [inputTarget, setInputTarget] = useState<InputTarget | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [inputError, setInputError] = useState('');
@@ -99,94 +100,10 @@ export function WorktreeConflict({
   const clampIndex = (idx: number) =>
     Math.max(0, Math.min(idx, options.length - 1));
 
-  // confirmInput and cancelInput are conditional and must come before select/back
-  // in iteration order so they win on 'return'/'escape' when inputMode is active.
+  // Default keybinds — fire when no focus is claimed.
   useKeybinds(
     keybinds,
     {
-      confirmInput: () => {
-        if (!inputValue.trim()) return;
-        const target = inputTarget!;
-        const value = inputValue.trim();
-
-        // ── Validate branch name ──────────────────────────────────
-        if (target === 'checkout-new-branch' || target === 'move-worktree-to-new-branch') {
-          if (branchExists(value)) {
-            setInputError(`Branch '${value}' already exists`);
-            return;
-          }
-        } else if (target === 'move-worktree-to-existing-branch') {
-          if (!branchExists(value)) {
-            setInputError(`Branch '${value}' does not exist`);
-            return;
-          }
-        }
-
-        // ── Helper: navigate to dirty-checkout or emit action ─────
-        const emitOrDirtyCheck = (action: StashableAction) => {
-          const currentDirty = getWorkingTreeDirtyFiles();
-          if (currentDirty.length > 0) {
-            navigate({ type: 'dirty-checkout', branch, dirtyFiles: currentDirty, pendingWorktreeAction: action });
-          } else {
-            onAction(action);
-          }
-        };
-
-        // ── checkout-new-branch ───────────────────────────────────
-        if (target === 'checkout-new-branch') {
-          emitOrDirtyCheck({
-            type: 'checkout-new-branch',
-            newBranchName: value,
-            fromBranch: branchName,
-            stashCurrentFirst: false,
-          });
-          return;
-        }
-
-        // ── move-worktree-to-new-branch ───────────────────────────
-        if (target === 'move-worktree-to-new-branch') {
-          // git switch -c creates a new branch at the same commit — no file changes,
-          // so the other worktree's dirty state doesn't matter here.
-          emitOrDirtyCheck({
-            type: 'move-worktree-to-new-branch',
-            worktreePath,
-            newBranchName: value,
-            fromBranch: branchName,
-            thenCheckout: branchName,
-            stashCurrentFirst: false,
-          });
-          return;
-        }
-
-        // ── move-worktree-to-existing-branch ──────────────────────
-        // The other worktree is switching branches, so its dirty state matters.
-        const moveAction: Extract<WorktreeConflictAction, { type: 'move-worktree-to-existing-branch' }> = {
-          type: 'move-worktree-to-existing-branch',
-          worktreePath,
-          targetBranch: value,
-          thenCheckout: branchName,
-          stashOtherFirst: false,
-          stashCurrentFirst: false,
-        };
-        const otherDirty = getWorktreeDirtyFiles(worktreePath);
-        if (otherDirty.length > 0) {
-          navigate({
-            type: 'other-dirty-checkout',
-            branch,
-            otherWorktreePath: worktreePath,
-            dirtyFiles: otherDirty,
-            pendingAction: moveAction,
-          });
-          return;
-        }
-        emitOrDirtyCheck(moveAction);
-      },
-      cancelInput: () => {
-        setInputMode(false);
-        setInputTarget(null);
-        setInputValue('');
-        setInputError('');
-      },
       navigate: (key) => {
         if (key.name === 'up' || key.name === 'k') setSelectedIndex((i) => clampIndex(i - 1));
         else setSelectedIndex((i) => clampIndex(i + 1));
@@ -205,12 +122,92 @@ export function WorktreeConflict({
       },
       back: () => goBack(),
     },
-    { show: { confirmInput: inputMode, cancelInput: inputMode, navigate: !inputMode, select: !inputMode, back: !inputMode } }
+    { show: { navigate: !inputMode, select: !inputMode, back: !inputMode } }
   );
 
-  // LIFO — fires first, handles text input characters
-  useKeyboard((key) => {
-    if (!inputMode) return;
+  // Input mode keybinds — fire when wt-input focus is active.
+  useKeybinds(keybinds, {
+    confirmInput: () => {
+      if (!inputValue.trim()) return;
+      const target = inputTarget!;
+      const value = inputValue.trim();
+
+      // ── Validate branch name ──────────────────────────────────
+      if (target === 'checkout-new-branch' || target === 'move-worktree-to-new-branch') {
+        if (branchExists(value)) {
+          setInputError(`Branch '${value}' already exists`);
+          return;
+        }
+      } else if (target === 'move-worktree-to-existing-branch') {
+        if (!branchExists(value)) {
+          setInputError(`Branch '${value}' does not exist`);
+          return;
+        }
+      }
+
+      // ── Helper: navigate to dirty-checkout or emit action ─────
+      const emitOrDirtyCheck = (action: StashableAction) => {
+        const currentDirty = getWorkingTreeDirtyFiles();
+        if (currentDirty.length > 0) {
+          navigate({ type: 'dirty-checkout', branch, dirtyFiles: currentDirty, pendingWorktreeAction: action });
+        } else {
+          onAction(action);
+        }
+      };
+
+      if (target === 'checkout-new-branch') {
+        emitOrDirtyCheck({
+          type: 'checkout-new-branch',
+          newBranchName: value,
+          fromBranch: branchName,
+          stashCurrentFirst: false,
+        });
+        return;
+      }
+
+      if (target === 'move-worktree-to-new-branch') {
+        emitOrDirtyCheck({
+          type: 'move-worktree-to-new-branch',
+          worktreePath,
+          newBranchName: value,
+          fromBranch: branchName,
+          thenCheckout: branchName,
+          stashCurrentFirst: false,
+        });
+        return;
+      }
+
+      const moveAction: Extract<WorktreeConflictAction, { type: 'move-worktree-to-existing-branch' }> = {
+        type: 'move-worktree-to-existing-branch',
+        worktreePath,
+        targetBranch: value,
+        thenCheckout: branchName,
+        stashOtherFirst: false,
+        stashCurrentFirst: false,
+      };
+      const otherDirty = getWorktreeDirtyFiles(worktreePath);
+      if (otherDirty.length > 0) {
+        navigate({
+          type: 'other-dirty-checkout',
+          branch,
+          otherWorktreePath: worktreePath,
+          dirtyFiles: otherDirty,
+          pendingAction: moveAction,
+        });
+        return;
+      }
+      emitOrDirtyCheck(moveAction);
+    },
+    cancelInput: () => {
+      setInputMode(false);
+      setInputTarget(null);
+      setInputValue('');
+      setInputError('');
+    },
+  }, { show: { confirmInput: inputMode, cancelInput: inputMode }, focusId: 'wt-input' });
+
+  // Text input — only fires when wt-input focus is active.
+  useFocusedKeyboard((key) => {
     if (key.name === 'backspace') {
       setInputValue((v) => v.slice(0, -1));
       setInputError('');
@@ -221,8 +218,8 @@ export function WorktreeConflict({
       setInputError('');
       return true;
     }
-    // return/escape fall through to useKeybinds (confirmInput / cancelInput)
-  });
+    // return/escape fall through to keybinds (confirmInput / cancelInput)
+  }, { focusId: 'wt-input' });
 
   const footerStr = footerParts(keybinds, {
     confirmInput: inputMode,

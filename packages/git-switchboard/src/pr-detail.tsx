@@ -1,5 +1,6 @@
-import { useKeyboard, useTerminalDimensions } from '@opentui/react';
+import { useTerminalDimensions } from '@opentui/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusedKeyboard, useFocusOwner } from './focus-stack.js';
 import { useKeybinds } from './use-keybinds.js';
 import { buildFooterRows, FooterRows } from './footer.js';
 import { footerParts } from './view.js';
@@ -120,8 +121,6 @@ interface PrDetailProps extends ViewProps {
   ci: CIInfo | null;
   review: ReviewInfo | null;
   linearIssue: LinearIssue | null;
-  /** When true, a parent modal overlay is active — skip keybind processing. */
-  modalActive?: boolean;
   ciLoading: boolean;
   matches: LocalRepo[];
   watched: boolean;
@@ -146,7 +145,6 @@ export function PrDetail({
   ci,
   review,
   linearIssue,
-  modalActive = false,
   ciLoading,
   matches,
   watched,
@@ -176,6 +174,7 @@ export function PrDetail({
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [modal, setModal] = useState<{ check: CheckRun; selectedOption: number } | null>(null);
+  useFocusOwner('check-action', !!modal);
   const initialLoadRequestedRef = useRef<string | null>(null);
 
   // Animate spinner for in-progress checks and loading state
@@ -289,12 +288,10 @@ export function PrDetail({
 
   useKeybinds(keybinds, {
     navigate: (key) => {
-      if (modalActive || modal) return false;
       if (key.name === 'up' || key.name === 'k') moveTo(selectedIndex - 1);
       else moveTo(selectedIndex + 1);
     },
     select: () => {
-      if (modalActive || modal) return false;
       if (selectedIndex === 0) {
         void handleOpenInEditor();
       } else if (selectedIndex === 1) {
@@ -308,7 +305,6 @@ export function PrDetail({
       }
     },
     copyLogs: () => {
-      if (modalActive || modal) return false;
       if (selectedIndex >= ACTION_COUNT) {
         const check = checks[selectedIndex - ACTION_COUNT];
         if (check) {
@@ -317,47 +313,47 @@ export function PrDetail({
         }
       }
     },
-    refresh: () => { if (modalActive || modal) return false; onRefreshCI(); },
+    refresh: () => onRefreshCI(),
     retry: () => {
-      if (modalActive || modal) return false;
       showStatus('Retrying failed checks...');
       onRetryChecks().then((msg) => showStatus(msg));
     },
-    watch: () => { if (modalActive || modal) return false; onWatch(); },
-    back: () => { if (modalActive || modal) return false; goBack(); },
-    quit: () => { if (modalActive || modal) return false; onExit(); },
+    watch: () => onWatch(),
+    back: () => goBack(),
+    quit: () => onExit(),
   });
 
-  // Handles check action modal and page/home/end navigation.
-  useKeyboard((key) => {
-    if (modalActive) return;
-    if (modal) {
-      key.stopPropagation();
-      const actions = getCheckActions(modal.check);
-      switch (key.name) {
-        case 'up':
-        case 'k':
-          setModal((m) => m ? { ...m, selectedOption: Math.max(0, m.selectedOption - 1) } : m);
-          break;
-        case 'down':
-        case 'j':
-          setModal((m) =>
-            m ? { ...m, selectedOption: Math.min(actions.length - 1, m.selectedOption + 1) } : m
-          );
-          break;
-        case 'return': {
-          const action = actions[modal.selectedOption];
-          if (action) executeModalAction(modal.check, action);
-          break;
-        }
-        case 'escape':
-        case 'q':
-          setModal(null);
-          break;
+  // Check action modal — only fires when check-action focus is active.
+  useFocusedKeyboard((key) => {
+    if (!modal) return;
+    key.stopPropagation();
+    const actions = getCheckActions(modal.check);
+    switch (key.name) {
+      case 'up':
+      case 'k':
+        setModal((m) => m ? { ...m, selectedOption: Math.max(0, m.selectedOption - 1) } : m);
+        break;
+      case 'down':
+      case 'j':
+        setModal((m) =>
+          m ? { ...m, selectedOption: Math.min(actions.length - 1, m.selectedOption + 1) } : m
+        );
+        break;
+      case 'return': {
+        const action = actions[modal.selectedOption];
+        if (action) executeModalAction(modal.check, action);
+        break;
       }
-      return true;
+      case 'escape':
+      case 'q':
+        setModal(null);
+        break;
     }
+    return true;
+  }, { focusId: 'check-action' });
 
+  // Status text dismiss and page/home/end — only fires when no focus is claimed.
+  useFocusedKeyboard((key) => {
     if (statusText && key.name !== 'c') {
       setStatusText('');
       if (statusTimerRef.current) {
