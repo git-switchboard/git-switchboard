@@ -14,12 +14,14 @@ import type {
   CIInfo,
   ColumnConfig,
   FilterFieldDef,
+  FilterFieldId,
   FilterPreset,
   FilterState,
   MergeableStatus,
   PRRole,
   ReviewStatus,
   StringFilter,
+  StringMatchMode,
   SortDir,
   SortField,
   SortLayer,
@@ -335,9 +337,36 @@ export function PrApp({
     selectedIndex: number;
     reordering: boolean;
   } | null>(null);
+  const [filterModal, setFilterModal] = useState<{
+    level: 'fields';
+    selectedIndex: number;
+  } | {
+    level: 'string-picker';
+    fieldId: FilterFieldId;
+    inputValue: string;
+    mode: StringMatchMode;
+    selectedIndex: number;
+  } | {
+    level: 'multiselect-picker';
+    fieldId: FilterFieldId;
+    selected: string[];
+    selectedIndex: number;
+  } | {
+    level: 'save-preset';
+    inputValue: string;
+  } | null>(null);
+  const [filterPresets, setFilterPresets] = useState<FilterPreset[]>([]);
+
   useFocusOwner('pr-search', searchMode);
   useFocusOwner('sort-modal', !!sortModal);
   useFocusOwner('column-modal', !!columnModal);
+  useFocusOwner('filter-modal', !!filterModal);
+
+  // Load presets on mount
+  useEffect(() => {
+    void readFilterPresets(PR_VIEW_NAME).then(setFilterPresets);
+  }, []);
+
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [localStatusText, setLocalStatusText] = useState('');
   // Local status (from retry/copy actions) takes priority over store status (from error events)
@@ -440,6 +469,48 @@ export function PrApp({
     () => filteredPRs.some((pr) => dataLayer.query.linearIssuesForPr(`${pr.repoId}#${pr.number}`).length > 0),
     [filteredPRs, dataLayer]
   );
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.org) count++;
+    if (filters.repo) count++;
+    if (filters.author) count++;
+    if (filters.linear) count++;
+    if (filters.role && filters.role.length > 0) count++;
+    if (filters.review && filters.review.length > 0) count++;
+    if (filters.ci && filters.ci.length > 0) count++;
+    if (filters.merge && filters.merge.length > 0) count++;
+    return count;
+  }, [filters]);
+
+  const stringFieldValues = useMemo(() => {
+    const orgs = [...new Set(prs.map((pr) => pr.repoOwner))].sort();
+    const repos = [...new Set(prs.map((pr) => pr.repoId))].sort();
+    const authors = [...new Set(prs.map((pr) => pr.author))].sort();
+    const linearIds: string[] = [];
+    for (const pr of prs) {
+      const issues = dataLayer.query.linearIssuesForPr(`${pr.repoId}#${pr.number}`);
+      for (const issue of issues) {
+        if (!linearIds.includes(issue.identifier)) linearIds.push(issue.identifier);
+      }
+    }
+    return { org: orgs, repo: repos, author: authors, linear: linearIds.sort() };
+  }, [prs, dataLayer]);
+
+  const filterFieldItems = useMemo((): FilterMenuItem[] => {
+    const items: FilterMenuItem[] = [];
+    for (let i = 0; i < filterPresets.length; i++) {
+      items.push({ type: 'preset', index: i, preset: filterPresets[i] });
+    }
+    for (const def of FILTER_FIELD_DEFS) {
+      items.push({ type: 'field', def });
+    }
+    if (activeFilterCount > 0) {
+      items.push({ type: 'clear' });
+      items.push({ type: 'save' });
+    }
+    return items;
+  }, [filterPresets, activeFilterCount]);
 
   const hasFailedChecks = useMemo(() => {
     const selectedPR = filteredPRs[selectedIndex];
@@ -598,6 +669,7 @@ export function PrApp({
     },
     sort: () => setSortModal({ selectedIndex: 0 }),
     columns: () => setColumnModal({ selectedIndex: 0, reordering: false }),
+    filter: () => setFilterModal({ level: 'fields', selectedIndex: 0 }),
     search: () => setSearchMode(true),
     debug: () => navigate({ type: 'debug' }),
     quit: () => onExit(),
@@ -713,6 +785,220 @@ export function PrApp({
     return true;
   }, { focusId: 'column-modal' });
 
+  // Filter modal navigation — only fires when filter-modal focus is active.
+  useFocusedKeyboard((key) => {
+    key.stopPropagation();
+    if (!filterModal) return true;
+
+    // ── Field list level ────────────────────────────────────────
+    if (filterModal.level === 'fields') {
+      const items = filterFieldItems;
+      switch (key.name) {
+        case 'up':
+        case 'k':
+          setFilterModal({ ...filterModal, selectedIndex: Math.max(0, filterModal.selectedIndex - 1) });
+          break;
+        case 'down':
+        case 'j':
+          setFilterModal({ ...filterModal, selectedIndex: Math.min(items.length - 1, filterModal.selectedIndex + 1) });
+          break;
+        case 'return': {
+          const item = items[filterModal.selectedIndex];
+          if (!item) break;
+          if (item.type === 'preset') {
+            setFilters(item.preset.filters);
+            setFilterModal(null);
+          } else if (item.type === 'field') {
+            if (item.def.type === 'string') {
+              const current = filters[item.def.id] as StringFilter | undefined;
+              setFilterModal({
+                level: 'string-picker',
+                fieldId: item.def.id,
+                inputValue: current?.value ?? '',
+                mode: current?.mode ?? 'fuzzy',
+                selectedIndex: 0,
+              });
+            } else {
+              const current = (filters[item.def.id] as string[] | undefined) ?? [];
+              setFilterModal({
+                level: 'multiselect-picker',
+                fieldId: item.def.id,
+                selected: [...current],
+                selectedIndex: 0,
+              });
+            }
+          } else if (item.type === 'clear') {
+            setFilters(EMPTY_FILTERS);
+          } else if (item.type === 'save') {
+            setFilterModal({ level: 'save-preset', inputValue: '' });
+          }
+          break;
+        }
+        case 'escape':
+        case 'q':
+          setFilterModal(null);
+          break;
+        default:
+          if (key.raw === 'f' || key.raw === 'F') {
+            setFilterModal(null);
+          } else if (key.raw === 'd' || key.raw === 'D') {
+            const item = items[filterModal.selectedIndex];
+            if (item?.type === 'preset') {
+              const next = filterPresets.filter((_, idx) => idx !== item.index);
+              setFilterPresets(next);
+              void writeFilterPresets(PR_VIEW_NAME, next);
+              setFilterModal({
+                ...filterModal,
+                selectedIndex: Math.min(filterModal.selectedIndex, items.length - 2),
+              });
+            }
+          }
+          break;
+      }
+    }
+
+    // ── String picker level ─────────────────────────────────────
+    if (filterModal.level === 'string-picker') {
+      const allValues = stringFieldValues[filterModal.fieldId as keyof typeof stringFieldValues] ?? [];
+      const query = filterModal.inputValue.toLowerCase();
+      const suggestions = query
+        ? allValues.filter((v) => v.toLowerCase().includes(query))
+        : allValues;
+
+      switch (key.name) {
+        case 'up':
+          setFilterModal({ ...filterModal, selectedIndex: Math.max(0, filterModal.selectedIndex - 1) });
+          break;
+        case 'down':
+          setFilterModal({ ...filterModal, selectedIndex: Math.min(suggestions.length - 1, filterModal.selectedIndex + 1) });
+          break;
+        case 'tab': {
+          setFilterModal({
+            ...filterModal,
+            mode: filterModal.mode === 'fuzzy' ? 'exact' : 'fuzzy',
+          });
+          break;
+        }
+        case 'return': {
+          const value = suggestions[filterModal.selectedIndex] ?? filterModal.inputValue;
+          if (value) {
+            setFilters((prev) => ({
+              ...prev,
+              [filterModal.fieldId]: { value, mode: filterModal.mode },
+            }));
+          } else {
+            setFilters((prev) => {
+              const next = { ...prev };
+              delete next[filterModal.fieldId];
+              return next;
+            });
+          }
+          setFilterModal({ level: 'fields', selectedIndex: 0 });
+          break;
+        }
+        case 'backspace':
+          setFilterModal({ ...filterModal, inputValue: filterModal.inputValue.slice(0, -1), selectedIndex: 0 });
+          break;
+        case 'escape':
+          setFilterModal({ level: 'fields', selectedIndex: 0 });
+          break;
+        default:
+          if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
+            setFilterModal({
+              ...filterModal,
+              inputValue: filterModal.inputValue + key.raw,
+              selectedIndex: 0,
+            });
+          }
+          break;
+      }
+    }
+
+    // ── Multiselect picker level ────────────────────────────────
+    if (filterModal.level === 'multiselect-picker') {
+      const options = MULTISELECT_OPTIONS[filterModal.fieldId] ?? [];
+
+      switch (key.name) {
+        case 'up':
+        case 'k':
+          setFilterModal({ ...filterModal, selectedIndex: Math.max(0, filterModal.selectedIndex - 1) });
+          break;
+        case 'down':
+        case 'j':
+          setFilterModal({ ...filterModal, selectedIndex: Math.min(options.length - 1, filterModal.selectedIndex + 1) });
+          break;
+        case 'return': {
+          const opt = options[filterModal.selectedIndex];
+          if (opt) {
+            const sel = filterModal.selected;
+            const next = sel.includes(opt.value)
+              ? sel.filter((v) => v !== opt.value)
+              : [...sel, opt.value];
+            setFilterModal({ ...filterModal, selected: next });
+          }
+          break;
+        }
+        case 'escape': {
+          const selected = filterModal.selected;
+          if (selected.length > 0) {
+            setFilters((prev) => ({ ...prev, [filterModal.fieldId]: selected }));
+          } else {
+            setFilters((prev) => {
+              const next = { ...prev };
+              delete next[filterModal.fieldId];
+              return next;
+            });
+          }
+          setFilterModal({ level: 'fields', selectedIndex: 0 });
+          break;
+        }
+      }
+      // Space also toggles
+      if (key.raw === ' ') {
+        const opt = options[filterModal.selectedIndex];
+        if (opt) {
+          const sel = filterModal.selected;
+          const next = sel.includes(opt.value)
+            ? sel.filter((v) => v !== opt.value)
+            : [...sel, opt.value];
+          setFilterModal({ ...filterModal, selected: next });
+        }
+      }
+    }
+
+    // ── Save preset level ───────────────────────────────────────
+    if (filterModal.level === 'save-preset') {
+      switch (key.name) {
+        case 'return': {
+          if (filterModal.inputValue.trim()) {
+            const preset: FilterPreset = {
+              label: filterModal.inputValue.trim(),
+              filters: { ...filters },
+            };
+            const next = [...filterPresets, preset];
+            setFilterPresets(next);
+            void writeFilterPresets(PR_VIEW_NAME, next);
+          }
+          setFilterModal({ level: 'fields', selectedIndex: 0 });
+          break;
+        }
+        case 'escape':
+          setFilterModal({ level: 'fields', selectedIndex: 0 });
+          break;
+        case 'backspace':
+          setFilterModal({ ...filterModal, inputValue: filterModal.inputValue.slice(0, -1) });
+          break;
+        default:
+          if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
+            setFilterModal({ ...filterModal, inputValue: filterModal.inputValue + key.raw });
+          }
+          break;
+      }
+    }
+
+    return true;
+  }, { focusId: 'filter-modal' });
+
   // Search text input — only fires when pr-search focus is active.
   useFocusedKeyboard((key) => {
     key.stopPropagation();
@@ -822,12 +1108,13 @@ export function PrApp({
     const arrow = sortLayers[layerIdx].dir === 'asc' ? '↑' : '↓';
     return `${label}${arrow}`.padEnd(colWidth);
   };
-  const tableFocused = !searchMode && !sortModal && !columnModal;
+  const tableFocused = !searchMode && !sortModal && !columnModal && !filterModal;
+  const isFiltered = activeFilterCount > 0 || !!searchQuery;
   const headerText = ` git-switchboard pr${repoMode ? ` ${repoMode}` : ''}  ${
-    searchQuery ? `${filteredPRs.length}/${prs.length}` : String(filteredPRs.length)
-  } open PRs${searchQuery ? ` | Search: ${searchQuery}` : ''}${
-    searchMode ? ` | (type to search, [${RETURN_SYMBOL}] confirm)` : ''
-  }`;
+    isFiltered ? `${filteredPRs.length}/${prs.length}` : String(filteredPRs.length)
+  } open PRs${activeFilterCount > 0 ? ` | ${activeFilterCount} filter${activeFilterCount > 1 ? 's' : ''}` : ''}${
+    searchQuery ? ` | Search: ${searchQuery}` : ''
+  }${searchMode ? ` | (type to search, [${RETURN_SYMBOL}] confirm)` : ''}`;
   const headerWidth = Math.max(1, width - 4);
   const headerContent = refreshing
     ? `${fit(headerText, Math.max(1, headerWidth - 2))} ${SPINNER_FRAMES[spinnerFrame]}`
@@ -1100,6 +1387,218 @@ export function PrApp({
                 }
                 fg="#565f89"
               />
+            </box>
+          </box>
+        </box>
+      )}
+
+      {/* Filter modal — field list */}
+      {filterModal?.level === 'fields' && (
+        <box
+          style={{
+            position: 'absolute',
+            top: Math.floor(height / 2) - Math.floor((filterFieldItems.length + 4) / 2),
+            left: Math.floor(width / 2) - 22,
+            width: 44,
+            height: filterFieldItems.length + 4,
+          }}
+        >
+          <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text
+                content={activeFilterCount > 0 ? ` Filters (${activeFilterCount} active)` : ' Filters'}
+                fg="#7aa2f7"
+              />
+            </box>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content={'─'.repeat(44)} fg="#292e42" />
+            </box>
+            {filterFieldItems.map((item, i) => {
+              const isActive = i === filterModal.selectedIndex;
+              let label: string;
+              let valueText = '';
+              let fg: string;
+
+              if (item.type === 'preset') {
+                label = `★ ${item.preset.label}`;
+                fg = isActive ? '#e0af68' : '#bb9af7';
+              } else if (item.type === 'field') {
+                label = item.def.label;
+                const val = filters[item.def.id];
+                if (item.def.type === 'string' && val && typeof val === 'object' && 'value' in val) {
+                  const sf = val as StringFilter;
+                  valueText = ` = ${sf.mode === 'exact' ? '"' : ''}${sf.value}${sf.mode === 'exact' ? '"' : ''}`;
+                } else if (Array.isArray(val) && val.length > 0) {
+                  valueText = ` = ${val.join(', ')}`;
+                }
+                fg = valueText
+                  ? (isActive ? '#c0caf5' : '#7aa2f7')
+                  : (isActive ? '#a9b1d6' : '#565f89');
+              } else if (item.type === 'clear') {
+                label = '✗ Clear all filters';
+                fg = isActive ? '#f7768e' : '#565f89';
+              } else {
+                label = '+ Save as preset';
+                fg = isActive ? '#9ece6a' : '#565f89';
+              }
+
+              const itemKey = item.type === 'field' ? item.def.id
+                : item.type === 'preset' ? `preset-${item.index}`
+                : item.type;
+
+              return (
+                <box
+                  key={itemKey}
+                  style={{
+                    height: 1,
+                    width: '100%',
+                    backgroundColor: isActive ? '#292e42' : '#1a1b26',
+                  }}
+                >
+                  <text
+                    content={` ${isActive ? '>' : ' '} ${label}${valueText}`}
+                    fg={fg}
+                  />
+                </box>
+              );
+            })}
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content=" Enter select | d delete preset | Esc close" fg="#565f89" />
+            </box>
+          </box>
+        </box>
+      )}
+
+      {/* Filter modal — string picker */}
+      {filterModal?.level === 'string-picker' && (() => {
+        const allValues = stringFieldValues[filterModal.fieldId as keyof typeof stringFieldValues] ?? [];
+        const query = filterModal.inputValue.toLowerCase();
+        const suggestions = query
+          ? allValues.filter((v) => v.toLowerCase().includes(query))
+          : allValues;
+        const maxVisible = Math.min(suggestions.length, 10);
+        const fieldDef = FILTER_FIELD_DEFS.find((d) => d.id === filterModal.fieldId);
+        const modalHeight = maxVisible + 5;
+
+        return (
+          <box
+            style={{
+              position: 'absolute',
+              top: Math.floor(height / 2) - Math.floor(modalHeight / 2),
+              left: Math.floor(width / 2) - 22,
+              width: 44,
+              height: modalHeight,
+            }}
+          >
+            <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
+              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+                <text content={` ${fieldDef?.label ?? filterModal.fieldId} (${filterModal.mode})`} fg="#7aa2f7" />
+              </box>
+              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+                <text content={'─'.repeat(44)} fg="#292e42" />
+              </box>
+              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+                <text content={` > ${filterModal.inputValue}█`} fg="#c0caf5" />
+              </box>
+              {suggestions.slice(0, maxVisible).map((val, i) => {
+                const isActive = i === filterModal.selectedIndex;
+                return (
+                  <box
+                    key={val}
+                    style={{
+                      height: 1,
+                      width: '100%',
+                      backgroundColor: isActive ? '#292e42' : '#1a1b26',
+                    }}
+                  >
+                    <text
+                      content={`   ${isActive ? '>' : ' '} ${val}`}
+                      fg={isActive ? '#c0caf5' : '#a9b1d6'}
+                    />
+                  </box>
+                );
+              })}
+              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+                <text content=" Tab fuzzy/exact | Enter confirm | Esc back" fg="#565f89" />
+              </box>
+            </box>
+          </box>
+        );
+      })()}
+
+      {/* Filter modal — multiselect picker */}
+      {filterModal?.level === 'multiselect-picker' && (() => {
+        const options = MULTISELECT_OPTIONS[filterModal.fieldId] ?? [];
+        const fieldDef = FILTER_FIELD_DEFS.find((d) => d.id === filterModal.fieldId);
+        const modalHeight = options.length + 4;
+
+        return (
+          <box
+            style={{
+              position: 'absolute',
+              top: Math.floor(height / 2) - Math.floor(modalHeight / 2),
+              left: Math.floor(width / 2) - 22,
+              width: 44,
+              height: modalHeight,
+            }}
+          >
+            <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
+              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+                <text content={` ${fieldDef?.label ?? filterModal.fieldId}`} fg="#7aa2f7" />
+              </box>
+              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+                <text content={'─'.repeat(44)} fg="#292e42" />
+              </box>
+              {options.map((opt, i) => {
+                const isActive = i === filterModal.selectedIndex;
+                const isChecked = filterModal.selected.includes(opt.value);
+                return (
+                  <box
+                    key={opt.value}
+                    style={{
+                      height: 1,
+                      width: '100%',
+                      backgroundColor: isActive ? '#292e42' : '#1a1b26',
+                    }}
+                  >
+                    <text
+                      content={` ${isActive ? '>' : ' '} [${isChecked ? '✓' : ' '}] ${opt.label}`}
+                      fg={isChecked ? (isActive ? '#c0caf5' : '#7aa2f7') : (isActive ? '#a9b1d6' : '#565f89')}
+                    />
+                  </box>
+                );
+              })}
+              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+                <text content=" Enter/Space toggle | Esc apply & back" fg="#565f89" />
+              </box>
+            </box>
+          </box>
+        );
+      })()}
+
+      {/* Filter modal — save preset */}
+      {filterModal?.level === 'save-preset' && (
+        <box
+          style={{
+            position: 'absolute',
+            top: Math.floor(height / 2) - 2,
+            left: Math.floor(width / 2) - 22,
+            width: 44,
+            height: 4,
+          }}
+        >
+          <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content=" Save Filter Preset" fg="#7aa2f7" />
+            </box>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content={'─'.repeat(44)} fg="#292e42" />
+            </box>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content={` Name: ${filterModal.inputValue}█`} fg="#c0caf5" />
+            </box>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
+              <text content=" Enter save | Esc cancel" fg="#565f89" />
             </box>
           </box>
         </box>
