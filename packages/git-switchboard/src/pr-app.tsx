@@ -290,7 +290,8 @@ type FilterMenuItem =
   | { type: 'preset'; index: number; preset: FilterPreset }
   | { type: 'field'; def: FilterFieldDef }
   | { type: 'clear' }
-  | { type: 'save' };
+  | { type: 'save' }
+  | { type: 'close' };
 
 interface PrAppProps extends ViewProps {
   prs: PR[];
@@ -529,6 +530,7 @@ export function PrApp({
       items.push({ type: 'clear' });
       items.push({ type: 'save' });
     }
+    items.push({ type: 'close' });
     return items;
   }, [filterPresets, activeFilterCount]);
 
@@ -696,8 +698,10 @@ export function PrApp({
   }, { show: { retryChecks: hasFailedChecks } });
 
   // Sort modal navigation — only fires when sort-modal focus is active.
+  const sortItemCount = SORT_FIELDS.length + 1; // +1 for Close action
   useFocusedKeyboard((key) => {
     key.stopPropagation();
+    const isCloseRow = sortModal?.selectedIndex === SORT_FIELDS.length;
     switch (key.name) {
       case 'up':
       case 'k':
@@ -706,10 +710,11 @@ export function PrApp({
       case 'down':
       case 'j':
         setSortModal((m) =>
-          m ? { selectedIndex: Math.min(SORT_FIELDS.length - 1, m.selectedIndex + 1) } : m
+          m ? { selectedIndex: Math.min(sortItemCount - 1, m.selectedIndex + 1) } : m
         );
         break;
       case 'return': {
+        if (isCloseRow) { setSortModal(null); break; }
         const field = sortModal ? SORT_FIELDS[sortModal.selectedIndex] : undefined;
         if (field) toggleSortField(field.field);
         break;
@@ -719,6 +724,13 @@ export function PrApp({
       case 's':
         setSortModal(null);
         break;
+    }
+    if (key.raw === ' ') {
+      if (isCloseRow) { setSortModal(null); }
+      else {
+        const field = sortModal ? SORT_FIELDS[sortModal.selectedIndex] : undefined;
+        if (field) toggleSortField(field.field);
+      }
     }
     return true;
   }, { focusId: 'sort-modal' });
@@ -730,10 +742,25 @@ export function PrApp({
     void writeColumnConfig(PR_VIEW_NAME, columns);
   }, [columns]);
 
+  const colItemCount = columns.length + 1; // +1 for Close action
   useFocusedKeyboard((key) => {
     key.stopPropagation();
     if (!columnModal) return true;
     const { selectedIndex: si, reordering } = columnModal;
+    const isCloseRow = si === columns.length;
+
+    const toggleColumnVis = () => {
+      if (isCloseRow) { closeColumnModal(); return; }
+      const col = columns[si];
+      const def = PR_COLUMN_DEFS.find((d) => d.id === col.id);
+      if (def) {
+        setColumns((prev) =>
+          prev.map((c, idx) =>
+            idx === si ? { ...c, visibility: cycleVisibility(c.visibility, def.supportsAuto) } : c
+          )
+        );
+      }
+    };
 
     if (reordering) {
       // Reorder mode: j/k moves the grabbed row
@@ -767,39 +794,33 @@ export function PrApp({
       }
     } else {
       // Navigate mode
-      switch (key.name) {
-        case 'up':
-        case 'k':
-          setColumnModal({ selectedIndex: Math.max(0, si - 1), reordering: false });
-          break;
-        case 'down':
-        case 'j':
-          setColumnModal({ selectedIndex: Math.min(columns.length - 1, si + 1), reordering: false });
-          break;
-        case 'return': {
-          // Toggle visibility
-          const col = columns[si];
-          const def = PR_COLUMN_DEFS.find((d) => d.id === col.id);
-          if (def) {
-            setColumns((prev) =>
-              prev.map((c, idx) =>
-                idx === si ? { ...c, visibility: cycleVisibility(c.visibility, def.supportsAuto) } : c
-              )
-            );
-          }
-          break;
-        }
-        case 'escape':
-        case 'q':
-          closeColumnModal();
-          break;
-        default:
-          if (key.raw === 'r' || key.raw === 'R') {
-            setColumnModal({ selectedIndex: si, reordering: true });
-          } else if (key.raw === 'C') {
+      if (key.raw === ' ') {
+        toggleColumnVis();
+      } else {
+        switch (key.name) {
+          case 'up':
+          case 'k':
+            setColumnModal({ selectedIndex: Math.max(0, si - 1), reordering: false });
+            break;
+          case 'down':
+          case 'j':
+            setColumnModal({ selectedIndex: Math.min(colItemCount - 1, si + 1), reordering: false });
+            break;
+          case 'return':
+            toggleColumnVis();
+            break;
+          case 'escape':
+          case 'q':
             closeColumnModal();
-          }
-          break;
+            break;
+          default:
+            if (!isCloseRow && (key.raw === 'r' || key.raw === 'R')) {
+              setColumnModal({ selectedIndex: si, reordering: true });
+            } else if (key.raw === 'C') {
+              closeColumnModal();
+            }
+            break;
+        }
       }
     }
     return true;
@@ -813,67 +834,77 @@ export function PrApp({
     // ── Field list level ────────────────────────────────────────
     if (filterModal.level === 'fields') {
       const items = filterFieldItems;
-      switch (key.name) {
-        case 'up':
-        case 'k':
-          setFilterModal({ ...filterModal, selectedIndex: Math.max(0, filterModal.selectedIndex - 1) });
-          break;
-        case 'down':
-        case 'j':
-          setFilterModal({ ...filterModal, selectedIndex: Math.min(items.length - 1, filterModal.selectedIndex + 1) });
-          break;
-        case 'return': {
-          const item = items[filterModal.selectedIndex];
-          if (!item) break;
-          if (item.type === 'preset') {
-            setFilters(item.preset.filters);
-            setFilterModal(null);
-          } else if (item.type === 'field') {
-            if (item.def.type === 'string') {
-              const current = filters[item.def.id] as StringFilter | undefined;
-              setFilterModal({
-                level: 'string-picker',
-                fieldId: item.def.id,
-                inputValue: current?.value ?? '',
-                mode: current?.mode ?? 'fuzzy',
-                selectedIndex: 0,
-              });
-            } else {
-              const current = (filters[item.def.id] as string[] | undefined) ?? [];
-              setFilterModal({
-                level: 'multiselect-picker',
-                fieldId: item.def.id,
-                selected: [...current],
-                selectedIndex: 0,
-              });
-            }
-          } else if (item.type === 'clear') {
-            setFilters(EMPTY_FILTERS);
-          } else if (item.type === 'save') {
-            setFilterModal({ level: 'save-preset', inputValue: '' });
-          }
-          break;
-        }
-        case 'escape':
-        case 'q':
+
+      const selectFilterItem = () => {
+        const item = items[filterModal.selectedIndex];
+        if (!item) return;
+        if (item.type === 'preset') {
+          setFilters(item.preset.filters);
           setFilterModal(null);
-          break;
-        default:
-          if (key.raw === 'f' || key.raw === 'F') {
-            setFilterModal(null);
-          } else if (key.raw === 'd' || key.raw === 'D') {
-            const item = items[filterModal.selectedIndex];
-            if (item?.type === 'preset') {
-              const next = filterPresets.filter((_, idx) => idx !== item.index);
-              setFilterPresets(next);
-              void writeFilterPresets(PR_VIEW_NAME, next);
-              setFilterModal({
-                ...filterModal,
-                selectedIndex: Math.min(filterModal.selectedIndex, items.length - 2),
-              });
-            }
+        } else if (item.type === 'field') {
+          if (item.def.type === 'string') {
+            const current = filters[item.def.id] as StringFilter | undefined;
+            setFilterModal({
+              level: 'string-picker',
+              fieldId: item.def.id,
+              inputValue: current?.value ?? '',
+              mode: current?.mode ?? 'fuzzy',
+              selectedIndex: 0,
+            });
+          } else {
+            const current = (filters[item.def.id] as string[] | undefined) ?? [];
+            setFilterModal({
+              level: 'multiselect-picker',
+              fieldId: item.def.id,
+              selected: [...current],
+              selectedIndex: 0,
+            });
           }
-          break;
+        } else if (item.type === 'clear') {
+          setFilters(EMPTY_FILTERS);
+        } else if (item.type === 'save') {
+          setFilterModal({ level: 'save-preset', inputValue: '' });
+        } else if (item.type === 'close') {
+          setFilterModal(null);
+        }
+      };
+
+      if (key.raw === ' ') {
+        selectFilterItem();
+      } else {
+        switch (key.name) {
+          case 'up':
+          case 'k':
+            setFilterModal({ ...filterModal, selectedIndex: Math.max(0, filterModal.selectedIndex - 1) });
+            break;
+          case 'down':
+          case 'j':
+            setFilterModal({ ...filterModal, selectedIndex: Math.min(items.length - 1, filterModal.selectedIndex + 1) });
+            break;
+          case 'return':
+            selectFilterItem();
+            break;
+          case 'escape':
+          case 'q':
+            setFilterModal(null);
+            break;
+          default:
+            if (key.raw === 'f' || key.raw === 'F') {
+              setFilterModal(null);
+            } else if (key.raw === 'd' || key.raw === 'D') {
+              const item = items[filterModal.selectedIndex];
+              if (item?.type === 'preset') {
+                const next = filterPresets.filter((_, idx) => idx !== item.index);
+                setFilterPresets(next);
+                void writeFilterPresets(PR_VIEW_NAME, next);
+                setFilterModal({
+                  ...filterModal,
+                  selectedIndex: Math.min(filterModal.selectedIndex, items.length - 2),
+                });
+              }
+            }
+            break;
+        }
       }
     } else if (filterModal.level === 'string-picker') {
     // ── String picker level ─────────────────────────────────────
@@ -1306,10 +1337,10 @@ export function PrApp({
         <box
           style={{
             position: 'absolute',
-            top: Math.floor(height / 2) - Math.floor((SORT_FIELDS.length + 4) / 2),
+            top: Math.floor(height / 2) - Math.floor((sortItemCount + 4) / 2),
             left: Math.floor(width / 2) - 20,
             width: 40,
-            height: SORT_FIELDS.length + 4,
+            height: sortItemCount + 4,
           }}
         >
           <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
@@ -1349,8 +1380,22 @@ export function PrApp({
                 </box>
               );
             })}
+            {/* Close action row */}
+            <box
+              style={{
+                height: 1,
+                width: '100%',
+                backgroundColor: sortModal.selectedIndex === SORT_FIELDS.length ? '#292e42' : '#1a1b26',
+              }}
+              onMouseDown={() => setSortModal(null)}
+            >
+              <text
+                content={`     ${sortModal.selectedIndex === SORT_FIELDS.length ? '>' : ' '} Close`}
+                fg={sortModal.selectedIndex === SORT_FIELDS.length ? '#c0caf5' : '#565f89'}
+              />
+            </box>
             <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content=" Enter toggle | Esc close" fg="#565f89" />
+              <text content=" Enter/Space toggle | Esc close" fg="#565f89" />
             </box>
           </box>
         </box>
@@ -1361,10 +1406,10 @@ export function PrApp({
         <box
           style={{
             position: 'absolute',
-            top: Math.floor(height / 2) - Math.floor((columns.length + 4) / 2),
+            top: Math.floor(height / 2) - Math.floor((colItemCount + 3) / 2),
             left: Math.floor(width / 2) - 22,
             width: 44,
-            height: columns.length + 4,
+            height: colItemCount + 3,
           }}
         >
           <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
@@ -1420,12 +1465,28 @@ export function PrApp({
                 </box>
               );
             })}
+            {/* Close action row */}
+            {!columnModal.reordering && (
+              <box
+                style={{
+                  height: 1,
+                  width: '100%',
+                  backgroundColor: columnModal.selectedIndex === columns.length ? '#292e42' : '#1a1b26',
+                }}
+                onMouseDown={() => closeColumnModal()}
+              >
+                <text
+                  content={`     ${columnModal.selectedIndex === columns.length ? '>' : ' '} Close`}
+                  fg={columnModal.selectedIndex === columns.length ? '#c0caf5' : '#565f89'}
+                />
+              </box>
+            )}
             <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
               <text
                 content={
                   columnModal.reordering
                     ? ' ↑↓ move | Enter/Esc done'
-                    : ' Enter toggle | r reorder | Esc close'
+                    : ' Enter/Space toggle | r reorder | Esc close'
                 }
                 fg="#565f89"
               />
@@ -1479,9 +1540,12 @@ export function PrApp({
               } else if (item.type === 'clear') {
                 label = '✗ Clear all filters';
                 fg = isActive ? '#f7768e' : '#565f89';
-              } else {
+              } else if (item.type === 'save') {
                 label = '+ Save as preset';
                 fg = isActive ? '#9ece6a' : '#565f89';
+              } else {
+                label = 'Close';
+                fg = isActive ? '#c0caf5' : '#565f89';
               }
 
               const itemKey = item.type === 'field' ? item.def.id
@@ -1505,7 +1569,7 @@ export function PrApp({
               );
             })}
             <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content=" Enter select | d delete preset | Esc close" fg="#565f89" />
+              <text content=" Enter/Space select | d delete preset | Esc close" fg="#565f89" />
             </box>
           </box>
         </box>
