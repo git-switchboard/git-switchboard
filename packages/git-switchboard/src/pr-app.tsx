@@ -1337,10 +1337,10 @@ export function PrApp({
         <box
           style={{
             position: 'absolute',
-            top: Math.floor(height / 2) - Math.floor((sortItemCount + 5) / 2),
-            left: Math.floor(width / 2) - 20,
-            width: 40,
-            height: sortItemCount + 5,
+            top: Math.floor(height / 2) - Math.floor((sortItemCount + 7) / 2),
+            left: Math.floor(width / 2) - 25,
+            width: 50,
+            height: sortItemCount + 7,
           }}
         >
           <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
@@ -1348,8 +1348,9 @@ export function PrApp({
               <text content=" Sort Order" fg="#7aa2f7" />
             </box>
             <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={`${'─'.repeat(40)}`} fg="#292e42" />
+              <text content={`${'─'.repeat(50)}`} fg="#292e42" />
             </box>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
             {SORT_FIELDS.map((sf, i) => {
               const isActive = i === sortModal.selectedIndex;
               const layerIdx = sortLayers.findIndex((l) => l.field === sf.field);
@@ -1380,9 +1381,7 @@ export function PrApp({
                 </box>
               );
             })}
-            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={'─'.repeat(40)} fg="#292e42" />
-            </box>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
             {/* Close action row */}
             <box
               style={{
@@ -1409,10 +1408,10 @@ export function PrApp({
         <box
           style={{
             position: 'absolute',
-            top: Math.floor(height / 2) - Math.floor((colItemCount + 5) / 2),
-            left: Math.floor(width / 2) - 22,
-            width: 44,
-            height: colItemCount + 5,
+            top: Math.floor(height / 2) - Math.floor((colItemCount + 7) / 2),
+            left: Math.floor(width / 2) - 25,
+            width: 50,
+            height: colItemCount + 7,
           }}
         >
           <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
@@ -1420,8 +1419,9 @@ export function PrApp({
               <text content=" Columns" fg="#7aa2f7" />
             </box>
             <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={'─'.repeat(44)} fg="#292e42" />
+              <text content={'─'.repeat(50)} fg="#292e42" />
             </box>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
             {columns.map((col, i) => {
               const isActive = i === columnModal.selectedIndex;
               const isGrabbed = isActive && columnModal.reordering;
@@ -1470,9 +1470,7 @@ export function PrApp({
             })}
             {!columnModal.reordering && (
               <>
-                <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                  <text content={'─'.repeat(44)} fg="#292e42" />
-                </box>
+                <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
                 {/* Close action row */}
                 <box
                   style={{
@@ -1508,10 +1506,10 @@ export function PrApp({
         <box
           style={{
             position: 'absolute',
-            top: Math.floor(height / 2) - Math.floor((filterFieldItems.length + 5) / 2),
-            left: Math.floor(width / 2) - 22,
-            width: 44,
-            height: filterFieldItems.length + 5,
+            top: Math.floor(height / 2) - Math.floor((filterFieldItems.length + 6) / 2),
+            left: Math.floor(width / 2) - 25,
+            width: 50,
+            height: filterFieldItems.length + 6,
           }}
         >
           <box flexDirection="column" style={{ width: '100%', height: '100%' }}>
@@ -1522,8 +1520,9 @@ export function PrApp({
               />
             </box>
             <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={'─'.repeat(44)} fg="#292e42" />
+              <text content={'─'.repeat(50)} fg="#292e42" />
             </box>
+            <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
             {filterFieldItems.map((item, i) => {
               const isActive = i === filterModal.selectedIndex;
               let label: string;
@@ -1577,7 +1576,7 @@ export function PrApp({
               );
             })}
             <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={'─'.repeat(44)} fg="#292e42" />
+              <text content={'─'.repeat(50)} fg="#292e42" />
             </box>
             <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
               <text content=" Enter/Space select | d delete preset | Esc close" fg="#565f89" />
@@ -1595,7 +1594,7 @@ export function PrApp({
           : allValues;
         const maxVisible = Math.min(suggestions.length, 10);
         const fieldDef = FILTER_FIELD_DEFS.find((d) => d.id === filterModal.fieldId);
-        const modalHeight = maxVisible + 6;
+        const modalHeight = maxVisible + 7;
 
         return (
           <box
@@ -1612,10 +1611,11 @@ export function PrApp({
                 <text content={` ${fieldDef?.label ?? filterModal.fieldId} (${filterModal.mode})`} fg="#7aa2f7" />
               </box>
               <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content={'─'.repeat(44)} fg="#292e42" />
+                <text content={'─'.repeat(50)} fg="#292e42" />
               </box>
+              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
               <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content={` > ${filterModal.inputValue}█`} fg="#c0caf5" />
+                <text content={`  > ${filterModal.inputValue}█`} fg="#c0caf5" />
               </box>
               {suggestions.slice(0, maxVisible).map((val, i) => {
                 const isActive = i === filterModal.selectedIndex;
@@ -1636,7 +1636,7 @@ export function PrApp({
                 );
               })}
               <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content={'─'.repeat(44)} fg="#292e42" />
+                <text content={'─'.repeat(50)} fg="#292e42" />
               </box>
               <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
                 <text content=" Tab fuzzy/exact | Enter confirm | Esc back" fg="#565f89" />
@@ -1650,7 +1650,7 @@ export function PrApp({
       {filterModal?.level === 'multiselect-picker' && (() => {
         const options = MULTISELECT_OPTIONS[filterModal.fieldId] ?? [];
         const fieldDef = FILTER_FIELD_DEFS.find((d) => d.id === filterModal.fieldId);
-        const modalHeight = options.length + 5;
+        const modalHeight = options.length + 6;
 
         return (
           <box
@@ -1667,8 +1667,9 @@ export function PrApp({
                 <text content={` ${fieldDef?.label ?? filterModal.fieldId}`} fg="#7aa2f7" />
               </box>
               <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content={'─'.repeat(44)} fg="#292e42" />
+                <text content={'─'.repeat(50)} fg="#292e42" />
               </box>
+              <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }} />
               {options.map((opt, i) => {
                 const isActive = i === filterModal.selectedIndex;
                 const isChecked = filterModal.selected.includes(opt.value);
@@ -1689,7 +1690,7 @@ export function PrApp({
                 );
               })}
               <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-                <text content={'─'.repeat(44)} fg="#292e42" />
+                <text content={'─'.repeat(50)} fg="#292e42" />
               </box>
               <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
                 <text content=" Enter/Space toggle | Esc apply & back" fg="#565f89" />
@@ -1705,8 +1706,8 @@ export function PrApp({
           style={{
             position: 'absolute',
             top: Math.floor(height / 2) - 2,
-            left: Math.floor(width / 2) - 22,
-            width: 44,
+            left: Math.floor(width / 2) - 25,
+            width: 50,
             height: 4,
           }}
         >
@@ -1715,7 +1716,7 @@ export function PrApp({
               <text content=" Save Filter Preset" fg="#7aa2f7" />
             </box>
             <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
-              <text content={'─'.repeat(44)} fg="#292e42" />
+              <text content={'─'.repeat(50)} fg="#292e42" />
             </box>
             <box style={{ height: 1, width: '100%', backgroundColor: '#1a1b26' }}>
               <text content={` Name: ${filterModal.inputValue}█`} fg="#c0caf5" />
