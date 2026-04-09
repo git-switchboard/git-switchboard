@@ -1525,7 +1525,7 @@ export function PrApp({
             termHeight={height}
           >
             <box style={{ height: 1, width: '100%' }}>
-              <text content={` > ${filterModal.inputValue}█`} fg="#c0caf5" />
+              <text content={` > ${filterModal.inputValue}_`} fg="#c0caf5" />
             </box>
             {visibleSuggestions.map((val, vi) => {
               const actualIndex = scrollStart + vi;
@@ -1586,7 +1586,7 @@ export function PrApp({
           termHeight={height}
         >
           <box style={{ height: 1, width: '100%' }}>
-            <text content={` Name: ${filterModal.inputValue}█`} fg="#c0caf5" />
+            <text content={` Name: ${filterModal.inputValue}_`} fg="#c0caf5" />
           </box>
         </Modal>
       )}
