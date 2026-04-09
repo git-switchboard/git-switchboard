@@ -27,44 +27,44 @@ export function createGithubFetcher(
   const batchDelay = deps.batchDelayMs ?? 50;
   const cooldown = deps.cooldownMs ?? 30_000;
   const pendingDetails = new Map<string, { repoId: string; number: number }>();
+  const forcedKeys = new Set<string>();
   const inFlight = new Set<string>();
   const recentlyFetched = new Map<string, number>();
   let detailTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function flushDetailBatch(): Promise<void> {
     const batch = new Map(pendingDetails);
+    const batchForced = new Set(forcedKeys);
     pendingDetails.clear();
+    forcedKeys.clear();
     detailTimer = null;
 
     const now = Date.now();
     const prsToFetch: PR[] = [];
     for (const [key] of batch) {
-      // Skip if already in-flight
       if (inFlight.has(key)) continue;
-      // Skip if recently fetched (cooldown)
-      const lastFetch = recentlyFetched.get(key);
-      if (lastFetch && now - lastFetch < cooldown) continue;
-      // Resolve full PR from store
+      // Only apply cooldown for non-forced requests
+      if (!batchForced.has(key)) {
+        const lastFetch = recentlyFetched.get(key);
+        if (lastFetch && now - lastFetch < cooldown) continue;
+      }
       const pr = stores.prs.get(key);
       if (pr) prsToFetch.push(pr);
     }
 
     if (prsToFetch.length === 0) return;
 
-    // Mark in-flight
     const batchKeys = prsToFetch.map((pr) => `${pr.repoId}#${pr.number}`);
     for (const key of batchKeys) inFlight.add(key);
 
     try {
       const results = await deps.fetchPRDetailsBatch(prsToFetch);
 
-      // Mark as recently fetched
       const fetchedAt = Date.now();
       for (const key of results.keys()) {
         recentlyFetched.set(key, fetchedAt);
       }
 
-      // Re-ingest PRs with enrichment data
       const enriched: PR[] = [];
       for (const [key, details] of results) {
         const existing = stores.prs.get(key);
@@ -89,13 +89,20 @@ export function createGithubFetcher(
     }
   }
 
-  const unsubDetail = bus.on('pr:fetchDetail', ({ repoId, number }) => {
+  const unsubDetail = bus.on('pr:fetchDetail', ({ repoId, number, force }) => {
     const key = `${repoId}#${number}`;
-    // Skip if already pending, in-flight, or recently fetched
-    if (pendingDetails.has(key)) return;
-    if (inFlight.has(key)) return;
-    const lastFetch = recentlyFetched.get(key);
-    if (lastFetch && Date.now() - lastFetch < cooldown) return;
+
+    if (force) {
+      // Force: clear cooldown, allow even if pending/in-flight
+      recentlyFetched.delete(key);
+      forcedKeys.add(key);
+    } else {
+      // Normal: skip if already pending, in-flight, or recently fetched
+      if (pendingDetails.has(key)) return;
+      if (inFlight.has(key)) return;
+      const lastFetch = recentlyFetched.get(key);
+      if (lastFetch && Date.now() - lastFetch < cooldown) return;
+    }
 
     pendingDetails.set(key, { repoId, number });
 

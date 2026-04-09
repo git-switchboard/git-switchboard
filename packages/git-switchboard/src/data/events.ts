@@ -23,7 +23,7 @@ export type DataEventMap = {
 
   // Command events
   'pr:fetch': { repoId: string; number: number };
-  'pr:fetchDetail': { repoId: string; number: number };
+  'pr:fetchDetail': { repoId: string; number: number; force?: boolean };
   'linear:issue:fetch': { identifier: string };
   'checkout:scan': { paths?: string[] };
 

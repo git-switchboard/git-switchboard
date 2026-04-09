@@ -105,7 +105,7 @@ function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
       scrollOffset={scrollOffset}
       setScrollOffset={store.getState().setListScrollOffset}
       storeStatusText={storeStatusText}
-      onFetchCI={async (pr) => store.getState().refreshCI(pr)}
+      onFetchCI={(pr) => store.getState().refreshCI(pr)}
       onPrefetchDetails={store.getState().prefetchDetails}
       onRetryChecks={async (pr) => store.getState().retryChecks(pr)}
       onRefreshAll={async () => store.getState().refreshAllPRs()}
@@ -512,15 +512,22 @@ export function PrRouter({ store, dataLayer }: PrRouterProps) {
         const pr = s.prs.find((p) => p.repoId === match[1] && p.number === Number(match[2]));
         if (!pr) continue;
         const oldCI = s.dataLayer.stores.prs.get(key)?.ci;
-        await s.refreshCI(pr);
-        const newCI = s.dataLayer.stores.prs.get(key)?.ci;
-        if (oldCI?.status === 'pending' && newCI && newCI.status !== 'pending' && newCI.status !== 'unknown') {
-          const icon = newCI.status === 'passing' ? '\u2713' : '\u2717';
-          sendNotification(
-            `git-switchboard: CI ${newCI.status}`,
-            `${icon} ${pr.repoOwner}/${pr.repoName}#${pr.number}: ${pr.title}`
-          );
-        }
+        s.refreshCI(pr);
+        // Check for status transitions after enrichment arrives
+        const offEnriched = s.dataLayer.bus.on('pr:enriched', (enriched) => {
+          if (`${enriched.repoId}#${enriched.number}` !== key) return;
+          offEnriched();
+          const newCI = enriched.ci;
+          if (oldCI?.status === 'pending' && newCI && newCI.status !== 'pending' && newCI.status !== 'unknown') {
+            const icon = newCI.status === 'passing' ? '\u2713' : '\u2717';
+            sendNotification(
+              `git-switchboard: CI ${newCI.status}`,
+              `${icon} ${pr.repoOwner}/${pr.repoName}#${pr.number}: ${pr.title}`
+            );
+          }
+        });
+        // Clean up listener after timeout
+        setTimeout(offEnriched, 15_000);
       }
     }, 30_000);
     return () => clearInterval(interval);

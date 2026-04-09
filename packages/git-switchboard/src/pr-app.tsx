@@ -186,7 +186,7 @@ interface PrAppProps extends ViewProps {
   scrollOffset: number;
   setScrollOffset: (offset: number) => void;
   /** Fetch CI + review for a PR. Resolves when caches are updated. */
-  onFetchCI: (pr: UserPullRequest) => Promise<void>;
+  onFetchCI: (pr: UserPullRequest) => void;
   onPrefetchDetails: (prs: UserPullRequest[]) => void;
   onRetryChecks: (pr: UserPullRequest) => Promise<string>;
   onRefreshAll: (prs: UserPullRequest[]) => Promise<void>;
@@ -233,7 +233,7 @@ export function PrApp({
   } | null>(null);
   const queuedRefreshCountRef = useRef(0);
   // Bump to force re-render after CI fetch (caches are mutated externally)
-  const [, forceRender] = useState(0);
+
 
   // Animate spinner when any PR has pending checks or a refresh is in flight
   const hasPending = useMemo(
@@ -460,7 +460,7 @@ export function PrApp({
     },
     fetchCI: () => {
       const pr = filteredPRs[selectedIndex];
-      if (pr) { onFetchCI(pr).then(() => forceRender((n) => n + 1)); }
+      if (pr) { onFetchCI(pr); }
     },
     retryChecks: () => {
       const pr = filteredPRs[selectedIndex];

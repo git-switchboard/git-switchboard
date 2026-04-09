@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import {
-  fetchPRDetails,
   fetchCheckLogs,
   fetchUserPRs,
   fetchRepoPRs,
@@ -69,7 +68,7 @@ export interface PrStore {
 
   // ─── Actions ──────────────────────────────────────────────────
   prefetchDetails: (prs: UserPullRequest[]) => void;
-  refreshCI: (pr: UserPullRequest) => Promise<void>;
+  refreshCI: (pr: UserPullRequest) => void;
   retryChecks: (pr: UserPullRequest) => Promise<string>;
   retryCheck: (pr: UserPullRequest, check: CheckRun) => Promise<string>;
   copyLogs: (pr: UserPullRequest, check: CheckRun) => Promise<string>;
@@ -82,7 +81,6 @@ export interface PrStore {
 }
 
 interface PrStoreDeps {
-  fetchPRDetails: typeof fetchPRDetails;
   fetchCheckLogs: typeof fetchCheckLogs;
   fetchUserPRs: typeof fetchUserPRs;
   fetchRepoPRs: typeof fetchRepoPRs;
@@ -91,7 +89,6 @@ interface PrStoreDeps {
 }
 
 const DEFAULT_DEPS: PrStoreDeps = {
-  fetchPRDetails,
   fetchCheckLogs,
   fetchUserPRs,
   fetchRepoPRs,
@@ -117,7 +114,6 @@ export const createPrStore = (initial: {
   installedEditors: EditorInfo[];
 }, deps: Partial<PrStoreDeps> = {}) => {
   const {
-    fetchPRDetails: fetchPRDetailsImpl,
     fetchCheckLogs: fetchCheckLogsImpl,
     fetchUserPRs: fetchUserPRsImpl,
     fetchRepoPRs: fetchRepoPRsImpl,
@@ -203,23 +199,26 @@ export const createPrStore = (initial: {
         }
       },
 
-      refreshCI: async (pr) => {
+      refreshCI: (pr) => {
+        const key = `${pr.repoId}#${pr.number}`;
         set({ ciLoading: true });
-        try {
-          const { token } = get();
-          const { ci, review, mergeable } = await fetchPRDetailsImpl(
-            token,
-            pr.repoOwner,
-            pr.repoName,
-            pr.number
-          );
-          dataLayer.ingest.ingestPRs([{ ...pr, ci, review, mergeable }]);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Failed to fetch CI';
-          set({ statusText: message });
-        } finally {
-          set({ ciLoading: false });
-        }
+
+        // Listen for completion, then clear loading state
+        const cleanup = () => { offEnriched(); offError(); clearTimeout(timer); };
+        const done = () => { cleanup(); set({ ciLoading: false }); };
+        const offEnriched = dataLayer.bus.on('pr:enriched', (enriched) => {
+          if (`${enriched.repoId}#${enriched.number}` === key) done();
+        });
+        const offError = dataLayer.bus.on('error', (err) => {
+          if (err.source === 'pr:fetchDetail') done();
+        });
+        const timer = setTimeout(done, 15_000);
+
+        dataLayer.bus.emit('pr:fetchDetail', {
+          repoId: pr.repoId,
+          number: pr.number,
+          force: true,
+        });
       },
 
       retryChecks: async (pr) => {
