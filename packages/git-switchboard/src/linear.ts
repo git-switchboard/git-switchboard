@@ -223,6 +223,73 @@ async function fetchAttachments(
 
 const LINEAR_CACHE_MAX_AGE = 60 * 60 * 1000; // 1 hour
 
+// ─── Fetch issues by identifier ────────────────────────────────
+
+const ISSUES_BY_IDENTIFIER_QUERY = `
+  query IssuesByIdentifier($filter: IssueFilter) {
+    issues(filter: $filter) {
+      nodes {
+        id
+        identifier
+        title
+        state { name }
+        priority
+        assignee { name }
+        url
+        team { key }
+      }
+    }
+  }
+`;
+
+interface IssuesByIdentifierResponse {
+  issues: {
+    nodes: {
+      id: string;
+      identifier: string;
+      title: string;
+      state: { name: string };
+      priority: number;
+      assignee: { name: string } | null;
+      url: string;
+      team: { key: string };
+    }[];
+  };
+}
+
+export async function fetchIssuesByIdentifier(
+  token: string,
+  identifiers: string[]
+): Promise<LinearIssue[]> {
+  if (identifiers.length === 0) return [];
+
+  // Linear's filter supports OR on identifier: { identifier: { in: [...] } }
+  // But identifier filtering isn't directly supported — use issue search instead
+  // Linear supports filtering by identifier with the `identifier` filter
+  const data = await linearGraphQL<IssuesByIdentifierResponse>(
+    token,
+    ISSUES_BY_IDENTIFIER_QUERY,
+    {
+      filter: {
+        identifier: { in: identifiers },
+      },
+    }
+  );
+
+  return data.issues.nodes.map((node) => ({
+    id: node.id,
+    identifier: node.identifier,
+    title: node.title,
+    status: node.state.name,
+    priority: node.priority,
+    assignee: node.assignee?.name ?? null,
+    url: node.url,
+    teamKey: node.team.key,
+  }));
+}
+
+// ─── Caching ───────────────────────────────────────────────────
+
 interface CachedLinearPayload {
   issues: Record<string, LinearIssue>;
   attachments: Record<string, string>;

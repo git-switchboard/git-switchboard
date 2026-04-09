@@ -211,13 +211,10 @@ const gitSwitchboard = cli('git-switchboard', {
             }
           );
           if (linearToken) {
+            const { fetchIssuesByIdentifier } = await import('./linear.js');
             createLinearFetcher(dataLayer.bus, dataLayer.ingest, {
-              fetchIssuesByIdentifier: async (identifiers) => {
-                const data = await fetchLinearData(linearToken);
-                return identifiers
-                  .map(id => data.issues.get(id))
-                  .filter((issue): issue is NonNullable<typeof issue> => issue != null);
-              }
+              fetchIssuesByIdentifier: (identifiers) =>
+                fetchIssuesByIdentifier(linearToken, identifiers),
             });
           }
 
