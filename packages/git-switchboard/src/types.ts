@@ -86,6 +86,20 @@ export interface BranchWithPR extends BranchInfo {
   linearIssue?: LinearIssue;
 }
 
+// ─── Sort types (shared between pr-app and store) ──────────────────────────
+export type SortField = 'updated' | 'review' | 'ci' | 'repo' | 'merge' | 'number';
+export type SortDir = 'asc' | 'desc';
+
+export interface SortLayer {
+  field: SortField;
+  dir: SortDir;
+}
+
+export const DEFAULT_SORT: SortLayer[] = [
+  { field: 'review', dir: 'asc' },
+  { field: 'updated', dir: 'desc' },
+];
+
 export type AuthorFilterMode = "all" | "me" | "list";
 
 export interface WorktreeInfo {

@@ -19,6 +19,8 @@ import type {
 } from './types.js';
 import type { LocalRepo } from './scanner.js';
 import type { ResolvedEditor, EditorInfo } from './editor.js';
+import type { SortLayer } from './types.js';
+import { DEFAULT_SORT } from './types.js';
 
 export type PrScreen =
   | { type: 'pr-list' }
@@ -47,6 +49,16 @@ export interface PrStore {
   ciLoading: boolean;
   refreshing: boolean;
   statusText: string;
+
+  // ─── PR list filter state (persists across navigation) ───────
+  listSearchQuery: string;
+  listSortLayers: SortLayer[];
+  listSelectedIndex: number;
+  listScrollOffset: number;
+  setListSearchQuery: (query: string) => void;
+  setListSortLayers: (layers: SortLayer[] | ((prev: SortLayer[]) => SortLayer[])) => void;
+  setListSelectedIndex: (index: number) => void;
+  setListScrollOffset: (offset: number) => void;
 
   // ─── Config (set once) ────────────────────────────────────────
   /** When set, we're showing all PRs for a specific repo instead of user PRs */
@@ -341,6 +353,19 @@ export const createPrStore = (initial: {
     ciLoading: false,
     refreshing: false,
     statusText: '',
+
+    // ─── PR list filter state ─────────────────────────────────
+    listSearchQuery: '',
+    listSortLayers: DEFAULT_SORT,
+    listSelectedIndex: 0,
+    listScrollOffset: 0,
+    setListSearchQuery: (query) => set({ listSearchQuery: query }),
+    setListSortLayers: (layers) =>
+      set((s) => ({
+        listSortLayers: typeof layers === 'function' ? layers(s.listSortLayers) : layers,
+      })),
+    setListSelectedIndex: (index) => set({ listSelectedIndex: index }),
+    setListScrollOffset: (offset) => set({ listScrollOffset: offset }),
 
     // ─── Config ─────────────────────────────────────────────────
     repoMode: initial.repoMode,

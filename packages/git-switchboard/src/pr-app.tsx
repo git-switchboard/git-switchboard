@@ -15,6 +15,9 @@ import type {
   PRRole,
   ReviewInfo,
   ReviewStatus,
+  SortDir,
+  SortField,
+  SortLayer,
   UserPullRequest,
 } from './types.js';
 import {
@@ -79,14 +82,6 @@ function ciSummary(
 
 // ─── Sort system ─────────────────────────────────────────────
 
-type SortField = 'updated' | 'review' | 'ci' | 'repo' | 'merge' | 'number';
-type SortDir = 'asc' | 'desc';
-
-interface SortLayer {
-  field: SortField;
-  dir: SortDir;
-}
-
 const SORT_FIELDS: { field: SortField; label: string; defaultDir: SortDir }[] = [
   { field: 'updated', label: 'Updated', defaultDir: 'desc' },
   { field: 'review', label: 'Review Status', defaultDir: 'asc' },
@@ -94,11 +89,6 @@ const SORT_FIELDS: { field: SortField; label: string; defaultDir: SortDir }[] = 
   { field: 'repo', label: 'Repository', defaultDir: 'asc' },
   { field: 'merge', label: 'Merge Status', defaultDir: 'asc' },
   { field: 'number', label: 'PR Number', defaultDir: 'desc' },
-];
-
-const DEFAULT_SORT: SortLayer[] = [
-  { field: 'review', dir: 'asc' },
-  { field: 'updated', dir: 'desc' },
 ];
 
 function ciSortOrder(status: string | undefined): number {
@@ -190,6 +180,15 @@ interface PrAppProps extends ViewProps {
   modalActive?: boolean;
   repoMode: string | null;
   refreshing: boolean;
+  /** Persistent filter state from the store */
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  sortLayers: SortLayer[];
+  setSortLayers: (layers: SortLayer[] | ((prev: SortLayer[]) => SortLayer[])) => void;
+  selectedIndex: number;
+  setSelectedIndex: (index: number) => void;
+  scrollOffset: number;
+  setScrollOffset: (offset: number) => void;
   /** Fetch CI + review for a PR. Resolves when caches are updated. */
   onFetchCI: (pr: UserPullRequest) => Promise<void>;
   onPrefetchDetails: (prs: UserPullRequest[]) => void;
@@ -208,6 +207,14 @@ export function PrApp({
   modalActive = false,
   repoMode,
   refreshing,
+  searchQuery,
+  setSearchQuery,
+  sortLayers,
+  setSortLayers,
+  selectedIndex,
+  setSelectedIndex,
+  scrollOffset,
+  setScrollOffset,
   onFetchCI,
   onPrefetchDetails,
   onRetryChecks,
@@ -218,13 +225,9 @@ export function PrApp({
   const navigate = useNavigate<PrScreen>();
   useExitOnCtrlC();
   const { width, height } = useTerminalDimensions();
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [scrollOffset, setScrollOffset] = useState(0);
-  const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState(false);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [statusText, setStatusText] = useState('');
-  const [sortLayers, setSortLayers] = useState<SortLayer[]>(DEFAULT_SORT);
   const [sortModal, setSortModal] = useState<{ selectedIndex: number } | null>(null);
   const refreshSessionRef = useRef<{
     signature: string;
@@ -413,13 +416,10 @@ export function PrApp({
     (newIndex: number) => {
       const clamped = Math.max(0, Math.min(newIndex, filteredPRs.length - 1));
       setSelectedIndex(clamped);
-      setScrollOffset((prev) => {
-        if (clamped < prev) return clamped;
-        if (clamped >= prev + listHeight) return clamped - listHeight + 1;
-        return prev;
-      });
+      if (clamped < scrollOffset) setScrollOffset(clamped);
+      else if (clamped >= scrollOffset + listHeight) setScrollOffset(clamped - listHeight + 1);
     },
-    [filteredPRs.length, listHeight]
+    [filteredPRs.length, listHeight, scrollOffset, setSelectedIndex, setScrollOffset]
   );
 
   const toggleSortField = useCallback((field: SortField) => {
@@ -521,9 +521,9 @@ export function PrApp({
       } else if (shouldCommit) {
         setSearchMode(false);
       } else if (key.name === 'backspace') {
-        setSearchQuery((q) => q.slice(0, -1));
+        setSearchQuery(searchQuery.slice(0, -1));
       } else if (key.raw && key.raw.length >= 1 && key.raw >= ' ') {
-        setSearchQuery((q) => q + key.raw);
+        setSearchQuery(searchQuery + key.raw);
         setSelectedIndex(0);
         setScrollOffset(0);
       }

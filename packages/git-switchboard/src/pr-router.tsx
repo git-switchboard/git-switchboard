@@ -74,6 +74,10 @@ function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
   const mergeableCache = useStore(store, (s) => s.mergeableCache);
   const repoMode = useStore(store, (s) => s.repoMode);
   const refreshing = useStore(store, (s) => s.refreshing);
+  const searchQuery = useStore(store, (s) => s.listSearchQuery);
+  const sortLayers = useStore(store, (s) => s.listSortLayers);
+  const selectedIndex = useStore(store, (s) => s.listSelectedIndex);
+  const scrollOffset = useStore(store, (s) => s.listScrollOffset);
 
   const linearCache = useStore(store, (s) => s.linearCache);
 
@@ -93,6 +97,14 @@ function PrListScreen({ keybinds }: { keybinds: Record<string, Keybind> }) {
       linearCache={linearMap}
       repoMode={repoMode}
       refreshing={refreshing}
+      searchQuery={searchQuery}
+      setSearchQuery={store.getState().setListSearchQuery}
+      sortLayers={sortLayers}
+      setSortLayers={store.getState().setListSortLayers}
+      selectedIndex={selectedIndex}
+      setSelectedIndex={store.getState().setListSelectedIndex}
+      scrollOffset={scrollOffset}
+      setScrollOffset={store.getState().setListScrollOffset}
       onFetchCI={async (pr) => store.getState().fetchDetailsForPR(pr)}
       onPrefetchDetails={store.getState().prefetchDetailsForPRs}
       onRetryChecks={async (pr) => store.getState().retryChecks(pr)}
