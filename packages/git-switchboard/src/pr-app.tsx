@@ -1063,13 +1063,23 @@ export function PrApp({
     [filteredPRs]
   );
 
-  /** Resolve 'auto' visibility to a concrete boolean for each column. */
+  /** Resolve 'auto' visibility to a concrete boolean for each column.
+   *  When a filter narrows a column to a single value, auto-hide it. */
   const autoResolvers: Record<string, () => boolean> = useMemo(() => ({
-    role: () => !repoMode,
-    author: () => !!repoMode && hasDistinctAuthors,
-    repo: () => !repoMode,
+    role: () => {
+      if (filters.role && filters.role.length === 1) return false;
+      return !repoMode;
+    },
+    author: () => {
+      if (filters.author?.mode === 'exact') return false;
+      return !!repoMode && hasDistinctAuthors;
+    },
+    repo: () => {
+      if (filters.repo?.mode === 'exact') return false;
+      return !repoMode;
+    },
     linear: () => hasLinear,
-  }), [repoMode, hasDistinctAuthors, hasLinear]);
+  }), [repoMode, hasDistinctAuthors, hasLinear, filters]);
 
   /** Ordered list of columns with resolved visibility and widths. */
   const resolvedColumns = useMemo(() => {
@@ -1120,10 +1130,30 @@ export function PrApp({
     return `${label}${arrow}`.padEnd(colWidth);
   };
   const tableFocused = !searchMode && !sortModal && !columnModal && !filterModal;
+  const filterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (filters.org) {
+      parts.push(filters.org.mode === 'exact' ? `org="${filters.org.value}"` : `org~${filters.org.value}`);
+    }
+    if (filters.repo) {
+      parts.push(filters.repo.mode === 'exact' ? `repo="${filters.repo.value}"` : `repo~${filters.repo.value}`);
+    }
+    if (filters.author) {
+      parts.push(filters.author.mode === 'exact' ? `author="${filters.author.value}"` : `author~${filters.author.value}`);
+    }
+    if (filters.linear) {
+      parts.push(filters.linear.mode === 'exact' ? `linear="${filters.linear.value}"` : `linear~${filters.linear.value}`);
+    }
+    if (filters.role && filters.role.length > 0) parts.push(`role=${filters.role.join(',')}`);
+    if (filters.review && filters.review.length > 0) parts.push(`review=${filters.review.join(',')}`);
+    if (filters.ci && filters.ci.length > 0) parts.push(`ci=${filters.ci.join(',')}`);
+    if (filters.merge && filters.merge.length > 0) parts.push(`merge=${filters.merge.join(',')}`);
+    return parts.join(' ');
+  }, [filters]);
   const isFiltered = activeFilterCount > 0 || !!searchQuery;
   const headerText = ` git-switchboard pr${repoMode ? ` ${repoMode}` : ''}  ${
     isFiltered ? `${filteredPRs.length}/${prs.length}` : String(filteredPRs.length)
-  } open PRs${activeFilterCount > 0 ? ` | ${activeFilterCount} filter${activeFilterCount > 1 ? 's' : ''}` : ''}${
+  } open PRs${filterSummary ? ` | ${filterSummary}` : ''}${
     searchQuery ? ` | Search: ${searchQuery}` : ''
   }${searchMode ? ` | (type to search, [${RETURN_SYMBOL}] confirm)` : ''}`;
   const headerWidth = Math.max(1, width - 4);
