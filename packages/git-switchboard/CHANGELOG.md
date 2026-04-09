@@ -1,3 +1,14 @@
+## 0.2.0 (2026-04-09)
+
+### 🚀 Features
+
+- persist PR list filter/sort/selection across navigation ([d91833c](https://github.com/git-switchboard/git-switchboard/commit/d91833c))
+
+### ❤️ Thank You
+
+- Claude
+- Craigory Coppola @AgentEnder
+
 ## 0.0.2 (2026-04-07)
 
 ### 🚀 Features
