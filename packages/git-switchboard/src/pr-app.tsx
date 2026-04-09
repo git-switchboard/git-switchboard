@@ -487,14 +487,12 @@ export function PrApp({
     const orgs = [...new Set(prs.map((pr) => pr.repoOwner))].sort();
     const repos = [...new Set(prs.map((pr) => pr.repoId))].sort();
     const authors = [...new Set(prs.map((pr) => pr.author))].sort();
-    const linearIds: string[] = [];
+    const linearSet = new Set<string>();
     for (const pr of prs) {
       const issues = dataLayer.query.linearIssuesForPr(`${pr.repoId}#${pr.number}`);
-      for (const issue of issues) {
-        if (!linearIds.includes(issue.identifier)) linearIds.push(issue.identifier);
-      }
+      for (const issue of issues) linearSet.add(issue.identifier);
     }
-    return { org: orgs, repo: repos, author: authors, linear: linearIds.sort() };
+    return { org: orgs, repo: repos, author: authors, linear: [...linearSet].sort() };
   }, [prs, dataLayer]);
 
   const filterFieldItems = useMemo((): FilterMenuItem[] => {
@@ -855,10 +853,8 @@ export function PrApp({
           }
           break;
       }
-    }
-
+    } else if (filterModal.level === 'string-picker') {
     // ── String picker level ─────────────────────────────────────
-    if (filterModal.level === 'string-picker') {
       const allValues = stringFieldValues[filterModal.fieldId as keyof typeof stringFieldValues] ?? [];
       const query = filterModal.inputValue.toLowerCase();
       const suggestions = query
@@ -912,49 +908,11 @@ export function PrApp({
           }
           break;
       }
-    }
-
+    } else if (filterModal.level === 'multiselect-picker') {
     // ── Multiselect picker level ────────────────────────────────
-    if (filterModal.level === 'multiselect-picker') {
       const options = MULTISELECT_OPTIONS[filterModal.fieldId] ?? [];
 
-      switch (key.name) {
-        case 'up':
-        case 'k':
-          setFilterModal({ ...filterModal, selectedIndex: Math.max(0, filterModal.selectedIndex - 1) });
-          break;
-        case 'down':
-        case 'j':
-          setFilterModal({ ...filterModal, selectedIndex: Math.min(options.length - 1, filterModal.selectedIndex + 1) });
-          break;
-        case 'return': {
-          const opt = options[filterModal.selectedIndex];
-          if (opt) {
-            const sel = filterModal.selected;
-            const next = sel.includes(opt.value)
-              ? sel.filter((v) => v !== opt.value)
-              : [...sel, opt.value];
-            setFilterModal({ ...filterModal, selected: next });
-          }
-          break;
-        }
-        case 'escape': {
-          const selected = filterModal.selected;
-          if (selected.length > 0) {
-            setFilters((prev) => ({ ...prev, [filterModal.fieldId]: selected }));
-          } else {
-            setFilters((prev) => {
-              const next = { ...prev };
-              delete next[filterModal.fieldId];
-              return next;
-            });
-          }
-          setFilterModal({ level: 'fields', selectedIndex: 0 });
-          break;
-        }
-      }
-      // Space also toggles
-      if (key.raw === ' ') {
+      const toggleSelected = () => {
         const opt = options[filterModal.selectedIndex];
         if (opt) {
           const sel = filterModal.selected;
@@ -963,11 +921,41 @@ export function PrApp({
             : [...sel, opt.value];
           setFilterModal({ ...filterModal, selected: next });
         }
-      }
-    }
+      };
 
+      if (key.raw === ' ') {
+        toggleSelected();
+      } else {
+        switch (key.name) {
+          case 'up':
+          case 'k':
+            setFilterModal({ ...filterModal, selectedIndex: Math.max(0, filterModal.selectedIndex - 1) });
+            break;
+          case 'down':
+          case 'j':
+            setFilterModal({ ...filterModal, selectedIndex: Math.min(options.length - 1, filterModal.selectedIndex + 1) });
+            break;
+          case 'return':
+            toggleSelected();
+            break;
+          case 'escape': {
+            const selected = filterModal.selected;
+            if (selected.length > 0) {
+              setFilters((prev) => ({ ...prev, [filterModal.fieldId]: selected }));
+            } else {
+              setFilters((prev) => {
+                const next = { ...prev };
+                delete next[filterModal.fieldId];
+                return next;
+              });
+            }
+            setFilterModal({ level: 'fields', selectedIndex: 0 });
+            break;
+          }
+        }
+      }
+    } else if (filterModal.level === 'save-preset') {
     // ── Save preset level ───────────────────────────────────────
-    if (filterModal.level === 'save-preset') {
       switch (key.name) {
         case 'return': {
           if (filterModal.inputValue.trim()) {
