@@ -62,6 +62,41 @@ describe('GitHub Fetch Listener', () => {
     cleanup();
   });
 
+  it('pr:fetchAll preserves existing enrichment when API cache has no CI', async () => {
+    const layer = createDataLayer();
+
+    // Pre-populate a PR with enrichment (simulates hydrated cache or prior detail fetch)
+    const existingCI: CIInfo = {
+      status: 'failing',
+      checks: [
+        { id: 0, name: 'linux / affected', status: 'completed', conclusion: 'failure', detailsUrl: 'https://nx.app/runs/abc', startedAt: '2026-04-08T00:00:00Z', completedAt: '2026-04-08T00:10:00Z', appSlug: null },
+      ],
+      fetchedAt: Date.now() - 5000,
+    };
+    layer.ingest.ingestPRs([makePR({ ci: existingCI })]);
+
+    const cleanup = createGithubFetcher(layer.bus, layer.ingest, layer.stores, {
+      fetchPRDetailsBatch: async () => new Map(),
+      fetchAllPRs: async () => ({
+        prs: [makePR()],
+        ciCache: new Map(),       // API cache has NO CI for this PR
+        reviewCache: new Map(),
+        mergeableCache: new Map(),
+      }),
+    });
+
+    layer.bus.emit('pr:fetchAll', { repoMode: null });
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Existing CI should be preserved, not cleared
+    const pr = layer.stores.prs.get('acme/api#1');
+    assert.ok(pr?.ci, 'CI data should still be present');
+    assert.equal(pr?.ci?.checks.length, 1);
+    assert.equal(pr?.ci?.checks[0].name, 'linux / affected');
+
+    cleanup();
+  });
+
   it('deduplicates concurrent fetch requests for same PR', async () => {
     const layer = createDataLayer();
     let callCount = 0;

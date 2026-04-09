@@ -164,7 +164,6 @@ const gitSwitchboard = cli('git-switchboard', {
             resolveGitHubToken,
             fetchUserPRs,
             fetchRepoPRs,
-            readCachedPRsSnapshot,
             fetchPRDetailsBatch,
           } =
             await import('./github.js');
@@ -289,14 +288,13 @@ const gitSwitchboard = cli('git-switchboard', {
             dataLayer.bus.emit('linear:fetchAll', {});
           }
 
-          // Check for cached PR data for instant startup, including stale snapshots.
-          const cachedPRs = await readCachedPRsSnapshot(token, repoMode ?? undefined);
-          let usedCache = false;
+          // Use hydrated data-layer PRs for instant startup if available,
+          // otherwise fetch fresh from the API.
+          const hydratedPRs = dataLayer.stores.prs.getAll();
+          let usedCache = hydratedPRs.length > 0;
 
-          // Use cached PRs immediately when available and revalidate in the background later.
-          const prPromise = cachedPRs
-            ? Promise.resolve(cachedPRs.result)
-            : repoMode
+          if (!usedCache) {
+            const prResult = await (repoMode
               ? fetchRepoPRs(token, repoMode, (p) => {
                   prProgress = { ...p };
                   renderLoading();
@@ -304,33 +302,22 @@ const gitSwitchboard = cli('git-switchboard', {
               : fetchUserPRs(token, (p) => {
                   prProgress = { ...p };
                   renderLoading();
-                });
-          if (cachedPRs) usedCache = true;
+                })
+            ).catch((error: unknown) => {
+              try {
+                renderer.destroy();
+              } catch {
+                // ignore teardown failures while aborting startup
+              }
+              console.error(
+                error instanceof Error ? error.message : String(error)
+              );
+              process.exit(1);
+            });
+            dataLayer.ingest.ingestPRs(prResult.prs.map(pr => ({ ...pr })));
+          }
 
-          const prResult = await prPromise.catch((error: unknown) => {
-            try {
-              renderer.destroy();
-            } catch {
-              // ignore teardown failures while aborting startup
-            }
-            console.error(
-              error instanceof Error ? error.message : String(error)
-            );
-            process.exit(1);
-          });
-          const { prs } = prResult;
-
-          // Ingest PRs with enrichment data into DataLayer
-          const prsWithEnrichment = prResult.prs.map(pr => {
-            const key = `${pr.repoId}#${pr.number}`;
-            return {
-              ...pr,
-              ci: prResult.ciCache.get(key),
-              review: prResult.reviewCache.get(key),
-              mergeable: prResult.mergeableCache.get(key),
-            };
-          });
-          dataLayer.ingest.ingestPRs(prsWithEnrichment);
+          const prs = dataLayer.stores.prs.getAll();
 
           if (prs.length === 0) {
             renderer.destroy();

@@ -146,9 +146,11 @@ export function createGithubFetcher(
             const existing = stores.prs.get(key);
             return {
               ...pr,
-              ci: result.ciCache.get(key),
-              review: result.reviewCache.get(key),
-              mergeable: result.mergeableCache.get(key),
+              // Preserve existing enrichment from the entity store — list
+              // queries don't carry enrichment data.
+              ci: existing?.ci,
+              review: existing?.review,
+              mergeable: existing?.mergeable,
               additions: existing?.additions,
               deletions: existing?.deletions,
             };
