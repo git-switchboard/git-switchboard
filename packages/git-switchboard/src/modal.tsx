@@ -39,8 +39,8 @@ export function Modal({
   termHeight,
   children,
 }: ModalProps) {
-  // Chrome: title(1) + divider(1) + spacer(1) + hint spacer(1) + hint(1) + bottom spacer(1) + top/bottom padding(2)
-  const chromeRows = hint ? 8 : 6;
+  // Chrome: top pad(1) + title(1) + divider(1) + spacer(1) + [hint spacer(1) + hint(1)] + bottom pad(1)
+  const chromeRows = hint ? 7 : 5;
   const totalHeight = contentRows + chromeRows;
   const totalWidth = modalWidth + 2; // +2 for left/right padding
 
@@ -80,10 +80,8 @@ export function Modal({
             <box style={{ height: 1, width: '100%' }}>
               <text content={` ${hint}`} fg="#565f89" />
             </box>
-            <box style={{ height: 1, width: '100%' }} />
           </>
         )}
-        {!hint && <box style={{ height: 1, width: '100%' }} />}
       </box>
     </box>
   );
