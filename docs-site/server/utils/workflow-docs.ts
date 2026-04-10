@@ -26,6 +26,15 @@ function rgba(components: [number, number, number, number]): string | null {
 }
 
 function frameToHtml(frame: TerminalFrame, label: string): string {
+  // Detect the edge background from the first line's first span — this is
+  // either the default terminal bg (transparent → null → falls back to #000)
+  // or the modal backdrop color.  Using it as the container background means
+  // the backdrop naturally fills any extra width on wide screens.
+  const edgeBg = frame.lines[0]?.spans[0]
+    ? rgba(frame.lines[0].spans[0].bg)
+    : null;
+  const containerBg = edgeBg ?? '#000';
+
   const lines = frame.lines.map((line) => {
     const spans = line.spans
       .map((span, spanIdx) => {
@@ -50,7 +59,7 @@ function frameToHtml(frame: TerminalFrame, label: string): string {
     return `<div style="display:block;padding:0 6px;line-height:1.4;min-height:1.4em;white-space:pre">${spans}</div>`;
   });
 
-  return `<div class="terminal-frame" aria-label="${label}" style="font-family:'JetBrains Mono',monospace;font-size:13px;background:#000;color:#c0caf5;white-space:pre;overflow-x:auto;border:1px solid #2a5070">${lines.join('')}</div>`;
+  return `<div class="terminal-frame" aria-label="${label}" style="font-family:'JetBrains Mono',monospace;font-size:13px;background:${containerBg};color:#c0caf5;white-space:pre;overflow-x:auto;border:1px solid #2a5070">${lines.join('')}</div>`;
 }
 
 interface FrameMap {
