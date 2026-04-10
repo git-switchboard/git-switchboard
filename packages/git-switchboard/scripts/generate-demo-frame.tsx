@@ -28,7 +28,7 @@ import type { PR } from '../src/data/index.js';
 import type { DataLayer } from '../src/data/index.js';
 import type { LocalRepo } from '../src/scanner.js';
 import type { PrScreen } from '../src/store.js';
-import { CHECKMARK, CROSSMARK, UP_ARROW, DOWN_ARROW, RETURN_SYMBOL, LEFT_ARROW } from '../src/unicode.js';
+import { CHECKMARK, CROSSMARK, UP_ARROW, DOWN_ARROW, RETURN_SYMBOL, LEFT_ARROW, BACKSPACE_SYMBOL } from '../src/unicode.js';
 
 // ── Mock data: Branch Picker ──
 
@@ -805,6 +805,91 @@ function ConnectSetupDemo() {
   );
 }
 
+// ── Demo components for checkout flow frames ──
+
+function WorktreeConflictDemo() {
+  const branchName = 'feat/add-pr-dashboard';
+  const worktreePath = '~/repos/worktrees/git-switchboard/pr-dashboard';
+  const options = [
+    `Open editor in ${worktreePath}`,
+    `Checkout new branch from '${branchName}' here`,
+    `Move worktree to new branch from '${branchName}'`,
+    `Move worktree to a different branch`,
+  ];
+  const selectedIndex = 0;
+
+  return (
+    <box flexDirection="column" style={{ width: '100%', height: '100%', padding: 1 }}>
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={` Branch '${branchName}' is checked out in another worktree`} fg="#e0af68" />
+      </box>
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={`  ${worktreePath}`} fg="#565f89" />
+      </box>
+      <box style={{ height: 1 }} />
+      {options.map((label, i) => {
+        const isSelected = i === selectedIndex;
+        return (
+          <box
+            key={label}
+            style={{ height: 1, width: '100%', backgroundColor: isSelected ? '#292e42' : undefined }}
+          >
+            <text
+              content={`  ${isSelected ? '› ' : '  '}${label}`}
+              fg={isSelected ? '#7aa2f7' : '#c0caf5'}
+            />
+          </box>
+        );
+      })}
+      <box style={{ flexGrow: 1 }} />
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [${BACKSPACE_SYMBOL}] Back`} fg="#565f89" />
+      </box>
+    </box>
+  );
+}
+
+function DirtyCheckoutDemo() {
+  const dirtyFiles = ['src/app.tsx', 'src/types.ts', 'package.json'];
+  const options = [
+    { label: 'Stash changes and proceed', selected: true },
+    { label: 'Proceed anyway', selected: false },
+  ];
+
+  return (
+    <box flexDirection="column" style={{ width: '100%', height: '100%', padding: 1 }}>
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={` Working tree has uncommitted changes (${dirtyFiles.length} files)`} fg="#e0af68" />
+      </box>
+      <box style={{ height: 1, width: '100%' }}>
+        <text content="  Checking out: main" fg="#565f89" />
+      </box>
+      <box style={{ height: 1 }} />
+      {dirtyFiles.map((f) => (
+        <box key={f} style={{ height: 1, width: '100%' }}>
+          <text content={`    ${f}`} fg="#565f89" />
+        </box>
+      ))}
+      <box style={{ height: 1 }} />
+      {options.map((opt) => (
+        <box
+          key={opt.label}
+          style={{ height: 1, width: '100%', backgroundColor: opt.selected ? '#292e42' : undefined }}
+        >
+          <text
+            content={`  ${opt.selected ? '› ' : '  '}${opt.label}`}
+            fg={opt.selected ? '#7aa2f7' : '#c0caf5'}
+          />
+        </box>
+      ))}
+      <box style={{ flexGrow: 1 }} />
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [${BACKSPACE_SYMBOL}] Back`} fg="#565f89" />
+      </box>
+    </box>
+  );
+}
+
 // ── Main ──
 
 async function main() {
@@ -836,6 +921,10 @@ async function main() {
   const connectDetailH = 10;
   const connectSetupW = 80;
   const connectSetupH = 12;
+  const worktreeConflictW = 80;
+  const worktreeConflictH = 12;
+  const dirtyCheckoutW = 72;
+  const dirtyCheckoutH = 14;
 
   const [
     branchFrame,
@@ -849,6 +938,8 @@ async function main() {
     connectListFrame,
     connectDetailFrame,
     connectSetupFrame,
+    worktreeConflictFrame,
+    dirtyCheckoutFrame,
   ] = await Promise.all([
     // ── Branch picker: App needs TuiRouter context ──
     captureFrame(
@@ -991,6 +1082,10 @@ async function main() {
     captureFrame(<ConnectDetailDemo />, connectDetailW, connectDetailH),
     // ── Connect: setup ──
     captureFrame(<ConnectSetupDemo />, connectSetupW, connectSetupH),
+    // ── Worktree conflict ──
+    captureFrame(<WorktreeConflictDemo />, worktreeConflictW, worktreeConflictH),
+    // ── Dirty checkout ──
+    captureFrame(<DirtyCheckoutDemo />, dirtyCheckoutW, dirtyCheckoutH),
   ]);
 
   // Collect render failures and content validation errors
@@ -1006,6 +1101,8 @@ async function main() {
     connectList: { result: connectListFrame, cols: connectListW, rows: connectListH },
     connectDetail: { result: connectDetailFrame, cols: connectDetailW, rows: connectDetailH },
     connectSetup: { result: connectSetupFrame, cols: connectSetupW, rows: connectSetupH },
+    worktreeConflict: { result: worktreeConflictFrame, cols: worktreeConflictW, rows: worktreeConflictH },
+    dirtyCheckout: { result: dirtyCheckoutFrame, cols: dirtyCheckoutW, rows: dirtyCheckoutH },
   } as const;
 
   const validationErrors: string[] = [];
@@ -1039,6 +1136,8 @@ async function main() {
     connectList: (connectListFrame as OkFrame).frame,
     connectDetail: (connectDetailFrame as OkFrame).frame,
     connectSetup: (connectSetupFrame as OkFrame).frame,
+    worktreeConflict: (worktreeConflictFrame as OkFrame).frame,
+    dirtyCheckout: (dirtyCheckoutFrame as OkFrame).frame,
   };
 
   mkdirSync(dirname(outputPath), { recursive: true });

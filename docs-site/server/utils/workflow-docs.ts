@@ -63,6 +63,8 @@ interface FrameMap {
   connectList?: TerminalFrame;
   connectDetail?: TerminalFrame;
   connectSetup?: TerminalFrame;
+  worktreeConflict?: TerminalFrame;
+  dirtyCheckout?: TerminalFrame;
 }
 
 function generatePrWorkflowPage(frames: FrameMap): DocPage {
@@ -614,6 +616,170 @@ ${connectSetup}
   };
 }
 
+function generateCheckoutPage(frames: FrameMap): DocPage {
+  const branchPicker = frames.branchPicker
+    ? frameToHtml(frames.branchPicker, 'Branch picker screenshot')
+    : '';
+  const worktreeConflict = frames.worktreeConflict
+    ? frameToHtml(frames.worktreeConflict, 'Worktree conflict screenshot')
+    : '';
+  const dirtyCheckout = frames.dirtyCheckout
+    ? frameToHtml(frames.dirtyCheckout, 'Dirty checkout screenshot')
+    : '';
+
+  const renderedHtml = `
+<p>
+  Running <code>git-switchboard</code> with no subcommand opens the
+  interactive branch picker. It lists local branches with author, date,
+  and linked PR info so you can quickly find and check out what you need.
+</p>
+
+<h2 id="branch-picker">Branch Picker</h2>
+
+${branchPicker}
+
+<p>
+  Each row shows one branch. The current branch is marked with
+  <code>*</code> and coloured green. Remote-only branches appear in
+  orange. The columns show the branch name, commit author, relative
+  date, an optional Linear issue identifier, and linked PR number.
+</p>
+
+<h3 id="branch-navigation">Navigation</h3>
+
+<table style="--cols: 2">
+  <thead>
+    <tr><th>Key</th><th>Action</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><kbd>j</kbd>/<kbd>k</kbd> or <kbd>Up</kbd>/<kbd>Down</kbd></td><td>Move between branches</td></tr>
+    <tr><td><kbd>Enter</kbd></td><td>Check out the selected branch</td></tr>
+    <tr><td><kbd>/</kbd></td><td>Search by branch name</td></tr>
+    <tr><td><kbd>a</kbd></td><td>Cycle author filter (All &rarr; Me &rarr; Team)</td></tr>
+    <tr><td><kbd>r</kbd></td><td>Toggle remote branches</td></tr>
+    <tr><td><kbd>p</kbd></td><td>Provider status</td></tr>
+    <tr><td><kbd>q</kbd> or <kbd>Esc</kbd></td><td>Quit</td></tr>
+  </tbody>
+</table>
+
+<h3 id="remote-branches">Remote Branches</h3>
+
+<p>
+  By default only local branches are shown. Press <kbd>r</kbd> to toggle
+  remote branches — the header updates to show <code>Remote: ON</code>.
+  When you check out a remote branch, git-switchboard creates a local
+  tracking branch automatically.
+</p>
+
+<h3 id="author-filter">Author Filter</h3>
+
+<p>
+  Press <kbd>a</kbd> to cycle the author filter. In <strong>Me</strong>
+  mode, only branches authored by the current Git user are shown. In
+  <strong>Team</strong> mode (when <code>--author</code> flags are
+  configured), only branches from the specified authors appear. The
+  active filter is shown in the header bar.
+</p>
+
+<h2 id="checkout-flow">Checkout Flow</h2>
+
+<p>
+  When you press <kbd>Enter</kbd> on a branch, git-switchboard checks
+  for two potential conflicts before performing the checkout:
+</p>
+<ol>
+  <li><strong>Worktree conflict</strong> — the branch is already checked
+      out in another git worktree.</li>
+  <li><strong>Dirty working tree</strong> — the current working tree has
+      uncommitted changes.</li>
+</ol>
+<p>
+  If neither applies, the checkout happens immediately and
+  git-switchboard exits.
+</p>
+
+<h3 id="worktree-conflict">Worktree Conflict</h3>
+
+<p>
+  If the selected branch is already checked out in another worktree, a
+  conflict screen appears with four options:
+</p>
+
+${worktreeConflict}
+
+<ul>
+  <li><strong>Open editor</strong> — opens your editor in the existing
+      worktree path, leaving branches as they are.</li>
+  <li><strong>Checkout new branch</strong> — creates a new branch from
+      the selected one and checks it out in the current worktree. You'll
+      be prompted to enter a branch name.</li>
+  <li><strong>Move worktree to new branch</strong> — moves the other
+      worktree onto a new branch (freeing the target branch), then
+      checks out the target in your current worktree.</li>
+  <li><strong>Move worktree to a different branch</strong> — switches
+      the other worktree to an existing branch you specify, then checks
+      out the target branch here.</li>
+</ul>
+<p>
+  Options that create or switch branches will prompt for a branch name
+  via a text input. Validation checks that new branch names don't
+  already exist and that existing branch names are valid.
+</p>
+
+<h3 id="dirty-checkout">Dirty Working Tree</h3>
+
+<p>
+  If your working tree has uncommitted changes, git-switchboard shows
+  the modified files and offers two choices:
+</p>
+
+${dirtyCheckout}
+
+<ul>
+  <li><strong>Stash changes and proceed</strong> — runs
+      <code>git stash</code> before checking out, so your changes are
+      preserved and can be restored with <code>git stash pop</code>.</li>
+  <li><strong>Proceed anyway</strong> — checks out the branch without
+      stashing. Git will refuse if the checkout would overwrite your
+      changes; otherwise the modified files carry over to the new
+      branch.</li>
+</ul>
+<p>
+  Press <kbd>Backspace</kbd> or <kbd>Esc</kbd> to go back to the branch
+  picker without checking out.
+</p>
+
+<h3 id="chained-conflicts">Chained Conflicts</h3>
+
+<p>
+  When a worktree conflict action also requires a checkout (e.g., moving
+  a worktree to a different branch and then checking out the target),
+  git-switchboard chains the dirty-checkout prompt after the worktree
+  resolution. If the <em>other</em> worktree is dirty, you'll be asked
+  about that first, then about your current worktree if needed.
+</p>
+`.trim();
+
+  return {
+    slug: 'guide/checkout',
+    title: 'Interactive Checkout',
+    description: 'Branch picker navigation, author filtering, worktree conflicts, and dirty checkout handling.',
+    order: 1.4,
+    content: '',
+    renderedHtml,
+    headings: [
+      { id: 'branch-picker', text: 'Branch Picker', level: 2 },
+      { id: 'branch-navigation', text: 'Navigation', level: 3 },
+      { id: 'remote-branches', text: 'Remote Branches', level: 3 },
+      { id: 'author-filter', text: 'Author Filter', level: 3 },
+      { id: 'checkout-flow', text: 'Checkout Flow', level: 2 },
+      { id: 'worktree-conflict', text: 'Worktree Conflict', level: 3 },
+      { id: 'dirty-checkout', text: 'Dirty Working Tree', level: 3 },
+      { id: 'chained-conflicts', text: 'Chained Conflicts', level: 3 },
+    ],
+  };
+}
+
 export async function generateWorkflowDocs(): Promise<DocPage[]> {
   try {
     const framePath = join(process.cwd(), 'generated', 'terminal-frame.json');
@@ -621,6 +787,7 @@ export async function generateWorkflowDocs(): Promise<DocPage[]> {
     const frames = JSON.parse(raw) as FrameMap;
 
     return [
+      generateCheckoutPage(frames),
       generatePrWorkflowPage(frames),
       generateColumnsPage(frames),
       generateSortingPage(frames),
