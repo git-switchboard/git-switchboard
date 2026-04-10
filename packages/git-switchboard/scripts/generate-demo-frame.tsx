@@ -524,7 +524,7 @@ function SortModalDemo({ termWidth, termHeight }: { termWidth: number; termHeigh
   ];
 
   return (
-    <box>
+    <box style={{ width: '100%', height: '100%' }}>
       <Modal
         title="Sort Order"
         hint="Enter/Space toggle | Esc close"
@@ -571,7 +571,7 @@ function ColumnModalDemo({ termWidth, termHeight }: { termWidth: number; termHei
   ];
 
   return (
-    <box>
+    <box style={{ width: '100%', height: '100%' }}>
       <Modal
         title="Columns"
         hint="Enter/Space toggle | r reorder | Esc close"
@@ -617,7 +617,7 @@ function FilterFieldsDemo({ termWidth, termHeight }: { termWidth: number; termHe
   const totalItems = fields.length + 3; // fields + clear + save + close
 
   return (
-    <box>
+    <box style={{ width: '100%', height: '100%' }}>
       <Modal
         title="Filters (2 active)"
         hint="Enter/Space select | d delete preset | Esc close"
@@ -659,7 +659,7 @@ function FilterMultiselectDemo({ termWidth, termHeight }: { termWidth: number; t
   ];
 
   return (
-    <box>
+    <box style={{ width: '100%', height: '100%' }}>
       <Modal
         title="CI Status"
         hint="Enter/Space toggle | Esc apply & back"
@@ -907,16 +907,16 @@ async function main() {
   const defaultCols = defaultColumns(PR_COLUMN_DEFS);
 
   // ── Frame dimensions for new captures ──
-  // Modal frame sizes = exact modal dimensions (modalWidth+2 x contentRows+7)
-  // so the modal fills the frame with no backdrop visible.
-  const sortModalW = 48;   // 46+2
-  const sortModalH = 16;   // 9+7  (7 fields + spacer + close + 7 chrome)
-  const columnModalW = 48;
-  const columnModalH = 20;  // 13+7 (11 cols + spacer + close + 7 chrome)
-  const filterFieldsW = 48;
-  const filterFieldsH = 19; // 12+7 (8 fields + spacer + 3 actions + 7 chrome)
-  const filterMultiselectW = 48;
-  const filterMultiselectH = 12; // 5+7  (5 options + 7 chrome)
+  // Modal frames: wider than the modal so the backdrop is visible and
+  // the modal appears centered like it does in the real TUI.
+  const sortModalW = 64;
+  const sortModalH = 20;
+  const columnModalW = 64;
+  const columnModalH = 24;
+  const filterFieldsW = 64;
+  const filterFieldsH = 24;
+  const filterMultiselectW = 64;
+  const filterMultiselectH = 16;
   const connectListW = 60;
   const connectListH = 8;
   const connectDetailW = 60;
