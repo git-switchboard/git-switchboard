@@ -1,9 +1,10 @@
+import { applyBaseUrl } from '../utils/base-url';
 import './tailwind.css';
 
 export function Head() {
   return (
     <>
-      <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+      <link rel="icon" type="image/svg+xml" href={applyBaseUrl('/favicon.svg')} />
       <meta name="theme-color" content="#06090e" />
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link
