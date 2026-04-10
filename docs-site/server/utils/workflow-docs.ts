@@ -29,9 +29,11 @@ function frameToHtml(frame: TerminalFrame, label: string): string {
   const lines = frame.lines.map((line) => {
     const spans = line.spans
       .map((span, spanIdx) => {
-        if (!span.text.trim() && spanIdx === line.spans.length - 1) return '';
-        const fg = rgba(span.fg);
         const bg = rgba(span.bg);
+        // Trim trailing whitespace unless it carries a background color
+        // (e.g. modal backdrop that needs to fill the line).
+        if (!span.text.trim() && spanIdx === line.spans.length - 1 && !bg) return '';
+        const fg = rgba(span.fg);
         const style = [
           fg ? `color:${fg}` : '',
           bg ? `background-color:${bg}` : '',
