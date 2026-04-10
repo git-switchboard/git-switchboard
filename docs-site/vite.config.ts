@@ -4,6 +4,7 @@ import vike from 'vike/plugin';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  base: process.env.BASE_URL || '/',
   plugins: [vike(), react(), tailwindcss()],
   build: {
     rollupOptions: {

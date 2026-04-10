@@ -10,21 +10,25 @@ import { App } from '../src/app.js';
 import { PrApp } from '../src/pr-app.js';
 import { PrDetail } from '../src/pr-detail.js';
 import { ClonePrompt } from '../src/clone-prompt.js';
+import { Modal, ModalRow, ModalTextInput } from '../src/modal.js';
 import { BRANCH_COMMAND } from '../src/branch-router.js';
 import { PR_COMMAND } from '../src/pr-router.js';
 import { TuiRouter } from '../src/tui-router.js';
 import type {
   BranchWithPR,
   CIInfo,
+  ColumnConfig,
   ReviewInfo,
   UserPullRequest,
 } from '../src/types.js';
-import { DEFAULT_SORT, EMPTY_FILTERS, defaultColumns } from '../src/types.js';
+import { DEFAULT_SORT, EMPTY_FILTERS, defaultColumns, FILTER_FIELD_DEFS } from '../src/types.js';
 import { PR_COLUMN_DEFS } from '../src/pr-columns.js';
+import type { PrColumnId } from '../src/pr-columns.js';
 import type { PR } from '../src/data/index.js';
 import type { DataLayer } from '../src/data/index.js';
 import type { LocalRepo } from '../src/scanner.js';
 import type { PrScreen } from '../src/store.js';
+import { CHECKMARK, CROSSMARK, UP_ARROW, DOWN_ARROW, RETURN_SYMBOL, LEFT_ARROW, BACKSPACE_SYMBOL } from '../src/unicode.js';
 
 // ── Mock data: Branch Picker ──
 
@@ -500,6 +504,392 @@ async function captureFrame(
   }
 }
 
+// ── Demo components for modal frames ──
+
+const SORT_FIELDS_DEMO = [
+  { field: 'updated', label: 'Updated' },
+  { field: 'review', label: 'Review Status' },
+  { field: 'ci', label: 'CI Status' },
+  { field: 'repo', label: 'Repository' },
+  { field: 'merge', label: 'Merge Status' },
+  { field: 'diff', label: 'Diff Size' },
+  { field: 'number', label: 'PR Number' },
+];
+
+function SortModalDemo({ termWidth, termHeight }: { termWidth: number; termHeight: number }) {
+  // Default sort: review 1↑, updated 2↓
+  const activeLayers = [
+    { field: 'review', dir: 'asc', layerNum: 1 },
+    { field: 'updated', dir: 'desc', layerNum: 2 },
+  ];
+
+  return (
+    <box style={{ width: '100%', height: '100%' }}>
+      <Modal
+        title="Sort Order"
+        hint="Enter/Space toggle | Esc close"
+        width={46}
+        height={SORT_FIELDS_DEMO.length + 2}
+        termWidth={termWidth}
+        termHeight={termHeight}
+      >
+        {SORT_FIELDS_DEMO.map((sf, i) => {
+          const isActive = i === 2; // CI Status selected
+          const layer = activeLayers.find((l) => l.field === sf.field);
+          const indicator = layer
+            ? `${layer.layerNum}${layer.dir === 'asc' ? '↑' : '↓'}`
+            : '  ';
+          return (
+            <ModalRow
+              key={sf.field}
+              label={` ${indicator} ${isActive ? '>' : ' '} ${sf.label}`}
+              fg={layer ? (isActive ? '#c0caf5' : '#7aa2f7') : (isActive ? '#a9b1d6' : '#565f89')}
+              active={isActive}
+            />
+          );
+        })}
+        <box style={{ height: 1, width: '100%' }} />
+        <ModalRow label="   Close" fg="#565f89" />
+      </Modal>
+    </box>
+  );
+}
+
+function ColumnModalDemo({ termWidth, termHeight }: { termWidth: number; termHeight: number }) {
+  const demoColumns: { id: string; label: string; visibility: 'auto' | 'visible' | 'hidden' }[] = [
+    { id: 'role', label: 'Role', visibility: 'auto' },
+    { id: 'author', label: 'Author', visibility: 'auto' },
+    { id: 'number', label: 'PR Number', visibility: 'visible' },
+    { id: 'title', label: 'Title', visibility: 'visible' },
+    { id: 'repo', label: 'Repository', visibility: 'auto' },
+    { id: 'updated', label: 'Updated', visibility: 'visible' },
+    { id: 'ci', label: 'CI Status', visibility: 'visible' },
+    { id: 'merge', label: 'Merge Status', visibility: 'hidden' },
+    { id: 'diff', label: 'Diff', visibility: 'hidden' },
+    { id: 'linear', label: 'Linear', visibility: 'auto' },
+    { id: 'review', label: 'Review', visibility: 'visible' },
+  ];
+
+  return (
+    <box style={{ width: '100%', height: '100%' }}>
+      <Modal
+        title="Columns"
+        hint="Enter/Space toggle | r reorder | Esc close"
+        width={46}
+        height={demoColumns.length + 2}
+        termWidth={termWidth}
+        termHeight={termHeight}
+      >
+        {demoColumns.map((col, i) => {
+          const isActive = i === 7; // Merge Status selected
+          const visIcon = col.visibility === 'auto' ? '▣' : col.visibility === 'visible' ? '✓' : '✗';
+          return (
+            <box
+              key={col.id}
+              style={{
+                height: 1,
+                width: '100%',
+                backgroundColor: isActive ? '#292e42' : undefined,
+              }}
+            >
+              <text
+                content={`   ${isActive ? '>' : ' '} ${visIcon} ${col.label}`}
+                fg={col.visibility === 'hidden' ? '#565f89' : isActive ? '#c0caf5' : '#a9b1d6'}
+              />
+            </box>
+          );
+        })}
+        <box style={{ height: 1, width: '100%' }} />
+        <ModalRow label="   Close" fg="#565f89" />
+      </Modal>
+    </box>
+  );
+}
+
+function FilterFieldsDemo({ termWidth, termHeight }: { termWidth: number; termHeight: number }) {
+  const fields = FILTER_FIELD_DEFS;
+  // Show review filter with active value
+  const activeValues: Record<string, string> = {
+    review: ' = approved, changes-requested',
+    ci: ' = failing',
+  };
+
+  const totalItems = fields.length + 3; // fields + clear + save + close
+
+  return (
+    <box style={{ width: '100%', height: '100%' }}>
+      <Modal
+        title="Filters (2 active)"
+        hint="Enter/Space select | d delete preset | Esc close"
+        width={46}
+        height={totalItems + 1}
+        termWidth={termWidth}
+        termHeight={termHeight}
+      >
+        {fields.map((def, i) => {
+          const isActive = i === 1; // Repo selected
+          const valueText = activeValues[def.id] ?? '';
+          const fg = valueText
+            ? (isActive ? '#c0caf5' : '#7aa2f7')
+            : (isActive ? '#a9b1d6' : '#565f89');
+          return (
+            <ModalRow
+              key={def.id}
+              label={` ${isActive ? '>' : ' '} ${def.label}${valueText}`}
+              fg={fg}
+            />
+          );
+        })}
+        <box style={{ height: 1, width: '100%' }} />
+        <ModalRow label="   ✗ Clear all filters" fg="#565f89" />
+        <ModalRow label="   + Save as preset" fg="#565f89" />
+        <ModalRow label="   Close" fg="#565f89" />
+      </Modal>
+    </box>
+  );
+}
+
+function FilterMultiselectDemo({ termWidth, termHeight }: { termWidth: number; termHeight: number }) {
+  const options = [
+    { value: 'passing', label: 'Passing', checked: false },
+    { value: 'failing', label: 'Failing', checked: true },
+    { value: 'pending', label: 'Pending', checked: false },
+    { value: 'mixed', label: 'Mixed', checked: false },
+    { value: 'unknown', label: 'Unknown', checked: false },
+  ];
+
+  return (
+    <box style={{ width: '100%', height: '100%' }}>
+      <Modal
+        title="CI Status"
+        hint="Enter/Space toggle | Esc apply & back"
+        width={46}
+        height={options.length}
+        termWidth={termWidth}
+        termHeight={termHeight}
+      >
+        {options.map((opt, i) => {
+          const isActive = i === 0; // Passing selected
+          return (
+            <ModalRow
+              key={opt.value}
+              label={` ${isActive ? '>' : ' '} [${opt.checked ? '✓' : ' '}] ${opt.label}`}
+              fg={opt.checked ? (isActive ? '#c0caf5' : '#7aa2f7') : (isActive ? '#a9b1d6' : '#565f89')}
+              active={isActive}
+            />
+          );
+        })}
+      </Modal>
+    </box>
+  );
+}
+
+// ── Demo components for connect frames ──
+
+function ConnectListDemo() {
+  const providers = [
+    { name: 'github', icon: CHECKMARK, text: 'connected (encrypted)', color: '#9ece6a' },
+    { name: 'linear', icon: CROSSMARK, text: 'not configured', color: '#565f89' },
+  ];
+  const selectedIndex = 0;
+  const nameCol = 12;
+
+  return (
+    <box flexDirection="column" style={{ width: '100%', height: '100%', padding: 1 }}>
+      <box style={{ height: 1, width: '100%' }}>
+        <text content=" Manage Connections" fg="#7aa2f7" />
+      </box>
+      <box style={{ height: 1 }} />
+      {providers.map((provider, index) => {
+        const isActive = index === selectedIndex;
+        const cursor = isActive ? '>' : ' ';
+        return (
+          <box
+            key={provider.name}
+            style={{
+              height: 1,
+              width: '100%',
+              backgroundColor: isActive ? '#292e42' : undefined,
+            }}
+          >
+            <text>
+              <span fg={isActive ? '#c0caf5' : '#a9b1d6'}>{` ${cursor} ${provider.name.padEnd(nameCol)}`}</span>
+              <span fg={provider.color}>{`${provider.icon} ${provider.text}`}</span>
+            </text>
+          </box>
+        );
+      })}
+      <box style={{ flexGrow: 1 }} />
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [q]uit`} fg="#565f89" />
+      </box>
+    </box>
+  );
+}
+
+function ConnectDetailDemo() {
+  return (
+    <box flexDirection="column" style={{ width: '100%', height: '100%', padding: 1 }}>
+      <box style={{ height: 1, width: '100%' }}>
+        <text content=" github" fg="#7aa2f7" />
+      </box>
+      <box style={{ height: 1 }} />
+      <box style={{ height: 1 }}>
+        <text>
+          <span fg="#565f89">{"  Status      "}</span>
+          <span fg="#9ece6a">{`${CHECKMARK} connected (encrypted)`}</span>
+        </text>
+      </box>
+      <box style={{ height: 1 }}>
+        <text>
+          <span fg="#565f89">{"  Identity    "}</span>
+          <span fg="#9ece6a">{`${CHECKMARK} Authenticated as craigory`}</span>
+        </text>
+      </box>
+      <box style={{ height: 1 }}>
+        <text>
+          <span fg="#565f89">{"  Settings    "}</span>
+          <span fg="#7aa2f7">{"https://github.com/settings/tokens"}</span>
+        </text>
+      </box>
+      <box style={{ flexGrow: 1 }} />
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={` [s]etup | [d]isconnect | [${LEFT_ARROW}] Back | [q]uit`} fg="#565f89" />
+      </box>
+    </box>
+  );
+}
+
+function ConnectSetupDemo() {
+  const strategies = [
+    { label: 'Environment variable', desc: 'Read token from an env var at launch' },
+    { label: 'Encrypted (machine-locked)', desc: 'No password needed \u2014 tied to this machine' },
+    { label: 'Encrypted (password-protected)', desc: 'Enter a password each launch' },
+    { label: 'Shell command', desc: 'Run a command to fetch the token' },
+  ];
+  const selectedIndex = 1;
+
+  return (
+    <box flexDirection="column" style={{ width: '100%', height: '100%', padding: 1 }}>
+      <box style={{ height: 1, width: '100%' }}>
+        <text content=" Setup github" fg="#7aa2f7" />
+      </box>
+      <box style={{ height: 1 }} />
+      <box style={{ height: 1 }}>
+        <text content="  How would you like to store your token?" fg="#a9b1d6" />
+      </box>
+      <box style={{ height: 1 }} />
+      {strategies.map((opt, i) => {
+        const isActive = i === selectedIndex;
+        return (
+          <box
+            key={opt.label}
+            style={{
+              height: 1,
+              width: '100%',
+              backgroundColor: isActive ? '#292e42' : undefined,
+            }}
+          >
+            <text>
+              <span fg={isActive ? '#c0caf5' : '#a9b1d6'}>{`  ${isActive ? '>' : ' '} ${opt.label.padEnd(32)}`}</span>
+              <span fg="#565f89">{opt.desc}</span>
+            </text>
+          </box>
+        );
+      })}
+      <box style={{ flexGrow: 1 }} />
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Confirm | [Esc] Back | [q]uit`} fg="#565f89" />
+      </box>
+    </box>
+  );
+}
+
+// ── Demo components for checkout flow frames ──
+
+function WorktreeConflictDemo() {
+  const branchName = 'feat/add-pr-dashboard';
+  const worktreePath = '~/repos/worktrees/git-switchboard/pr-dashboard';
+  const options = [
+    `Open editor in ${worktreePath}`,
+    `Checkout new branch from '${branchName}' here`,
+    `Move worktree to new branch from '${branchName}'`,
+    `Move worktree to a different branch`,
+  ];
+  const selectedIndex = 0;
+
+  return (
+    <box flexDirection="column" style={{ width: '100%', height: '100%', padding: 1 }}>
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={` Branch '${branchName}' is checked out in another worktree`} fg="#e0af68" />
+      </box>
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={`  ${worktreePath}`} fg="#565f89" />
+      </box>
+      <box style={{ height: 1 }} />
+      {options.map((label, i) => {
+        const isSelected = i === selectedIndex;
+        return (
+          <box
+            key={label}
+            style={{ height: 1, width: '100%', backgroundColor: isSelected ? '#292e42' : undefined }}
+          >
+            <text
+              content={`  ${isSelected ? '› ' : '  '}${label}`}
+              fg={isSelected ? '#7aa2f7' : '#c0caf5'}
+            />
+          </box>
+        );
+      })}
+      <box style={{ flexGrow: 1 }} />
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [${BACKSPACE_SYMBOL}] Back`} fg="#565f89" />
+      </box>
+    </box>
+  );
+}
+
+function DirtyCheckoutDemo() {
+  const dirtyFiles = ['src/app.tsx', 'src/types.ts', 'package.json'];
+  const options = [
+    { label: 'Stash changes and proceed', selected: true },
+    { label: 'Proceed anyway', selected: false },
+  ];
+
+  return (
+    <box flexDirection="column" style={{ width: '100%', height: '100%', padding: 1 }}>
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={` Working tree has uncommitted changes (${dirtyFiles.length} files)`} fg="#e0af68" />
+      </box>
+      <box style={{ height: 1, width: '100%' }}>
+        <text content="  Checking out: main" fg="#565f89" />
+      </box>
+      <box style={{ height: 1 }} />
+      {dirtyFiles.map((f) => (
+        <box key={f} style={{ height: 1, width: '100%' }}>
+          <text content={`    ${f}`} fg="#565f89" />
+        </box>
+      ))}
+      <box style={{ height: 1 }} />
+      {options.map((opt) => (
+        <box
+          key={opt.label}
+          style={{ height: 1, width: '100%', backgroundColor: opt.selected ? '#292e42' : undefined }}
+        >
+          <text
+            content={`  ${opt.selected ? '› ' : '  '}${opt.label}`}
+            fg={opt.selected ? '#7aa2f7' : '#c0caf5'}
+          />
+        </box>
+      ))}
+      <box style={{ flexGrow: 1 }} />
+      <box style={{ height: 1, width: '100%' }}>
+        <text content={` [${UP_ARROW}${DOWN_ARROW}] Navigate | [${RETURN_SYMBOL}] Select | [${BACKSPACE_SYMBOL}] Back`} fg="#565f89" />
+      </box>
+    </box>
+  );
+}
+
 // ── Main ──
 
 async function main() {
@@ -516,7 +906,43 @@ async function main() {
 
   const defaultCols = defaultColumns(PR_COLUMN_DEFS);
 
-  const [branchFrame, prFrame, prDetailFrame, clonePromptFrame] = await Promise.all([
+  // ── Frame dimensions for new captures ──
+  // Modal frames: wider than the modal so the backdrop is visible and
+  // the modal appears centered like it does in the real TUI.
+  const sortModalW = 64;
+  const sortModalH = 20;
+  const columnModalW = 64;
+  const columnModalH = 24;
+  const filterFieldsW = 64;
+  const filterFieldsH = 24;
+  const filterMultiselectW = 64;
+  const filterMultiselectH = 16;
+  const connectListW = 60;
+  const connectListH = 8;
+  const connectDetailW = 60;
+  const connectDetailH = 10;
+  const connectSetupW = 80;
+  const connectSetupH = 12;
+  const worktreeConflictW = 80;
+  const worktreeConflictH = 12;
+  const dirtyCheckoutW = 72;
+  const dirtyCheckoutH = 14;
+
+  const [
+    branchFrame,
+    prFrame,
+    prDetailFrame,
+    clonePromptFrame,
+    sortModalFrame,
+    columnModalFrame,
+    filterFieldsFrame,
+    filterMultiselectFrame,
+    connectListFrame,
+    connectDetailFrame,
+    connectSetupFrame,
+    worktreeConflictFrame,
+    dirtyCheckoutFrame,
+  ] = await Promise.all([
     // ── Branch picker: App needs TuiRouter context ──
     captureFrame(
       <TuiRouter
@@ -644,6 +1070,24 @@ async function main() {
       80,
       12
     ),
+    // ── Sort modal ──
+    captureFrame(<SortModalDemo termWidth={sortModalW} termHeight={sortModalH} />, sortModalW, sortModalH),
+    // ── Column config modal ──
+    captureFrame(<ColumnModalDemo termWidth={columnModalW} termHeight={columnModalH} />, columnModalW, columnModalH),
+    // ── Filter fields modal ──
+    captureFrame(<FilterFieldsDemo termWidth={filterFieldsW} termHeight={filterFieldsH} />, filterFieldsW, filterFieldsH),
+    // ── Filter multiselect modal ──
+    captureFrame(<FilterMultiselectDemo termWidth={filterMultiselectW} termHeight={filterMultiselectH} />, filterMultiselectW, filterMultiselectH),
+    // ── Connect: provider list ──
+    captureFrame(<ConnectListDemo />, connectListW, connectListH),
+    // ── Connect: provider detail ──
+    captureFrame(<ConnectDetailDemo />, connectDetailW, connectDetailH),
+    // ── Connect: setup ──
+    captureFrame(<ConnectSetupDemo />, connectSetupW, connectSetupH),
+    // ── Worktree conflict ──
+    captureFrame(<WorktreeConflictDemo />, worktreeConflictW, worktreeConflictH),
+    // ── Dirty checkout ──
+    captureFrame(<DirtyCheckoutDemo />, dirtyCheckoutW, dirtyCheckoutH),
   ]);
 
   // Collect render failures and content validation errors
@@ -652,6 +1096,15 @@ async function main() {
     prDashboard: { result: prFrame, cols: 96, rows: 14 },
     prDetail: { result: prDetailFrame, cols: 96, rows: 20 },
     clonePrompt: { result: clonePromptFrame, cols: 80, rows: 12 },
+    sortModal: { result: sortModalFrame, cols: sortModalW, rows: sortModalH },
+    columnModal: { result: columnModalFrame, cols: columnModalW, rows: columnModalH },
+    filterFields: { result: filterFieldsFrame, cols: filterFieldsW, rows: filterFieldsH },
+    filterMultiselect: { result: filterMultiselectFrame, cols: filterMultiselectW, rows: filterMultiselectH },
+    connectList: { result: connectListFrame, cols: connectListW, rows: connectListH },
+    connectDetail: { result: connectDetailFrame, cols: connectDetailW, rows: connectDetailH },
+    connectSetup: { result: connectSetupFrame, cols: connectSetupW, rows: connectSetupH },
+    worktreeConflict: { result: worktreeConflictFrame, cols: worktreeConflictW, rows: worktreeConflictH },
+    dirtyCheckout: { result: dirtyCheckoutFrame, cols: dirtyCheckoutW, rows: dirtyCheckoutH },
   } as const;
 
   const validationErrors: string[] = [];
@@ -671,11 +1124,22 @@ async function main() {
     process.exit(1);
   }
 
+  type OkFrame = Extract<CaptureResult, { ok: true }>;
+
   const frames = {
-    branchPicker: (branchFrame as Extract<CaptureResult, { ok: true }>).frame,
-    prDashboard: (prFrame as Extract<CaptureResult, { ok: true }>).frame,
-    prDetail: (prDetailFrame as Extract<CaptureResult, { ok: true }>).frame,
-    clonePrompt: (clonePromptFrame as Extract<CaptureResult, { ok: true }>).frame,
+    branchPicker: (branchFrame as OkFrame).frame,
+    prDashboard: (prFrame as OkFrame).frame,
+    prDetail: (prDetailFrame as OkFrame).frame,
+    clonePrompt: (clonePromptFrame as OkFrame).frame,
+    sortModal: (sortModalFrame as OkFrame).frame,
+    columnModal: (columnModalFrame as OkFrame).frame,
+    filterFields: (filterFieldsFrame as OkFrame).frame,
+    filterMultiselect: (filterMultiselectFrame as OkFrame).frame,
+    connectList: (connectListFrame as OkFrame).frame,
+    connectDetail: (connectDetailFrame as OkFrame).frame,
+    connectSetup: (connectSetupFrame as OkFrame).frame,
+    worktreeConflict: (worktreeConflictFrame as OkFrame).frame,
+    dirtyCheckout: (dirtyCheckoutFrame as OkFrame).frame,
   };
 
   mkdirSync(dirname(outputPath), { recursive: true });
