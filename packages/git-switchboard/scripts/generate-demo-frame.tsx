@@ -907,14 +907,16 @@ async function main() {
   const defaultCols = defaultColumns(PR_COLUMN_DEFS);
 
   // ── Frame dimensions for new captures ──
-  const sortModalW = 56;
-  const sortModalH = 18;
-  const columnModalW = 56;
-  const columnModalH = 22;
-  const filterFieldsW = 56;
-  const filterFieldsH = 22;
-  const filterMultiselectW = 56;
-  const filterMultiselectH = 14;
+  // Modal frame sizes = exact modal dimensions (modalWidth+2 x contentRows+7)
+  // so the modal fills the frame with no backdrop visible.
+  const sortModalW = 48;   // 46+2
+  const sortModalH = 16;   // 9+7  (7 fields + spacer + close + 7 chrome)
+  const columnModalW = 48;
+  const columnModalH = 20;  // 13+7 (11 cols + spacer + close + 7 chrome)
+  const filterFieldsW = 48;
+  const filterFieldsH = 19; // 12+7 (8 fields + spacer + 3 actions + 7 chrome)
+  const filterMultiselectW = 48;
+  const filterMultiselectH = 12; // 5+7  (5 options + 7 chrome)
   const connectListW = 60;
   const connectListH = 8;
   const connectDetailW = 60;
